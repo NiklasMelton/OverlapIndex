@@ -7,6 +7,10 @@ authors = [
 ]
 license = {text = "MIT"}
 readme = "README.md"
+homepage = "https://github.com/NiklasMelton/OverlapIndex"
+repository = "https://github.com/NiklasMelton/OverlapIndex"
+documentation = "https://github.com/NiklasMelton/OverlapIndex"
+keywords = ["adaptive resonance theory", "ART", "machine learning", "neural networks", "clustering"]
 requires-python = ">=3.9"
 dependencies = [
     "artlib (>=0.1.7,<0.2.0)",
