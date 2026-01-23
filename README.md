@@ -8,6 +8,22 @@ track class overlap as new data (and classes) arrive.
 
 ---
 
+## Installation
+
+To install OverlapIndex, simply use pip:
+
+```bash
+pip install overlapindex
+```
+
+Or to install directly from the most recent source:
+
+```bash
+pip install git+https://github.com/NiklasMelton/OverlapIndex.git@develop
+```
+
+---
+
 ## Overview
 
 The Overlap Index is bounded in the interval **[0, 1]** and has the following interpretation:
