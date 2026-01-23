@@ -71,7 +71,8 @@ The Overlap Index can be used in several settings:
   Tracks how class separation changes across layers or training epochs.
 
 - **Backbone evaluation for transfer learning**  
-  Compares feature extractors, where higher OI values indicate better class separation in the learned representation.
+  Compares feature extractors, where higher OI values indicate better class 
+  separation in the backbone embeddings.
 
 ---
 
