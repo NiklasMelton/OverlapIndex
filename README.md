@@ -87,6 +87,40 @@ The Overlap Index can be used in several settings:
 
 The returned value is the current Overlap Index after the update.
 
+### Iris Dataset Example
+```python
+
+from sklearn.datasets import load_iris
+import numpy as np
+from overlapindex import OverlapIndex
+
+# Load dataset
+iris = load_iris()
+
+# Feature matrix (shape: [150, 4])
+X = iris.data.astype(np.float64)
+
+# Target vector (shape: [150,])
+y = iris.target.astype(np.int64)
+
+# Normalize the data (required)
+x_max = X.max(axis=0)
+x_min = X.min(axis=0)
+X = (X - x_min) / (x_max - x_min)
+
+# Instantiate the OI object
+OI = OverlapIndex()
+
+# Calculate the Overlap Index
+oi = OI.add_batch(X, y)
+print(oi)
+
+# Output:
+# 0.9266666666666666
+```
+
+
+
 ---
 
 ## Parameters
