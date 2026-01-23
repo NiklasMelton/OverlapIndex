@@ -10,7 +10,6 @@ repository = "https://github.com/NiklasMelton/OverlapIndex"
 documentation = "https://github.com/NiklasMelton/OverlapIndex"
 keywords = ["incremental cluster validity", "cluster validity", "ART", "machine learning", "transfer learning", "clustering"]
 
-# Single-file module (repo root)
 packages = [{ include = "overlapindex" }]
 
 [tool.poetry.dependencies]
