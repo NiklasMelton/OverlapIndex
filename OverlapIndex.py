@@ -77,7 +77,7 @@ class OverlapIndex:
             self,
             rho: float = 0.9,
             r_hat: float = np.inf,
-            ART: Literal["Fuzzy", "Hypersphere"] = "Hypersphere",
+            ART: Literal["Fuzzy", "Hypersphere"] = "Fuzzy",
             match_tracking="MT+",
     ):
         assert ART in ["Fuzzy", "Hypersphere"]
