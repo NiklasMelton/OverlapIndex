@@ -1,0 +1,42 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write  # required for PyPI Trusted Publishing (OIDC)
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    environment: pypi  # optional but recommended if you configured trusted publisher w/ env
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      # Optional sanity check: verify metadata, long_description, etc.
+      - name: Check dist
+        run: |
+          python -m pip install twine
+          twine check dist/*
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
