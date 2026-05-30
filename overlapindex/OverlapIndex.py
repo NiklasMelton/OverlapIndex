@@ -24,9 +24,11 @@ class OverlapIndex:
         # centroid backend options:
         kmeans_k: Union[int, Dict[Any, int]] = 8,
         kmeans_kwargs: Optional[dict] = None,
+        offline_chunk_size: Optional[int] = 10_000,
     ):
         self.model_type = model_type
         self.match_tracking = match_tracking
+        self.offline_chunk_size = offline_chunk_size
 
         # indices / bookkeeping
         self.sparse_adj = defaultdict(lambda: 0)
@@ -189,33 +191,84 @@ class OverlapIndex:
             self.index = float(np.mean(list(self.singleton_index.values())))
         return self.index
 
-    # ---- offline (KMeans primary; also works for ARTMAP if you want) ----
+    # ---- offline (centroid backends primary; also works for ARTMAP if you want) ----
 
-    def fit_offline(self, X, Y, reset_state: bool = True):
+    def _fit_offline_centroid_optimized(self, X_prep, Y, classes):
         """
-        Offline fit for KMeans (and permitted for ARTMAP as one-shot batch partial_fit).
-        Computes overlap index by replaying samples with the same equations.
+        Optimized offline overlap computation for centroid-style backends.
 
-        Returns self.index
+        This avoids materializing scores for all clusters for every sample. Instead,
+        for each class pair (y, b), it scores only clusters owned by y or b in one
+        vectorized block and updates the overlap counts from the resulting top-2 BMUs.
         """
-        if reset_state:
-            self._reset_indices()
+        BMU1 = self._model.bmu_for_class_batch(X_prep, Y)
+        class_to_cluster_arrays = self._model.class_center_id_arrays
 
-        X_prep = self._prep_X(X)
-        Y = np.asarray(Y)
-        classes = np.unique(Y)
+        for y in classes:
+            row_idx = np.where(Y == y)[0]
+            if row_idx.size == 0:
+                continue
 
-        # Fit backend and sync rev_map
-        self._model.fit_offline(X_prep, Y)
-        self.rev_map = defaultdict(set, {c: set(s) for c, s in self._model.class_to_clusters.items()})
+            X_y = X_prep[row_idx]
+            bmu1_y = BMU1[row_idx]
+            n_y = row_idx.size
+            chunk_size = n_y if self.offline_chunk_size is None else int(self.offline_chunk_size)
+            if chunk_size <= 0:
+                raise ValueError("offline_chunk_size must be a positive integer or None.")
+            own_ids = class_to_cluster_arrays.get(y)
+            if own_ids is None or own_ids.size == 0:
+                continue
 
-        # Cardinalities are per-class sample counts (eq 4 denominator)
-        for c in classes:
-            self.cluster_cardinality[c] += int(np.sum(Y == c))
-            if c not in self.singleton_index:
-                self.singleton_index[c] = 1.0
+            for b in self.rev_map.keys():
+                if b == y:
+                    continue
 
-        # Replay to compute overlap stats. Use batch BMU lookup where the backend provides it.
+                other_ids = class_to_cluster_arrays.get(b)
+                if other_ids is None or other_ids.size == 0:
+                    continue
+
+                candidate_ids = np.concatenate((own_ids, other_ids))
+                if candidate_ids.size == 0:
+                    continue
+
+                overlap_count = 0
+                for start in range(0, n_y, chunk_size):
+                    stop = min(start + chunk_size, n_y)
+                    X_chunk = X_y[start:stop]
+                    bmu1_chunk = bmu1_y[start:stop]
+
+                    scores = self._model._scores_matrix(X_chunk, candidate_ids)
+                    if scores.shape[1] == 0:
+                        continue
+
+                    if scores.shape[1] == 1:
+                        selected = np.full(stop - start, int(candidate_ids[0]), dtype=int)
+                    else:
+                        top2_rel = np.argpartition(scores, -2, axis=1)[:, -2:]
+                        top2_scores = np.take_along_axis(scores, top2_rel, axis=1)
+                        order = np.argsort(top2_scores, axis=1)[:, ::-1]
+                        top2_rel_sorted = np.take_along_axis(top2_rel, order, axis=1)
+                        top2_ids = candidate_ids[top2_rel_sorted]
+                        selected = np.where(top2_ids[:, 0] == bmu1_chunk, top2_ids[:, 1], top2_ids[:, 0])
+
+                    overlap_count += int(np.isin(selected, other_ids).sum())
+                self.sparse_adj[(y, b)] += overlap_count
+                self.pairwise_index[(y, b)] = 1.0 - (
+                    float(self.sparse_adj[(y, b)]) / float(self.cluster_cardinality[y])
+                )
+
+        if len(self.rev_map) > 1:
+            for y in classes:
+                self.singleton_index[y] = min(
+                    [self.pairwise_index[(y, b)] for b in self.rev_map.keys() if b != y]
+                )
+            self.index = float(np.mean(list(self.singleton_index.values())))
+        return self.index
+
+    def _fit_offline_replay(self, X_prep, Y, classes):
+        """
+        Compatibility fallback for non-centroid backends.
+        """
         BMU1 = self._model.bmu_for_class_batch(X_prep, Y)
         for x, y, bmu1 in zip(X_prep, Y, BMU1):
             bmu1 = int(bmu1)
@@ -241,3 +294,37 @@ class OverlapIndex:
                 )
             self.index = float(np.mean(list(self.singleton_index.values())))
         return self.index
+
+    def fit_offline(self, X, Y, reset_state: bool = True):
+        """
+        Offline fit for centroid backends and one-shot batch ARTMAP.
+
+        Centroid backends use a chunked vectorized class-pair scoring path. Other
+        backends fall back to replaying samples with backend top-k hooks.
+
+        Returns self.index
+        """
+        if reset_state:
+            self._reset_indices()
+
+        X_prep = self._prep_X(X)
+        Y = np.asarray(Y)
+        classes = np.unique(Y)
+
+        # Fit backend and sync rev_map
+        self._model.fit_offline(X_prep, Y)
+        self.rev_map = defaultdict(set, {c: set(s) for c, s in self._model.class_to_clusters.items()})
+
+        # Cardinalities are per-class sample counts (eq 4 denominator)
+        for c in classes:
+            self.cluster_cardinality[c] += int(np.sum(Y == c))
+            if c not in self.singleton_index:
+                self.singleton_index[c] = 1.0
+
+        if len(classes) <= 1:
+            return self.index
+
+        if self._is_offline_backend and hasattr(self._model, "_scores_matrix"):
+            return self._fit_offline_centroid_optimized(X_prep, Y, classes)
+
+        return self._fit_offline_replay(X_prep, Y, classes)
