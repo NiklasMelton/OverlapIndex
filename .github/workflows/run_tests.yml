@@ -1,0 +1,45 @@
+name: Run Python Unit Tests
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  POETRY_VERSION: "2.4.1"
+
+jobs:
+  pytest:
+    name: pytest
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install Poetry
+        run: |
+          pipx install poetry==${POETRY_VERSION}
+          poetry --version
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.9"
+          cache: "poetry"
+          cache-dependency-path: |
+            pyproject.toml
+            poetry.lock
+
+      - name: Install package and test dependencies
+        run: |
+          poetry env use python
+          poetry install --with dev --no-interaction --no-ansi
+
+      - name: Run pytest
+        run: |
+          poetry run python -m pytest -q tests/test_overlap_index_regression.py
