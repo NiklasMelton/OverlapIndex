@@ -40,6 +40,36 @@ class GrowingArray1D:
             yield v
 
 
+def top_two_indices_against_others_from_backend(model, x, classes, a):
+    """
+    Return top-2 cluster ids for each class-pair using the backend's optimized
+    pairwise top-k API instead of requiring a full scores_all vector.
+
+    Parameters
+    ----------
+    model : _BaseManyToOneClusteringModel-like
+        Backend implementing top2_for_class_pair(x, own_class, other_class).
+    x : np.ndarray
+        One preprocessed sample.
+    classes : iterable
+        Class labels to compare against.
+    a : Any
+        Own/current class label.
+
+    Returns
+    -------
+    dict
+        Maps each class b != a to a tuple of top cluster ids among clusters(a) union clusters(b).
+    """
+    result = {}
+    for b in classes:
+        if b == a:
+            continue
+        ids, _ = model.top2_for_class_pair(x, own_class=a, other_class=b)
+        result[b] = tuple(int(i) for i in ids)
+    return result
+
+
 def top_two_indices_against_others(T, classes, class_to_clusters, a):
     T = np.asarray(T)
     result = {}
@@ -51,17 +81,17 @@ def top_two_indices_against_others(T, classes, class_to_clusters, a):
             continue
 
         clusters_b = class_to_clusters.get(b, set())
-        cluster_indices = list(clusters_a | clusters_b)
+        cluster_indices = np.fromiter(clusters_a | clusters_b, dtype=int)
 
         if len(cluster_indices) == 0:
             top2 = ()
         elif len(cluster_indices) == 1:
-            top2 = (cluster_indices[0],)
+            top2 = (int(cluster_indices[0]),)
         else:
             values = T[cluster_indices]
             top2_rel = np.argpartition(values, -2)[-2:]
             top2_sorted = top2_rel[np.argsort(values[top2_rel])[::-1]]
-            top2 = tuple(cluster_indices[i] for i in top2_sorted)
+            top2 = tuple(int(cluster_indices[i]) for i in top2_sorted)
 
         result[b] = top2
 

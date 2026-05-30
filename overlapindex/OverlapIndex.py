@@ -2,14 +2,12 @@ import numpy as np
 from artlib import complement_code
 from collections import defaultdict
 from typing import Literal, Optional, Union, Dict, Any
-from overlapindex.utils import (
-    top_two_indices_against_others,
-    GrowingArray1D,
-)
+from overlapindex.utils import top_two_indices_against_others_from_backend
 from overlapindex.clustering import (
     _BaseManyToOneClusteringModel,
     _ARTMAPManyToOne,
-    _KMeansManyToOne
+    _KMeansManyToOne,
+    _MiniBatchKMeansManyToOne,
 )
 
 # ----------------------------
@@ -21,9 +19,9 @@ class OverlapIndex:
         self,
         rho: float = 0.9,
         r_hat: float = np.inf,
-        model_type: Literal["Fuzzy", "Hypersphere", "KMeans"] = "Fuzzy",
+        model_type: Literal["Fuzzy", "Hypersphere", "KMeans", "MiniBatchKMeans"] = "Fuzzy",
         match_tracking: str = "MT+",
-        # KMeans options:
+        # centroid backend options:
         kmeans_k: Union[int, Dict[Any, int]] = 8,
         kmeans_kwargs: Optional[dict] = None,
     ):
@@ -32,7 +30,7 @@ class OverlapIndex:
 
         # indices / bookkeeping
         self.sparse_adj = defaultdict(lambda: 0)
-        self.cluster_cardinality = GrowingArray1D()
+        self.cluster_cardinality = defaultdict(int)
         self.rev_map = defaultdict(set)
         self.pairwise_index = defaultdict(lambda: 1.0)
         self.singleton_index = defaultdict(lambda: 1.0)
@@ -43,8 +41,20 @@ class OverlapIndex:
             self._model: _BaseManyToOneClusteringModel = _ARTMAPManyToOne(
                 model_type=model_type, rho=rho, r_hat=r_hat
             )
-        else:
+        elif model_type == "KMeans":
             self._model = _KMeansManyToOne(k=kmeans_k, kmeans_kwargs=kmeans_kwargs)
+        elif model_type == "MiniBatchKMeans":
+            self._model = _MiniBatchKMeansManyToOne(k=kmeans_k, kmeans_kwargs=kmeans_kwargs)
+        else:
+            raise ValueError(f"Unknown model_type: {model_type}")
+
+    @property
+    def _is_artmap_backend(self):
+        return self.model_type in ["Fuzzy", "Hypersphere"]
+
+    @property
+    def _is_offline_backend(self):
+        return not self._is_artmap_backend
 
     # ---- preprocessing ----
 
@@ -53,7 +63,7 @@ class OverlapIndex:
 
     def _reset_indices(self):
         self.sparse_adj = defaultdict(lambda: 0)
-        self.cluster_cardinality = GrowingArray1D()
+        self.cluster_cardinality = defaultdict(int)
         self.rev_map = defaultdict(set)
         self.pairwise_index = defaultdict(lambda: 1.0)
         self.singleton_index = defaultdict(lambda: 1.0)
@@ -63,13 +73,13 @@ class OverlapIndex:
 
     @property
     def module_a(self):
-        if self.model_type in ["Fuzzy", "Hypersphere"]:
+        if self._is_artmap_backend:
             return self._model.model.module_a
         raise AttributeError("module_a is only available for ARTMAP backends.")
 
     @property
     def map(self):
-        if self.model_type in ["Fuzzy", "Hypersphere"]:
+        if self._is_artmap_backend:
             return self._model.model.map
         return None
 
@@ -79,30 +89,27 @@ class OverlapIndex:
         """
         Return (bmu1, bmu2) as global cluster ids for a single *preprocessed* sample.
         """
-        scores = self._model.scores_all(x)
-        if scores.size == 0:
+        ids, _ = self._model.topk(x, k=2)
+        if ids.size == 0:
             return None, None
-        order = np.argsort(scores)[::-1]  # higher is better
-        b1 = int(order[0])
-        b2 = int(order[1]) if len(order) > 1 else None
+        b1 = int(ids[0])
+        b2 = int(ids[1]) if ids.size > 1 else None
         return b1, b2
 
     def predict_subset_pairs(self, x, y):
         """
-        Keep your existing top_two_indices_against_others(...) flow:
-        - scores over all clusters
-        - rev_map: class -> set(cluster_ids)
+        Return top-2 cluster ids for each pair (y, b) using backend top-k hooks.
+        This avoids materializing scores for all clusters when the backend can optimize pairwise lookup.
         """
-        scores = self._model.scores_all(x)
         classes = list(self.rev_map.keys())
-        return top_two_indices_against_others(scores, classes, self.rev_map, y)
+        return top_two_indices_against_others_from_backend(self._model, x, classes, y)
 
     # ---- incremental (ARTMAP only) ----
 
     def add_sample(self, x, y):
-        if self.model_type == "KMeans":
+        if self._is_offline_backend:
             raise NotImplementedError(
-                "KMeans backend is offline-only here. Use fit_offline(X, Y)."
+                f"{self.model_type} backend is offline-only here. Use fit_offline(X, Y)."
             )
 
         x_prep = self._prep_X([x])
@@ -142,7 +149,7 @@ class OverlapIndex:
         return self.index
 
     def add_batch(self, X, Y):
-        if self.model_type == "KMeans":
+        if self._is_offline_backend:
             # For consistency with your original API, treat add_batch as offline-fit+score.
             return self.fit_offline(X, Y, reset_state=True)
 
@@ -208,9 +215,10 @@ class OverlapIndex:
             if c not in self.singleton_index:
                 self.singleton_index[c] = 1.0
 
-        # Replay to compute overlap stats
-        for x, y in zip(X_prep, Y):
-            bmu1 = int(self._model.bmu_for_class(x, y))
+        # Replay to compute overlap stats. Use batch BMU lookup where the backend provides it.
+        BMU1 = self._model.bmu_for_class_batch(X_prep, Y)
+        for x, y, bmu1 in zip(X_prep, Y, BMU1):
+            bmu1 = int(bmu1)
             top2bmu = self.predict_subset_pairs(x, y)
 
             for b in self.rev_map.keys():
