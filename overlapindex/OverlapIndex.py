@@ -2,7 +2,10 @@ import numpy as np
 from artlib import complement_code
 from collections import defaultdict
 from typing import Literal, Optional, Union, Dict, Any
-from overlapindex.utils import top_two_indices_against_others_from_backend
+from overlapindex.utils import (
+    top_two_indices_against_others_from_backend,
+    top_two_indices_against_others
+)
 from overlapindex.clustering import (
     _BaseManyToOneClusteringModel,
     _ARTMAPManyToOne,
@@ -98,14 +101,24 @@ class OverlapIndex:
         b2 = int(ids[1]) if ids.size > 1 else None
         return b1, b2
 
+    # def predict_subset_pairs(self, x, y):
+    #     """
+    #     Return top-2 cluster ids for each pair (y, b) using backend top-k hooks.
+    #     This avoids materializing scores for all clusters when the backend can optimize pairwise lookup.
+    #     """
+    #     classes = list(self.rev_map.keys())
+    #     return top_two_indices_against_others_from_backend(self._model, x, classes, y)
     def predict_subset_pairs(self, x, y):
         """
-        Return top-2 cluster ids for each pair (y, b) using backend top-k hooks.
-        This avoids materializing scores for all clusters when the backend can optimize pairwise lookup.
-        """
-        classes = list(self.rev_map.keys())
-        return top_two_indices_against_others_from_backend(self._model, x, classes, y)
+        Legacy-compatible subset-pair prediction.
 
+        This intentionally uses self.rev_map, not backend.class_to_clusters,
+        because add_batch builds rev_map incrementally and the historical
+        OverlapIndex behavior depends on that replay state.
+        """
+        scores = self._model.scores_all(x)
+        classes = list(self.rev_map.keys())
+        return top_two_indices_against_others(scores, classes, self.rev_map, y)
     # ---- incremental (ARTMAP only) ----
 
     def add_sample(self, x, y):
