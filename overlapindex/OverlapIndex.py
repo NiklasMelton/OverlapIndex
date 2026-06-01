@@ -104,8 +104,12 @@ class OverlapIndex:
             raise NotImplementedError(
                 "KMeans backend is offline-only here. Use fit_offline(X, Y)."
             )
+        x_ = np.asarray(x, dtype=float)
 
-        x_prep = self._prep_X([x])
+        if x_.ndim != 1:
+            raise ValueError("x must be a 1D array or list")
+
+        x_prep = self._prep_X(x_.reshape(1, -1))
         self._model.partial_fit(
             x_prep, [y], match_tracking=self.match_tracking
         )
