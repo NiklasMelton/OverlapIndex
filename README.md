@@ -87,7 +87,7 @@ The Overlap Index can be used in several settings:
 
 ## Basic Usage
 
-    from overlap_index import OverlapIndex
+    from overlapindex import OverlapIndex
 
     oi = OverlapIndex(
         rho=0.9,
