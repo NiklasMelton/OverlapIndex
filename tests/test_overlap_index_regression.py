@@ -17,9 +17,9 @@ ATOL = 1e-12
 
 # Placeholder values. Replace these after the first pytest run.
 EXPECTED_ADD_BATCH_INDEX = {
-    "Fuzzy": 0.82,
-    "Hypersphere": 0.80,
-    "KMeans": 0.84,
+    "Fuzzy": 0.805555,
+    "Hypersphere": 0.638888,
+    "KMeans": 0.972222,
 }
 
 # KMeans.add_sample is expected to raise, so only online ARTMAP-style backends
@@ -56,7 +56,7 @@ def _make_model(model_type):
 
     return OverlapIndex(
         model_type=model_type,
-        rho=0.75,
+        rho=0.9,
         r_hat=np.inf,
     )
 
