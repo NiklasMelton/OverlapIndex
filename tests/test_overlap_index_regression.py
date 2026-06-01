@@ -15,6 +15,8 @@ except ImportError:  # pragma: no cover - useful when running the file directly 
 
 ATOL = 1e-12
 
+ADD_SAMPLE_IDX = 20
+
 # Placeholder values. Replace these after the first pytest run.
 EXPECTED_ADD_BATCH_INDEX = {
     "Fuzzy": 0.8333333333333334,
@@ -36,14 +38,6 @@ def _iris_data():
     X = MinMaxScaler().fit_transform(X)
     return X.astype(float), y.astype(int)
 
-
-def _balanced_indices(y, per_class, offset=0):
-    """Select the same number of samples from each class."""
-    selected = []
-    for cls in np.unique(y):
-        cls_indices = np.flatnonzero(y == cls)
-        selected.extend(cls_indices[offset : offset + per_class])
-    return np.asarray(selected, dtype=int)
 
 
 def _make_model(model_type):
@@ -85,10 +79,9 @@ def _assert_return_matches_self_index(model, returned, context):
 @pytest.mark.parametrize("model_type", ["Fuzzy", "Hypersphere", "KMeans"])
 def test_add_batch_index_regression(model_type):
     X, y = _iris_data()
-    batch_idx = _balanced_indices(y, per_class=12, offset=0)
 
     model = _make_model(model_type)
-    returned = model.add_batch(X[batch_idx], y[batch_idx])
+    returned = model.add_batch(X, y)
 
     _assert_return_matches_self_index(model, returned, f"{model_type}.add_batch")
     _assert_index_close(
@@ -101,12 +94,10 @@ def test_add_batch_index_regression(model_type):
 @pytest.mark.parametrize("model_type", ["Fuzzy", "Hypersphere"])
 def test_add_sample_after_batch_index_regression(model_type):
     X, y = _iris_data()
-    batch_idx = _balanced_indices(y, per_class=10, offset=0)
-    sample_idx = int(_balanced_indices(y, per_class=1, offset=10)[0])
 
     model = _make_model(model_type)
-    model.add_batch(X[batch_idx], y[batch_idx])
-    returned = model.add_sample(X[sample_idx], int(y[sample_idx]))
+    model.add_batch(X[:-ADD_SAMPLE_IDX], y[:-ADD_SAMPLE_IDX])
+    returned = model.add_sample(X[ADD_SAMPLE_IDX], int(y[ADD_SAMPLE_IDX]))
 
     _assert_return_matches_self_index(model, returned, f"{model_type}.add_sample")
     _assert_index_close(
