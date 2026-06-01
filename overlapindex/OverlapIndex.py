@@ -1,7 +1,7 @@
 import numpy as np
 from artlib import complement_code
 from collections import defaultdict
-from typing import Literal, Optional, Union, Dict, Any
+from typing import Literal, Optional, Union, Dict, Any, Tuple
 from overlapindex.utils import (
     top_two_indices_against_others_from_backend,
     top_two_indices_against_others
@@ -18,6 +18,14 @@ from overlapindex.clustering import (
 # ----------------------------
 
 class OverlapIndex:
+    """
+    Compute an overlap index over class-owned clustering prototypes.
+
+    The class supports ARTMAP-style online backends and centroid-style offline
+    backends. All samples are preprocessed before being passed to the backend.
+    The index is updated by comparing each sample's best matching unit against
+    competing class-owned clusters.
+    """
     def __init__(
         self,
         rho: float = 0.9,
@@ -28,7 +36,29 @@ class OverlapIndex:
         kmeans_k: Union[int, Dict[Any, int]] = 8,
         kmeans_kwargs: Optional[dict] = None,
         offline_chunk_size: Optional[int] = 10_000,
-    ):
+    ) -> None:
+        """
+        Initialize the overlap index and its clustering backend.
+
+        Parameters
+        ----------
+        rho : float, default=0.9
+            ARTMAP vigilance parameter used by Fuzzy and Hypersphere backends.
+        r_hat : float, default=np.inf
+            Hypersphere ARTMAP radius constraint.
+        model_type : {"Fuzzy", "Hypersphere", "KMeans", "MiniBatchKMeans"}, default="Fuzzy"
+            Backend family used to create class-owned clusters.
+        match_tracking : str, default="MT+"
+            Match-tracking mode forwarded to ARTMAP partial-fit calls.
+        kmeans_k : int or dict, default=8
+            Number of clusters per class for centroid backends. A dictionary may
+            specify class-specific values.
+        kmeans_kwargs : dict, optional
+            Keyword arguments forwarded to the selected centroid backend.
+        offline_chunk_size : int or None, default=10000
+            Number of samples per chunk for optimized offline centroid scoring.
+            If None, each class block is scored at once.
+        """
         self.model_type = model_type
         self.match_tracking = match_tracking
         self.offline_chunk_size = offline_chunk_size
@@ -54,19 +84,23 @@ class OverlapIndex:
             raise ValueError(f"Unknown model_type: {model_type}")
 
     @property
-    def _is_artmap_backend(self):
+    def _is_artmap_backend(self) -> bool:
+        """Return True when the active backend is ARTMAP-style and online-capable."""
         return self.model_type in ["Fuzzy", "Hypersphere"]
 
     @property
-    def _is_offline_backend(self):
+    def _is_offline_backend(self) -> bool:
+        """Return True when the active backend is restricted to offline fitting."""
         return not self._is_artmap_backend
 
     # ---- preprocessing ----
 
-    def _prep_X(self, X):
+    def _prep_X(self, X: np.ndarray) -> np.ndarray:
+        """Preprocess raw samples before clustering."""
         return complement_code(X)
 
-    def _reset_indices(self):
+    def _reset_indices(self) -> None:
+        """Reset overlap-index bookkeeping without replacing the clustering backend."""
         self.sparse_adj = defaultdict(lambda: 0)
         self.cluster_cardinality = defaultdict(int)
         self.rev_map = defaultdict(set)
@@ -77,22 +111,34 @@ class OverlapIndex:
     # ---- compatibility accessors (optional) ----
 
     @property
-    def module_a(self):
+    def module_a(self) -> Any:
+        """Return the underlying ARTMAP module A object for ARTMAP backends."""
         if self._is_artmap_backend:
             return self._model.model.module_a
         raise AttributeError("module_a is only available for ARTMAP backends.")
 
     @property
-    def map(self):
+    def map(self) -> Optional[Any]:
+        """Return the underlying ARTMAP map object when available."""
         if self._is_artmap_backend:
             return self._model.model.map
         return None
 
     # ---- BMU helpers ----
 
-    def get_top2_bmu(self, x):
+    def get_top2_bmu(self, x: np.ndarray) -> Tuple[Optional[int], Optional[int]]:
         """
-        Return (bmu1, bmu2) as global cluster ids for a single *preprocessed* sample.
+        Return the first and second global BMU ids for one preprocessed sample.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            A single sample that has already been transformed by _prep_X.
+
+        Returns
+        -------
+        tuple of int or None
+            The best and second-best global cluster ids. Missing entries are None.
         """
         ids, _ = self._model.topk(x, k=2)
         if ids.size == 0:
@@ -101,7 +147,13 @@ class OverlapIndex:
         b2 = int(ids[1]) if ids.size > 1 else None
         return b1, b2
 
-    def predict_subset_pairs(self, x, y):
+    def predict_subset_pairs(self, x: np.ndarray, y: Any) -> Dict[Any, Tuple[int, ...]]:
+        """
+        Return top-2 candidate cluster ids for comparisons between one class and all others.
+
+        The candidate sets are taken from self.rev_map to preserve the historical
+        replay semantics used by add_batch and fit_offline.
+        """
         classes = list(self.rev_map.keys())
         return top_two_indices_against_others_from_backend(
             self._model,
@@ -110,20 +162,14 @@ class OverlapIndex:
             self.rev_map,
             y,
         )
-    # def predict_subset_pairs(self, x, y):
-    #     """
-    #     Legacy-compatible subset-pair prediction.
-    #
-    #     This intentionally uses self.rev_map, not backend.class_to_clusters,
-    #     because add_batch builds rev_map incrementally and the historical
-    #     OverlapIndex behavior depends on that replay state.
-    #     """
-    #     scores = self._model.scores_all(x)
-    #     classes = list(self.rev_map.keys())
-    #     return top_two_indices_against_others(scores, classes, self.rev_map, y)
-    # ---- incremental (ARTMAP only) ----
 
-    def add_sample(self, x, y):
+    def add_sample(self, x: np.ndarray, y: Any) -> float:
+        """
+        Incrementally add one labeled sample and update the overlap index.
+
+        This method is available only for ARTMAP-style backends. Centroid
+        backends are offline-only and should use fit_offline or add_batch.
+        """
         if self._is_offline_backend:
             raise NotImplementedError(
                 f"{self.model_type} backend is offline-only here. Use fit_offline(X, Y)."
@@ -169,7 +215,13 @@ class OverlapIndex:
             self.index = float(np.mean(list(self.singleton_index.values())))
         return self.index
 
-    def add_batch(self, X, Y):
+    def add_batch(self, X: np.ndarray, Y: np.ndarray) -> float:
+        """
+        Add a labeled batch and update the overlap index.
+
+        ARTMAP backends perform a batch partial-fit followed by historical replay.
+        Offline centroid backends delegate to fit_offline with reset_state=True.
+        """
         if self._is_offline_backend:
             # For consistency with your original API, treat add_batch as offline-fit+score.
             return self.fit_offline(X, Y, reset_state=True)
@@ -212,7 +264,12 @@ class OverlapIndex:
 
     # ---- offline (centroid backends primary; also works for ARTMAP if you want) ----
 
-    def _fit_offline_centroid_optimized(self, X_prep, Y, classes):
+    def _fit_offline_centroid_optimized(
+        self,
+        X_prep: np.ndarray,
+        Y: np.ndarray,
+        classes: np.ndarray,
+    ) -> float:
         """
         Optimized offline overlap computation for centroid-style backends.
 
@@ -284,7 +341,12 @@ class OverlapIndex:
             self.index = float(np.mean(list(self.singleton_index.values())))
         return self.index
 
-    def _fit_offline_replay(self, X_prep, Y, classes):
+    def _fit_offline_replay(
+        self,
+        X_prep: np.ndarray,
+        Y: np.ndarray,
+        classes: np.ndarray,
+    ) -> float:
         """
         Compatibility fallback for non-centroid backends.
         """
@@ -314,14 +376,26 @@ class OverlapIndex:
             self.index = float(np.mean(list(self.singleton_index.values())))
         return self.index
 
-    def fit_offline(self, X, Y, reset_state: bool = True):
+    def fit_offline(self, X: np.ndarray, Y: np.ndarray, reset_state: bool = True) -> float:
         """
-        Offline fit for centroid backends and one-shot batch ARTMAP.
+        Fit the backend on a full labeled dataset and compute the overlap index.
 
         Centroid backends use a chunked vectorized class-pair scoring path. Other
         backends fall back to replaying samples with backend top-k hooks.
 
-        Returns self.index
+        Parameters
+        ----------
+        X : np.ndarray
+            Raw input samples.
+        Y : np.ndarray
+            Class labels aligned with X.
+        reset_state : bool, default=True
+            If True, reset overlap-index bookkeeping before fitting.
+
+        Returns
+        -------
+        float
+            The current overlap index value.
         """
         if reset_state:
             self._reset_indices()
