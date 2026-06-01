@@ -20,7 +20,7 @@ ADD_SAMPLE_IDX = 20
 # Placeholder values. Replace these after the first pytest run.
 EXPECTED_ADD_BATCH_INDEX = {
     "Fuzzy": 0.9266666666666667,
-    "Hypersphere": 0.6388888888888888,
+    "Hypersphere": 0.9333333333333332,
     "KMeans": 0.9266666666666666,
 }
 
@@ -28,7 +28,7 @@ EXPECTED_ADD_BATCH_INDEX = {
 # are included here.
 EXPECTED_ADD_SAMPLE_AFTER_BATCH_INDEX = {
     "Fuzzy": 0.9155555555555556,
-    "Hypersphere": 0.603030303030303,
+    "Hypersphere": 0.9155555555555556,
 }
 
 
