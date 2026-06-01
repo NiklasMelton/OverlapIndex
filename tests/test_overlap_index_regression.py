@@ -19,15 +19,15 @@ ADD_SAMPLE_IDX = 20
 
 # Placeholder values. Replace these after the first pytest run.
 EXPECTED_ADD_BATCH_INDEX = {
-    "Fuzzy": 0.8333333333333334,
+    "Fuzzy": 0.9266666666666667,
     "Hypersphere": 0.6388888888888888,
-    "KMeans": 0.9722222222222222,
+    "KMeans": 0.9266666666666666,
 }
 
 # KMeans.add_sample is expected to raise, so only online ARTMAP-style backends
 # are included here.
 EXPECTED_ADD_SAMPLE_AFTER_BATCH_INDEX = {
-    "Fuzzy": 0.8333333333333334,
+    "Fuzzy": 0.9155555555555556,
     "Hypersphere": 0.603030303030303,
 }
 
@@ -51,7 +51,7 @@ def _make_model(model_type):
     return OverlapIndex(
         model_type=model_type,
         rho=0.95,
-        r_hat=np.inf,
+        r_hat=0.1,
     )
 
 
