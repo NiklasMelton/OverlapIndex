@@ -17,16 +17,16 @@ ATOL = 1e-12
 
 # Placeholder values. Replace these after the first pytest run.
 EXPECTED_ADD_BATCH_INDEX = {
-    "Fuzzy": 0.805555,
-    "Hypersphere": 0.638888,
-    "KMeans": 0.972222,
+    "Fuzzy": 0.8333333333333334,
+    "Hypersphere": 0.6388888888888888,
+    "KMeans": 0.9722222222222222,
 }
 
 # KMeans.add_sample is expected to raise, so only online ARTMAP-style backends
 # are included here.
 EXPECTED_ADD_SAMPLE_AFTER_BATCH_INDEX = {
-    "Fuzzy": 0.81,
-    "Hypersphere": 0.79,
+    "Fuzzy": 0.8333333333333334,
+    "Hypersphere": 0.603030303030303,
 }
 
 
