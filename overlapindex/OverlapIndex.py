@@ -4,7 +4,6 @@ from collections import defaultdict
 from typing import Literal, Optional, Union, Dict, Any, Tuple
 from overlapindex.utils import (
     top_two_indices_against_others_from_backend,
-    top_two_indices_against_others
 )
 from overlapindex.clustering import (
     _BaseManyToOneClusteringModel,
