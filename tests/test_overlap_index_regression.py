@@ -56,7 +56,7 @@ def _make_model(model_type):
 
     return OverlapIndex(
         model_type=model_type,
-        rho=0.9,
+        rho=0.95,
         r_hat=np.inf,
     )
 
