@@ -22,6 +22,7 @@ EXPECTED_ADD_BATCH_INDEX = {
     "Fuzzy": 0.9266666666666667,
     "Hypersphere": 0.9333333333333332,
     "KMeans": 0.9266666666666666,
+    "MiniBatchKMeans": 0.0,
 }
 
 # KMeans.add_sample is expected to raise, so only online ARTMAP-style backends
@@ -47,7 +48,17 @@ def _make_model(model_type):
             kmeans_k=10,
             kmeans_kwargs={"random_state": 0, "n_init": 10},
         )
-
+    if model_type == "MiniBatchKMeans":
+        return OverlapIndex(
+            model_type="MiniBatchKMeans",
+            kmeans_k=10,
+            kmeans_kwargs={
+                "random_state": 0,
+                "n_init": 1,
+                "batch_size": 32,
+                "max_iter": 100,
+            },
+        )
     return OverlapIndex(
         model_type=model_type,
         rho=0.95,
@@ -91,6 +102,20 @@ def test_add_batch_index_regression(model_type):
     )
 
 
+def test_minibatch_kmeans_add_batch_index_regression():
+    X, y = _iris_data()
+
+    model = _make_model("MiniBatchKMeans")
+    returned = model.add_batch(X, y)
+
+    _assert_return_matches_self_index(model, returned, "MiniBatchKMeans.add_batch")
+    _assert_index_close(
+        model.index,
+        EXPECTED_ADD_BATCH_INDEX["MiniBatchKMeans"],
+        "MiniBatchKMeans.add_batch",
+    )
+
+
 @pytest.mark.parametrize("model_type", ["Fuzzy", "Hypersphere"])
 def test_add_sample_after_batch_index_regression(model_type):
     X, y = _iris_data()
@@ -107,16 +132,18 @@ def test_add_sample_after_batch_index_regression(model_type):
     )
 
 
-def test_kmeans_add_sample_raises_not_implemented():
+@pytest.mark.parametrize("model_type", ["KMeans", "MiniBatchKMeans"])
+def test_offline_backends_add_sample_raises_not_implemented(model_type):
     X, y = _iris_data()
-    model = _make_model("KMeans")
+    model = _make_model(model_type)
 
     with pytest.raises(NotImplementedError, match="offline-only"):
         model.add_sample(X[0], int(y[0]))
 
 
-def test_kmeans_module_a_accessor_raises_attribute_error():
-    model = _make_model("KMeans")
+@pytest.mark.parametrize("model_type", ["KMeans", "MiniBatchKMeans"])
+def test_offline_backends_module_a_accessor_raises_attribute_error(model_type):
+    model = _make_model(model_type)
 
     with pytest.raises(AttributeError, match="ARTMAP backends"):
         _ = model.module_a
