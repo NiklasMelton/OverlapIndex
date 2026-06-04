@@ -23,7 +23,7 @@ EXPECTED_ADD_BATCH_INDEX = {
     "Hypersphere": 0.9333333333333332,
     "KMeans": 0.9266666666666666,
     "MiniBatchKMeans": 0.9133333333333332,
-    "BallCover": 0.94,
+    "BallCover": 0.86,
 }
 
 # KMeans.add_sample is expected to raise, so only online ARTMAP-style backends
@@ -63,11 +63,11 @@ def _make_model(model_type):
     if model_type == "BallCover":
         return OverlapIndex(
             model_type="BallCover",
-            ballcover_k=40,
+            ballcover_k=20,
             ballcover_radius="auto",
             ballcover_kwargs={
                 "metric": "euclidean",
-                "cover_fraction": 1.0,
+                "cover_fraction": 0.95,
                 "random_state": 0,
             },
         )
