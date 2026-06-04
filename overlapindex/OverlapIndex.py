@@ -21,8 +21,9 @@ class OverlapIndex:
     """
     Compute an overlap index over class-owned clustering prototypes.
 
-    The class supports ARTMAP-style online backends and centroid-style offline
-    backends. All samples are preprocessed before being passed to the backend.
+    The class supports centroid-style offline backends by default, along with
+    ARTMAP-style online backends when explicitly selected. All samples are
+    preprocessed before being passed to the backend.
     The index is updated by comparing each sample's best matching unit against
     competing class-owned clusters.
     """
@@ -30,7 +31,7 @@ class OverlapIndex:
         self,
         rho: float = 0.9,
         r_hat: float = np.inf,
-        model_type: Literal["Fuzzy", "Hypersphere", "KMeans", "MiniBatchKMeans", "BallCover"] = "Fuzzy",
+        model_type: Literal["Fuzzy", "Hypersphere", "KMeans", "MiniBatchKMeans", "BallCover"] = "MiniBatchKMeans",
         match_tracking: str = "MT+",
         # centroid backend options:
         kmeans_k: Union[int, Dict[Any, int]] = 8,
@@ -50,7 +51,7 @@ class OverlapIndex:
             ARTMAP vigilance parameter used by Fuzzy and Hypersphere backends.
         r_hat : float, default=np.inf
             Hypersphere ARTMAP radius constraint.
-        model_type : {"Fuzzy", "Hypersphere", "KMeans", "MiniBatchKMeans", "BallCover"}, default="Fuzzy"
+        model_type : {"Fuzzy", "Hypersphere", "KMeans", "MiniBatchKMeans", "BallCover"}, default="MiniBatchKMeans"
             Backend family used to create class-owned clusters.
         match_tracking : str, default="MT+"
             Match-tracking mode forwarded to ARTMAP partial-fit calls.
