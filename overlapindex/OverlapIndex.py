@@ -285,6 +285,52 @@ class OverlapIndex:
             self.index = float(np.mean(list(self.singleton_index.values())))
         return self.index
 
+    def fit(self, X: np.ndarray, Y: np.ndarray) -> "OverlapIndex":
+        """
+        Fit the overlap index on a complete labeled dataset.
+
+        This sklearn-style method delegates to fit_offline with reset_state=True
+        and returns self. The computed overlap index is available through the
+        ``index`` attribute.
+
+        Parameters
+        ----------
+        X : np.ndarray
+            Raw input samples.
+        Y : np.ndarray
+            Class labels aligned with X.
+
+        Returns
+        -------
+        OverlapIndex
+            The fitted overlap-index instance.
+        """
+        self.fit_offline(X, Y, reset_state=True)
+        return self
+
+    def partial_fit(self, X: np.ndarray, Y: np.ndarray) -> "OverlapIndex":
+        """
+        Update the overlap index from a labeled batch and return self.
+
+        For ARTMAP backends, this performs an incremental batch update. For
+        offline backends, this behaves like add_batch, which refits the backend
+        on the provided batch and recomputes the index.
+
+        Parameters
+        ----------
+        X : np.ndarray
+            Raw input samples.
+        Y : np.ndarray
+            Class labels aligned with X.
+
+        Returns
+        -------
+        OverlapIndex
+            The updated overlap-index instance.
+        """
+        self.add_batch(X, Y)
+        return self
+
     # ---- offline (centroid backends primary; also works for ARTMAP if you want) ----
 
     def _fit_offline_centroid_optimized(

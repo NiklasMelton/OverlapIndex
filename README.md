@@ -99,14 +99,14 @@ oi = OverlapIndex(
     kmeans_kwargs={"random_state": 0},
 )
 
-score = oi.add_batch(X, y)
+# sklearn-style API
+oi.fit(X, y)
+score = oi.index
 ```
 
-The returned value is the current Overlap Index after the update.
+The fitted value is available through `oi.index`. For users who prefer update methods that return the current score directly, `add_batch(X, y)` is also supported.
 
 ### Online ARTMAP Usage
-
-For streaming or continual-learning settings, use an ARTMAP backend explicitly:
 
 ```python
 from overlapindex import OverlapIndex
@@ -117,11 +117,25 @@ oi = OverlapIndex(
     match_tracking="MT+",
 )
 
-for x, y in stream:
-    score = oi.add_sample(x, y)
+for X_batch, y_batch in stream:
+    oi.partial_fit(X_batch, y_batch)
+    score = oi.index
 ```
 
-ARTMAP backends can also be updated with labeled mini-batches through `add_batch`.
+For single-sample streams, ARTMAP backends also support `add_sample(x, y)`, which updates the model and returns the current score directly. Labeled mini-batches can also be passed to `add_batch(X, y)`.
+
+### API Styles
+
+`OverlapIndex` supports both sklearn-style methods and direct score-returning update methods:
+
+| Method | Returns | Typical use |
+| --- | --- | --- |
+| `fit(X, y)` | `self` | Full offline fitting on a labeled dataset. |
+| `partial_fit(X, y)` | `self` | Incremental or repeated batch updates. |
+| `add_batch(X, y)` | `float` | Batch update when the current OI score is needed immediately. |
+| `add_sample(x, y)` | `float` | Single-sample online update for ARTMAP backends. |
+
+After `fit` or `partial_fit`, read the current score from `oi.index`.
 
 ### Clustering Backends
 
@@ -135,7 +149,7 @@ ARTMAP backends can also be updated with labeled mini-batches through `add_batch
 | `"MiniBatchKMeans"` | Offline batch only | Default backend. Fits one scikit-learn `MiniBatchKMeans` model per class; recommended for larger datasets. |
 | `"BallCover"` | Offline batch only | Fits one greedy landmark-ball cover per class. Useful when preserving class-support geometry is important. |
 
-Offline backends should be used with `add_batch`. They do not support `add_sample` because their prototypes are fit from a complete labeled batch.
+Offline backends should be used with `fit` or `add_batch`. They do not support `add_sample` because their prototypes are fit from a complete labeled batch.
 
 #### KMeans backend
 
@@ -148,7 +162,8 @@ OI = OverlapIndex(
     kmeans_kwargs={"random_state": 0},
 )
 
-score = OI.add_batch(X, y)
+OI.fit(X, y)
+score = OI.index
 ```
 
 #### MiniBatchKMeans backend
@@ -166,7 +181,8 @@ OI = OverlapIndex(
     },
 )
 
-score = OI.add_batch(X, y)
+OI.fit(X, y)
+score = OI.index
 ```
 
 #### BallCover backend
@@ -184,7 +200,8 @@ OI = OverlapIndex(
     },
 )
 
-score = OI.add_batch(X, y)
+OI.fit(X, y)
+score = OI.index
 ```
 
 The BallCover backend supports one automatic cover parameter at a time:
@@ -195,7 +212,7 @@ The BallCover backend supports one automatic cover parameter at a time:
 `metric="auto"` uses Euclidean distance in lower-dimensional spaces and cosine geometry for high-dimensional inputs such as embedding vectors. Users can override this with `metric="euclidean"` or `metric="cosine"`.
 
 ### Iris Dataset Example
-```python
+```
 
 from sklearn.datasets import load_iris
 import numpy as np
@@ -219,14 +236,12 @@ X = (X - x_min) / (x_max - x_min)
 OI = OverlapIndex()
 
 # Calculate the Overlap Index
-oi = OI.add_batch(X, y)
-print(oi)
+OI.fit(X, y)
+print(OI.index)
 
 # Output:
 # 0.9266666666666666
 ```
-
-
 
 ---
 
