@@ -10,6 +10,7 @@ from overlapindex.clustering import (
     _ARTMAPManyToOne,
     _KMeansManyToOne,
     _MiniBatchKMeansManyToOne,
+    _BallCoverManyToOne,
 )
 
 # ----------------------------
@@ -29,11 +30,15 @@ class OverlapIndex:
         self,
         rho: float = 0.9,
         r_hat: float = np.inf,
-        model_type: Literal["Fuzzy", "Hypersphere", "KMeans", "MiniBatchKMeans"] = "Fuzzy",
+        model_type: Literal["Fuzzy", "Hypersphere", "KMeans", "MiniBatchKMeans", "BallCover"] = "Fuzzy",
         match_tracking: str = "MT+",
         # centroid backend options:
         kmeans_k: Union[int, Dict[Any, int]] = 8,
         kmeans_kwargs: Optional[dict] = None,
+        # ball-cover backend options:
+        ballcover_k: Union[int, Dict[Any, int], Literal["auto"]] = "auto",
+        ballcover_radius: Union[float, Dict[Any, float], Literal["auto"]] = 0.25,
+        ballcover_kwargs: Optional[dict] = None,
         offline_chunk_size: Optional[int] = 10_000,
     ) -> None:
         """
@@ -45,7 +50,7 @@ class OverlapIndex:
             ARTMAP vigilance parameter used by Fuzzy and Hypersphere backends.
         r_hat : float, default=np.inf
             Hypersphere ARTMAP radius constraint.
-        model_type : {"Fuzzy", "Hypersphere", "KMeans", "MiniBatchKMeans"}, default="Fuzzy"
+        model_type : {"Fuzzy", "Hypersphere", "KMeans", "MiniBatchKMeans", "BallCover"}, default="Fuzzy"
             Backend family used to create class-owned clusters.
         match_tracking : str, default="MT+"
             Match-tracking mode forwarded to ARTMAP partial-fit calls.
@@ -54,6 +59,17 @@ class OverlapIndex:
             specify class-specific values.
         kmeans_kwargs : dict, optional
             Keyword arguments forwarded to the selected centroid backend.
+        ballcover_k : int, dict, or "auto", default="auto"
+            Number of balls per class, class-specific ball counts, or "auto" to
+            greedily add fixed-radius balls until the requested cover fraction is
+            reached.
+        ballcover_radius : float, dict, or "auto", default=0.25
+            Ball radius, class-specific radii, or "auto" to infer the radius
+            after selecting a fixed number of balls. Only one of ballcover_k and
+            ballcover_radius may be "auto".
+        ballcover_kwargs : dict, optional
+            Additional keyword arguments forwarded to the BallCover backend, such
+            as metric, cover_fraction, chunk_size, max_balls, or random_state.
         offline_chunk_size : int or None, default=10000
             Number of samples per chunk for optimized offline centroid scoring.
             If None, each class block is scored at once.
@@ -79,6 +95,13 @@ class OverlapIndex:
             self._model = _KMeansManyToOne(k=kmeans_k, kmeans_kwargs=kmeans_kwargs)
         elif model_type == "MiniBatchKMeans":
             self._model = _MiniBatchKMeansManyToOne(k=kmeans_k, kmeans_kwargs=kmeans_kwargs)
+        elif model_type == "BallCover":
+            kwargs = ballcover_kwargs or {}
+            self._model = _BallCoverManyToOne(
+                k=ballcover_k,
+                radius=ballcover_radius,
+                **kwargs,
+            )
         else:
             raise ValueError(f"Unknown model_type: {model_type}")
 

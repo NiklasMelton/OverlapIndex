@@ -23,6 +23,7 @@ EXPECTED_ADD_BATCH_INDEX = {
     "Hypersphere": 0.9333333333333332,
     "KMeans": 0.9266666666666666,
     "MiniBatchKMeans": 0.9133333333333332,
+    "BallCover": 0.0,
 }
 
 # KMeans.add_sample is expected to raise, so only online ARTMAP-style backends
@@ -59,6 +60,17 @@ def _make_model(model_type):
                 "max_iter": 100,
             },
         )
+    if model_type == "BallCover":
+        return OverlapIndex(
+            model_type="BallCover",
+            ballcover_k=10,
+            ballcover_radius="auto",
+            ballcover_kwargs={
+                "metric": "euclidean",
+                "cover_fraction": 1.0,
+                "random_state": 0,
+            },
+        )
     return OverlapIndex(
         model_type=model_type,
         rho=0.95,
@@ -87,7 +99,7 @@ def _assert_return_matches_self_index(model, returned, context):
     )
 
 
-@pytest.mark.parametrize("model_type", ["Fuzzy", "Hypersphere", "KMeans"])
+@pytest.mark.parametrize("model_type", ["Fuzzy", "Hypersphere", "KMeans", "BallCover"])
 def test_add_batch_index_regression(model_type):
     X, y = _iris_data()
 
@@ -132,7 +144,7 @@ def test_add_sample_after_batch_index_regression(model_type):
     )
 
 
-@pytest.mark.parametrize("model_type", ["KMeans", "MiniBatchKMeans"])
+@pytest.mark.parametrize("model_type", ["KMeans", "MiniBatchKMeans", "BallCover"])
 def test_offline_backends_add_sample_raises_not_implemented(model_type):
     X, y = _iris_data()
     model = _make_model(model_type)
@@ -141,7 +153,7 @@ def test_offline_backends_add_sample_raises_not_implemented(model_type):
         model.add_sample(X[0], int(y[0]))
 
 
-@pytest.mark.parametrize("model_type", ["KMeans", "MiniBatchKMeans"])
+@pytest.mark.parametrize("model_type", ["KMeans", "MiniBatchKMeans", "BallCover"])
 def test_offline_backends_module_a_accessor_raises_attribute_error(model_type):
     model = _make_model(model_type)
 
