@@ -107,8 +107,6 @@ score = oi.index
 
 The fitted value is available through `oi.index`. For users who prefer update methods that return the current score directly, `add_batch(X, y)` is also supported.
 
-Additional runnable examples are available in the `examples/` directory.
-
 ### Online ARTMAP Usage
 
 ```python
@@ -131,12 +129,12 @@ For single-sample streams, ARTMAP backends also support `add_sample(x, y)`, whic
 
 `OverlapIndex` supports both sklearn-style methods and direct score-returning update methods:
 
-| Method | Returns | Typical use |
-| --- | --- | --- |
-| `fit(X, y)` | `self` | Full offline fitting on a labeled dataset. |
-| `partial_fit(X, y)` | `self` | Incremental or repeated batch updates. |
+| Method | Returns | Typical use                                                   |
+| --- | --- |---------------------------------------------------------------|
+| `fit(X, y)` | `self` | Full offline fitting on a labeled dataset.                    |
+| `partial_fit(X, y)` | `self` | Incremental or repeated batch updates. (ARTMAP Only)          |
 | `add_batch(X, y)` | `float` | Batch update when the current OI score is needed immediately. |
-| `add_sample(x, y)` | `float` | Single-sample online update for ARTMAP backends. |
+| `add_sample(x, y)` | `float` | Single-sample online update for ARTMAP backends.              |
 
 After `fit` or `partial_fit`, read the current score from `oi.index`.
 
@@ -215,7 +213,7 @@ The BallCover backend supports one automatic cover parameter at a time:
 `metric="auto"` uses Euclidean distance in lower-dimensional spaces and cosine geometry for high-dimensional inputs such as embedding vectors. Users can override this with `metric="euclidean"` or `metric="cosine"`.
 
 ### Iris Dataset Example
-```
+```python
 
 from sklearn.datasets import load_iris
 import numpy as np
@@ -245,6 +243,8 @@ print(OI.index)
 # Output:
 # 0.9266666666666666
 ```
+
+Additional runnable examples are available in the `examples/` directory.
 
 ---
 
