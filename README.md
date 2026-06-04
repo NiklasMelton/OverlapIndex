@@ -104,7 +104,10 @@ oi.fit(X, y)
 score = oi.index
 ```
 
+
 The fitted value is available through `oi.index`. For users who prefer update methods that return the current score directly, `add_batch(X, y)` is also supported.
+
+Additional runnable examples are available in the `examples/` directory.
 
 ### Online ARTMAP Usage
 
