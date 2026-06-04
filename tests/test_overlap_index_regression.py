@@ -67,7 +67,7 @@ def _make_model(model_type):
             ballcover_radius="auto",
             ballcover_kwargs={
                 "metric": "euclidean",
-                "cover_fraction": 0.95,
+                "cover_fraction": 0.9,
                 "random_state": 0,
             },
         )
