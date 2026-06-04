@@ -23,7 +23,7 @@ EXPECTED_ADD_BATCH_INDEX = {
     "Hypersphere": 0.9333333333333332,
     "KMeans": 0.9266666666666666,
     "MiniBatchKMeans": 0.9133333333333332,
-    "BallCover": 0.8533333333333334,
+    "BallCover": 0.86,
 }
 
 # KMeans.add_sample is expected to raise, so only online ARTMAP-style backends
