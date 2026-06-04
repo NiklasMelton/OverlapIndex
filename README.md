@@ -1,10 +1,12 @@
 # OverlapIndex (OI)
 
-This package provides an implementation of the **Overlap Index (OI)**, an *incremental cluster validity index (iCVI)* designed to quantify the degree of overlap between data classes or clusters. The OI is updated online, sample by sample or in batches, and is particularly suited for streaming, continual learning, and representation analysis.
+This package provides an implementation of the **Overlap Index (OI)**, a cluster-validity measure designed to quantify the degree of overlap between data classes or clusters. The OI can be updated online with ARTMAP-based backends, or computed in batch with offline clustering backends, making it useful for streaming, continual learning, large-scale representation analysis, and embedding-space diagnostics.
 
-The implementation is built on **ARTMAP-based clustering** (Fuzzy ART or Hypersphere 
-ART), leveraging the dynamic clustering properties of Adaptive Resonance Theory to 
-track class overlap as new data (and classes) arrive.
+The implementation supports multiple swappable clustering backends:
+
+- **Fuzzy ARTMAP** and **Hypersphere ARTMAP** for incremental / online updates.
+- **KMeans** and **MiniBatchKMeans** for offline centroid-based analysis.
+- **BallCover** for offline greedy landmark-ball covers, useful when the goal is to preserve class-support geometry for downstream shape or topology analysis.
 
 ---
 
@@ -43,10 +45,9 @@ The index is computed incrementally by tracking shared cluster activations betwe
 
 ## Key Properties
 
-- **Incremental / Online**  
-  Supports streaming updates via `add_sample` and mini-batch updates via `add_batch`.
-  New classes can be introduced at any time, enabling analysis of incremental 
-  learning scenarios.
+- **Incremental and Offline Modes**  
+  ARTMAP backends support streaming updates via `add_sample` and mini-batch updates via `add_batch`.
+  Offline backends such as `KMeans`, `MiniBatchKMeans`, and `BallCover` support batch computation through `add_batch`.
 
 - **Label-Aware**  
   Can be applied both to labeled raw data and to intermediate representations (e.g., neural network activations).
@@ -79,30 +80,119 @@ The Overlap Index can be used in several settings:
 ## Implementation Notes
 
 - ART-based clustering is performed using `artlib`’s `FuzzyARTMAP` or `HypersphereARTMAP`.
-- Inputs are **complement coded**, following standard ART practice.
-- Overlap is estimated by monitoring shared best-matching units (BMUs) between class pairs.
+- Offline centroid backends fit one clustering model per class and concatenate the resulting class-owned prototypes into global cluster ids.
+- The `BallCover` backend fits one greedy ball cover per class and treats ball centers as class-owned prototypes.
+- Inputs are normalized internally before clustering; ART backends use complement coding following standard ART practice.
+- Overlap is estimated by monitoring shared best-matching units (BMUs) or top prototype activations between class pairs.
 - The global OI is computed as the mean of per-class minimum pairwise overlap scores.
 
 ---
 
 ## Basic Usage
 
-    from overlapindex import OverlapIndex
+```python
+from overlapindex import OverlapIndex
 
-    oi = OverlapIndex(
-        rho=0.9,
-        ART="Hypersphere",
-        match_tracking="MT+"
-    )
+# MiniBatchKMeans is the default backend and is recommended for most offline use cases.
+oi = OverlapIndex(
+    kmeans_k=10,
+    kmeans_kwargs={"random_state": 0},
+)
 
-    # Incremental update
-    for x, y in stream:
-        score = oi.add_sample(x, y)
-
-    # Or batch update
-    score = oi.add_batch(X, Y)
+score = oi.add_batch(X, y)
+```
 
 The returned value is the current Overlap Index after the update.
+
+### Online ARTMAP Usage
+
+For streaming or continual-learning settings, use an ARTMAP backend explicitly:
+
+```python
+from overlapindex import OverlapIndex
+
+oi = OverlapIndex(
+    model_type="Hypersphere",
+    rho=0.9,
+    match_tracking="MT+",
+)
+
+for x, y in stream:
+    score = oi.add_sample(x, y)
+```
+
+ARTMAP backends can also be updated with labeled mini-batches through `add_batch`.
+
+### Clustering Backends
+
+`OverlapIndex` uses `model_type="MiniBatchKMeans"` by default and supports several backend families through the `model_type` parameter:
+
+| `model_type` | Update mode | Description |
+| --- | --- | --- |
+| `"Fuzzy"` | Online / batch | Incremental Fuzzy ARTMAP backend. |
+| `"Hypersphere"` | Online / batch | Incremental Hypersphere ARTMAP backend. |
+| `"KMeans"` | Offline batch only | Fits one scikit-learn `KMeans` model per class. |
+| `"MiniBatchKMeans"` | Offline batch only | Default backend. Fits one scikit-learn `MiniBatchKMeans` model per class; recommended for larger datasets. |
+| `"BallCover"` | Offline batch only | Fits one greedy landmark-ball cover per class. Useful when preserving class-support geometry is important. |
+
+Offline backends should be used with `add_batch`. They do not support `add_sample` because their prototypes are fit from a complete labeled batch.
+
+#### KMeans backend
+
+```python
+from overlapindex import OverlapIndex
+
+OI = OverlapIndex(
+    model_type="KMeans",
+    kmeans_k=10,
+    kmeans_kwargs={"random_state": 0},
+)
+
+score = OI.add_batch(X, y)
+```
+
+#### MiniBatchKMeans backend
+
+```python
+from overlapindex import OverlapIndex
+
+OI = OverlapIndex(
+    model_type="MiniBatchKMeans",
+    kmeans_k=10,
+    kmeans_kwargs={
+        "random_state": 0,
+        "batch_size": 8192,
+        "n_init": 1,
+    },
+)
+
+score = OI.add_batch(X, y)
+```
+
+#### BallCover backend
+
+```python
+from overlapindex import OverlapIndex
+
+OI = OverlapIndex(
+    model_type="BallCover",
+    ballcover_k="auto",
+    ballcover_radius=0.25,
+    ballcover_kwargs={
+        "metric": "auto",
+        "cover_fraction": 1.0,
+    },
+)
+
+score = OI.add_batch(X, y)
+```
+
+The BallCover backend supports one automatic cover parameter at a time:
+
+- `ballcover_k="auto"` with a fixed `ballcover_radius` greedily adds balls until the requested cover fraction is reached.
+- `ballcover_k=<int>` with `ballcover_radius="auto"` selects a fixed number of landmarks and infers the radius needed to cover the requested fraction of samples.
+
+`metric="auto"` uses Euclidean distance in lower-dimensional spaces and cosine geometry for high-dimensional inputs such as embedding vectors. Users can override this with `metric="euclidean"` or `metric="cosine"`.
 
 ### Iris Dataset Example
 ```python
@@ -143,20 +233,35 @@ print(oi)
 ## Parameters
 
 - `rho` *(float)*  
-  Vigilance parameter controlling cluster granularity.
+  Vigilance parameter controlling cluster granularity for ARTMAP backends.
 
-- `r_hat` *(float, Hypersphere ART only)*  
-  Maximum cluster radius.
+- `r_hat` *(float, Hypersphere ARTMAP only)*  
+  Maximum cluster radius for the Hypersphere backend.
 
-- `ART` *("Fuzzy" | "Hypersphere")*  
-  Choice of ART module.
+- `model_type` *("Fuzzy" | "Hypersphere" | "KMeans" | "MiniBatchKMeans" | "BallCover")*  
+  Clustering backend used to create class-owned prototypes. Defaults to `"MiniBatchKMeans"`.
 
 - `match_tracking` *(str)*  
   Match-tracking strategy used during ARTMAP learning.
 
-The default parameters are likely to satisfy most use cases. For very large datasets,
-it may be necessary to use smaller `rho` values (0.5-0.7) to improve run-time 
-performance. 
+- `kmeans_k` *(int or dict)*  
+  Number of clusters per class for `KMeans` and `MiniBatchKMeans` backends.
+
+- `kmeans_kwargs` *(dict, optional)*  
+  Keyword arguments forwarded to the selected scikit-learn KMeans backend.
+
+- `ballcover_k` *(int, dict, or "auto")*  
+  Number of balls per class, class-specific ball counts, or `"auto"` for greedy fixed-radius covering.
+
+- `ballcover_radius` *(float, dict, or "auto")*  
+  Ball radius, class-specific radii, or `"auto"` when using a fixed number of balls.
+
+- `ballcover_kwargs` *(dict, optional)*  
+  Additional BallCover options such as `metric`, `cover_fraction`, `chunk_size`, `max_balls`, and `random_state`.
+
+---
+
+The default parameters are intended for offline batch use with `MiniBatchKMeans`. For online or continual-learning workflows, explicitly choose `model_type="Fuzzy"` or `model_type="Hypersphere"`. For very large ART-based runs, smaller `rho` values (0.5-0.7) may improve run-time performance.
 
 ---
 

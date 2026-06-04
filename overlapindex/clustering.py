@@ -2,6 +2,7 @@ import numpy as np
 from artlib import HypersphereARTMAP, FuzzyARTMAP
 from collections import defaultdict
 from sklearn.cluster import KMeans, MiniBatchKMeans
+from overlapindex.BallCover import BallCoverManyToOne
 from typing import Literal, Optional, Union, Dict, Any, Sequence, Tuple, Type
 
 # ----------------------------
@@ -428,6 +429,7 @@ class _MiniBatchKMeansManyToOne(_BaseCentroidManyToOne):
             raise ImportError("scikit-learn is required for model_type='MiniBatchKMeans'.")
         super().__init__(k=k, model_kwargs=kmeans_kwargs, dtype=np.float32)
 
+
     def _make_model(self, n_clusters: int) -> MiniBatchKMeans:
         """Create a scikit-learn MiniBatchKMeans estimator."""
         kwargs = {
@@ -437,6 +439,19 @@ class _MiniBatchKMeansManyToOne(_BaseCentroidManyToOne):
         }
         kwargs.update(self._model_kwargs)
         return MiniBatchKMeans(n_clusters=n_clusters, **kwargs)
+
+
+# --- BallCover backend ---
+
+class _BallCoverManyToOne(BallCoverManyToOne, _BaseManyToOneClusteringModel):
+    """
+    Offline: fit one greedy ball cover per class.
+
+    This thin adapter exposes the standalone BallCoverManyToOne implementation
+    through the same private backend naming convention used by the other
+    clustering backends in this module.
+    """
+    pass
 
 
 class _ARTMAPManyToOne(_BaseManyToOneClusteringModel):
