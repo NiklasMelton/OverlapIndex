@@ -63,7 +63,7 @@ def _make_model(model_type):
     if model_type == "BallCover":
         return OverlapIndex(
             model_type="BallCover",
-            ballcover_k=25,
+            ballcover_k=40,
             ballcover_radius="auto",
             ballcover_kwargs={
                 "metric": "euclidean",
