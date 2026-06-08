@@ -14,12 +14,15 @@ packages = [{ include = "overlapindex" }]
 
 [tool.poetry.dependencies]
 python = ">=3.9"
-artlib = ">=0.1.7,<0.2.0"
+artlib = { version = ">=0.1.9,<0.2.0", optional = true }
 numpy = ">=2.0.0,<3.0.0"
 scikit-learn = ">=1.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^6.2.2"
+
+[tool.poetry.extras]
+art = ["artlib"]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

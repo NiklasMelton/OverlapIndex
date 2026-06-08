@@ -18,6 +18,13 @@ To install OverlapIndex, simply use pip:
 pip install overlapindex
 ```
 
+That installs the default batch-oriented dependencies. To enable the incremental
+ART backends as well, install the optional ART extra:
+
+```bash
+pip install "overlapindex[art]"
+```
+
 Or to install directly from the most recent source:
 
 ```bash
@@ -80,6 +87,8 @@ The Overlap Index can be used in several settings:
 ## Implementation Notes
 
 - ART-based clustering is performed using `artlib`’s `FuzzyARTMAP` or `HypersphereARTMAP`.
+- `artlib` is an optional dependency and is only required when using the
+  `"Fuzzy"` or `"Hypersphere"` backends.
 - Offline centroid backends fit one clustering model per class and concatenate the resulting class-owned prototypes into global cluster ids.
 - The `BallCover` backend fits one greedy ball cover per class and treats ball centers as class-owned prototypes.
 - Inputs are normalized internally before clustering; ART backends use complement coding following standard ART practice.
@@ -144,8 +153,8 @@ After `fit` or `partial_fit`, read the current score from `oi.index`.
 
 | `model_type` | Update mode | Description |
 | --- | --- | --- |
-| `"Fuzzy"` | Online / batch | Incremental Fuzzy ARTMAP backend. |
-| `"Hypersphere"` | Online / batch | Incremental Hypersphere ARTMAP backend. |
+| `"Fuzzy"` | Online / batch | Incremental Fuzzy ARTMAP backend. Requires the optional `art` extra. |
+| `"Hypersphere"` | Online / batch | Incremental Hypersphere ARTMAP backend. Requires the optional `art` extra. |
 | `"KMeans"` | Offline batch only | Fits one scikit-learn `KMeans` model per class. |
 | `"MiniBatchKMeans"` | Offline batch only | Default backend. Fits one scikit-learn `MiniBatchKMeans` model per class; recommended for larger datasets. |
 | `"BallCover"` | Offline batch only | Fits one greedy landmark-ball cover per class. Useful when preserving class-support geometry is important. |

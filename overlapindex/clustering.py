@@ -1,9 +1,23 @@
 import numpy as np
-from artlib import HypersphereARTMAP, FuzzyARTMAP
 from collections import defaultdict
+from importlib import import_module
 from sklearn.cluster import KMeans, MiniBatchKMeans
 from overlapindex.BallCover import BallCoverManyToOne
 from typing import Literal, Optional, Union, Dict, Any, Sequence, Tuple, Type
+
+
+def _load_artmap_classes() -> Tuple[Type[Any], Type[Any]]:
+    """Load ARTMAP implementations only when an ART backend is requested."""
+    try:
+        artlib = import_module("artlib")
+    except ImportError as exc:
+        raise ImportError(
+            "artlib>=0.1.9 is required for model_type='Fuzzy' or 'Hypersphere'. "
+            "Install the optional dependency with `pip install overlapindex[art]` "
+            "or `pip install 'artlib>=0.1.9,<0.2.0'`."
+        ) from exc
+
+    return artlib.HypersphereARTMAP, artlib.FuzzyARTMAP
 
 # ----------------------------
 # Swappable backend interface
@@ -483,6 +497,7 @@ class _ARTMAPManyToOne(_BaseManyToOneClusteringModel):
         beta : float, default=1.0
             ARTMAP learning-rate parameter.
         """
+        HypersphereARTMAP, FuzzyARTMAP = _load_artmap_classes()
         if model_type == "Fuzzy":
             self._model = FuzzyARTMAP(rho=rho, alpha=alpha, beta=beta)
         else:
@@ -567,4 +582,3 @@ class _ARTMAPManyToOne(_BaseManyToOneClusteringModel):
     def model(self) -> Any:
         """Return the wrapped ARTMAP model."""
         return self._model  # expose if needed (e.g., for module_a/map parity)
-

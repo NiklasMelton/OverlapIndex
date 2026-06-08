@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from sklearn.datasets import load_iris
 from sklearn.preprocessing import MinMaxScaler
+import overlapindex.clustering as clustering
 
 try:
     from overlapindex.OverlapIndex import OverlapIndex
@@ -159,3 +160,21 @@ def test_offline_backends_module_a_accessor_raises_attribute_error(model_type):
 
     with pytest.raises(AttributeError, match="ARTMAP backends"):
         _ = model.module_a
+
+
+def test_offline_backend_does_not_require_artlib(monkeypatch):
+    def _boom():
+        raise AssertionError("ART loader should not be called for offline backends")
+
+    monkeypatch.setattr(clustering, "_load_artmap_classes", _boom)
+    model = OverlapIndex(model_type="MiniBatchKMeans")
+    assert model.model_type == "MiniBatchKMeans"
+
+
+def test_art_backend_raises_helpful_error_without_artlib(monkeypatch):
+    def _missing():
+        raise ImportError("artlib>=0.1.9 is required for model_type='Fuzzy' or 'Hypersphere'.")
+
+    monkeypatch.setattr(clustering, "_load_artmap_classes", _missing)
+    with pytest.raises(ImportError, match="artlib>=0.1.9"):
+        OverlapIndex(model_type="Fuzzy")

@@ -1,8 +1,8 @@
 import numpy as np
-from artlib import complement_code
 from collections import defaultdict
 from typing import Literal, Optional, Union, Dict, Any, Tuple
 from overlapindex.utils import (
+    complement_code,
     top_two_indices_against_others_from_backend,
 )
 from overlapindex.clustering import (
