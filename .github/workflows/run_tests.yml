@@ -25,6 +25,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Install system libraries for SciPy builds
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenblas-dev
+
       - name: Install Poetry
         run: |
           pipx install poetry==${POETRY_VERSION}
@@ -42,7 +47,7 @@ jobs:
       - name: Install package and test dependencies
         run: |
           poetry env use python
-          poetry install --with dev --no-interaction --no-ansi
+          poetry install --with dev --extras art --no-interaction --no-ansi
 
       - name: Run pytest
         run: |
