@@ -19,7 +19,7 @@ numpy = ">=2.0.0,<3.0.0"
 scikit-learn = ">=1.0"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^6.2.2"
+pytest = "^8.4.1"
 
 [tool.poetry.extras]
 art = ["artlib"]
