@@ -19,13 +19,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          - python-version: "3.9"
+            install-art: true
+          - python-version: "3.10"
+            install-art: true
+          - python-version: "3.11"
+            install-art: true
+          - python-version: "3.12"
+            install-art: true
+          - python-version: "3.13"
+            install-art: false
+          - python-version: "3.14"
+            install-art: false
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
       - name: Install system libraries for SciPy builds
+        if: ${{ matrix.install-art }}
         run: |
           sudo apt-get update
           sudo apt-get install -y libopenblas-dev
@@ -45,9 +58,16 @@ jobs:
             poetry.lock
 
       - name: Install package and test dependencies
+        if: ${{ matrix.install-art }}
         run: |
           poetry env use python
           poetry install --with dev --extras art --no-interaction --no-ansi
+
+      - name: Install package and test dependencies without optional ART extra
+        if: ${{ !matrix.install-art }}
+        run: |
+          poetry env use python
+          poetry install --with dev --no-interaction --no-ansi
 
       - name: Run pytest
         run: |
