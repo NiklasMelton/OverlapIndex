@@ -47,7 +47,16 @@ jobs:
       - name: Install package and test dependencies
         run: |
           poetry env use python
-          poetry install --with dev --extras art --no-interaction --no-ansi
+          echo "=== Poetry cache info ==="
+          poetry config --list
+          echo "=== Pip cache dir ==="
+          python -m pip cache dir || true
+          echo "=== Cache sizes before install ==="
+          du -sh ~/.cache/pypoetry ~/.cache/pip 2>/dev/null || true
+          echo "=== Timed poetry install ==="
+          time poetry install --with dev --extras art --no-interaction --no-ansi -vvv
+          echo "=== Installed packages ==="
+          poetry run python -m pip list
 
       - name: Run pytest
         run: |
