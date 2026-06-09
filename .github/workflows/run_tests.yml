@@ -47,11 +47,7 @@ jobs:
       - name: Install package and test dependencies
         run: |
           poetry env use python
-          poetry install --with dev --no-interaction --no-ansi
-
-      - name: Install artlib from AdaptiveResonanceLib develop
-        run: |
-          poetry run python -m pip install "git+https://github.com/NiklasMelton/AdaptiveResonanceLib.git@develop"
+          poetry install --with dev --extras art --no-interaction --no-ansi
 
       - name: Run pytest
         run: |
