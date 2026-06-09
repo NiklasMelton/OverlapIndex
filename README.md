@@ -143,11 +143,16 @@ For single-sample streams, ARTMAP backends also support `add_sample(x, y)`, whic
 | Method | Returns | Typical use                                                   |
 | --- | --- |---------------------------------------------------------------|
 | `fit(X, y)` | `self` | Full offline fitting on a labeled dataset.                    |
-| `partial_fit(X, y)` | `self` | Incremental or repeated batch updates. (ARTMAP Only)          |
+| `partial_fit(X, y)` | `self` | Incremental batch updates for ARTMAP backends; offline backends refit on the provided batch. |
 | `add_batch(X, y)` | `float` | Batch update when the current OI score is needed immediately. |
 | `add_sample(x, y)` | `float` | Single-sample online update for ARTMAP backends.              |
 
 After `fit` or `partial_fit`, read the current score from `oi.index`.
+
+For `model_type="KMeans"`, `model_type="MiniBatchKMeans"`, and
+`model_type="BallCover"`, `partial_fit(X, y)` is a convenience wrapper around
+recomputing the index on the provided labeled batch. Only the ARTMAP backends
+perform true incremental updates across calls.
 
 ### Clustering Backends
 
@@ -256,6 +261,32 @@ print(OI.index)
 ```
 
 Additional runnable examples are available in the `examples/` directory.
+
+---
+
+## Release Verification
+
+For release testing, start from a fresh Poetry environment so the package under
+test matches `pyproject.toml` and `poetry.lock`:
+
+```bash
+poetry env remove --all
+poetry sync --with dev
+poetry run python -c "from overlapindex import OverlapIndex; OverlapIndex(model_type='MiniBatchKMeans')"
+poetry run python -m pytest -q tests/test_overlap_index_regression.py
+
+poetry sync --with dev --extras art
+poetry run python -c "from overlapindex import OverlapIndex; OverlapIndex(model_type='Hypersphere')"
+poetry run python -m pytest -q tests/test_overlap_index_regression.py
+
+poetry check
+python -m build
+twine check dist/*
+```
+
+The first install verifies that offline backends work without the optional
+`artlib` dependency. The second install verifies the `art` extra and ARTMAP
+backends.
 
 ---
 

@@ -2,6 +2,7 @@
 Behavior-regression tests for OverlapIndex.
 """
 
+from importlib import import_module
 from importlib.util import find_spec
 
 import numpy as np
@@ -196,9 +197,13 @@ def test_offline_backend_does_not_require_artlib(monkeypatch):
 
 
 def test_art_backend_raises_helpful_error_without_artlib(monkeypatch):
-    def _missing():
-        raise ImportError("artlib>=0.1.9 is required for model_type='Fuzzy' or 'Hypersphere'.")
+    real_import_module = import_module
 
-    monkeypatch.setattr(clustering, "_load_artmap_classes", _missing)
-    with pytest.raises(ImportError, match="artlib>=0.1.9"):
+    def _missing(name, package=None):
+        if name == "artlib":
+            raise ImportError("No module named 'artlib'")
+        return real_import_module(name, package)
+
+    monkeypatch.setattr(clustering, "import_module", _missing)
+    with pytest.raises(ImportError, match=r"overlapindex\[art\]"):
         OverlapIndex(model_type="Fuzzy")
