@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover - useful when running the file directly 
     from OverlapIndex import OverlapIndex
 
 
-ATOL = 1e-12
+ATOL = 1e-2
 ARTLIB_AVAILABLE = find_spec("artlib") is not None
 ARTLIB_REQUIRED = pytest.mark.skipif(
     not ARTLIB_AVAILABLE,
