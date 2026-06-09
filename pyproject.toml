@@ -14,7 +14,7 @@ packages = [{ include = "overlapindex" }]
 
 [tool.poetry.dependencies]
 python = ">=3.9,<3.15"
-artlib = { version = ">=0.1.9,<0.2.0", optional = true, python = ">=3.9,<3.13" }
+artlib = { version = ">=0.1.10,<0.2.0", optional = true, python = ">=3.9,<3.15" }
 numpy = ">=2.0.0,<3.0.0"
 scikit-learn = ">=1.0"
 

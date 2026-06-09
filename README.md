@@ -25,9 +25,7 @@ ART backends as well, install the optional ART extra:
 pip install "overlapindex[art]"
 ```
 
-The core package supports Python 3.9 through 3.14. The optional `art` extra is
-currently supported on Python 3.9 through 3.12 because the upstream
-`artlib`/`numba` dependency chain is not yet installable on Python 3.13+.
+The core package and optional `art` extra support Python 3.9 through 3.14.
 
 Or to install directly from the most recent source:
 
@@ -92,8 +90,7 @@ The Overlap Index can be used in several settings:
 
 - ART-based clustering is performed using `artlib`’s `FuzzyARTMAP` or `HypersphereARTMAP`.
 - `artlib` is an optional dependency and is only required when using the
-  `"Fuzzy"` or `"Hypersphere"` backends. At the moment, this optional ART path
-  is available on Python 3.9 through 3.12.
+  `"Fuzzy"` or `"Hypersphere"` backends.
 - Offline centroid backends fit one clustering model per class and concatenate the resulting class-owned prototypes into global cluster ids.
 - The `BallCover` backend fits one greedy ball cover per class and treats ball centers as class-owned prototypes.
 - Inputs are normalized internally before clustering; ART backends use complement coding following standard ART practice.
