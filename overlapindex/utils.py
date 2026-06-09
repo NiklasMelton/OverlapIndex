@@ -1,5 +1,21 @@
 import numpy as np
 
+def complement_code(X):
+    """
+    Return the complement-coded representation of a 2D array.
+
+    Complement coding doubles the feature dimension by concatenating each
+    feature vector with its elementwise complement ``1 - x``. Inputs are
+    expected to be scaled to the unit interval.
+    """
+    X = np.asarray(X, dtype=float)
+    if X.ndim != 2:
+        raise ValueError(f"X must be a 2D array; got shape {X.shape}.")
+    if np.any((X < 0.0) | (X > 1.0)):
+        raise ValueError("Complement coding requires inputs scaled to the [0, 1] interval.")
+    return np.concatenate((X, 1.0 - X), axis=1)
+
+
 def top_two_indices_against_others_from_backend(model, x, classes, class_to_clusters, a):
     """
     Return top-2 cluster ids for each class-pair using the backend's optimized

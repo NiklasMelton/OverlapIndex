@@ -2,10 +2,13 @@
 Behavior-regression tests for OverlapIndex.
 """
 
+from importlib.util import find_spec
+
 import numpy as np
 import pytest
 from sklearn.datasets import load_iris
 from sklearn.preprocessing import MinMaxScaler
+import overlapindex.clustering as clustering
 
 try:
     from overlapindex.OverlapIndex import OverlapIndex
@@ -14,6 +17,11 @@ except ImportError:  # pragma: no cover - useful when running the file directly 
 
 
 ATOL = 1e-12
+ARTLIB_AVAILABLE = find_spec("artlib") is not None
+ARTLIB_REQUIRED = pytest.mark.skipif(
+    not ARTLIB_AVAILABLE,
+    reason="artlib extra is not installed",
+)
 
 ADD_SAMPLE_IDX = 20
 
@@ -99,7 +107,23 @@ def _assert_return_matches_self_index(model, returned, context):
     )
 
 
-@pytest.mark.parametrize("model_type", ["Fuzzy", "Hypersphere", "KMeans", "BallCover"])
+@ARTLIB_REQUIRED
+@pytest.mark.parametrize("model_type", ["Fuzzy", "Hypersphere"])
+def test_art_backends_add_batch_index_regression(model_type):
+    X, y = _iris_data()
+
+    model = _make_model(model_type)
+    returned = model.add_batch(X, y)
+
+    _assert_return_matches_self_index(model, returned, f"{model_type}.add_batch")
+    _assert_index_close(
+        model.index,
+        EXPECTED_ADD_BATCH_INDEX[model_type],
+        f"{model_type}.add_batch",
+    )
+
+
+@pytest.mark.parametrize("model_type", ["KMeans", "BallCover"])
 def test_add_batch_index_regression(model_type):
     X, y = _iris_data()
 
@@ -128,6 +152,7 @@ def test_minibatch_kmeans_add_batch_index_regression():
     )
 
 
+@ARTLIB_REQUIRED
 @pytest.mark.parametrize("model_type", ["Fuzzy", "Hypersphere"])
 def test_add_sample_after_batch_index_regression(model_type):
     X, y = _iris_data()
@@ -159,3 +184,21 @@ def test_offline_backends_module_a_accessor_raises_attribute_error(model_type):
 
     with pytest.raises(AttributeError, match="ARTMAP backends"):
         _ = model.module_a
+
+
+def test_offline_backend_does_not_require_artlib(monkeypatch):
+    def _boom():
+        raise AssertionError("ART loader should not be called for offline backends")
+
+    monkeypatch.setattr(clustering, "_load_artmap_classes", _boom)
+    model = OverlapIndex(model_type="MiniBatchKMeans")
+    assert model.model_type == "MiniBatchKMeans"
+
+
+def test_art_backend_raises_helpful_error_without_artlib(monkeypatch):
+    def _missing():
+        raise ImportError("artlib>=0.1.9 is required for model_type='Fuzzy' or 'Hypersphere'.")
+
+    monkeypatch.setattr(clustering, "_load_artmap_classes", _missing)
+    with pytest.raises(ImportError, match="artlib>=0.1.9"):
+        OverlapIndex(model_type="Fuzzy")
