@@ -93,7 +93,9 @@ The Overlap Index can be used in several settings:
   `"Fuzzy"` or `"Hypersphere"` backends.
 - Offline centroid backends fit one clustering model per class and concatenate the resulting class-owned prototypes into global cluster ids.
 - The `BallCover` backend fits one greedy ball cover per class and treats ball centers as class-owned prototypes.
-- Inputs are normalized internally before clustering; ART backends use complement coding following standard ART practice.
+- Normalize input features before fitting. Examples in this repository use `MinMaxScaler` for convenience.
+- ART backends complement-code inputs internally and therefore require features in the `[0, 1]` interval.
+- Offline backends (`KMeans`, `MiniBatchKMeans`, and `BallCover`) consume normalized features directly and do not apply complement coding.
 - Overlap is estimated by monitoring shared best-matching units (BMUs) or top prototype activations between class pairs.
 - The global OI is computed as the mean of per-class minimum pairwise overlap scores.
 
@@ -102,7 +104,11 @@ The Overlap Index can be used in several settings:
 ## Basic Usage
 
 ```python
+from sklearn.preprocessing import MinMaxScaler
 from overlapindex import OverlapIndex
+
+# Normalize features before fitting.
+X = MinMaxScaler().fit_transform(X)
 
 # MiniBatchKMeans is the default backend and is recommended for most offline use cases.
 oi = OverlapIndex(
@@ -122,6 +128,8 @@ The fitted value is available through `oi.index`. For users who prefer update me
 
 ```python
 from overlapindex import OverlapIndex
+
+# For ARTMAP backends, batches should already be scaled into [0, 1].
 
 oi = OverlapIndex(
     model_type="Hypersphere",
@@ -144,15 +152,21 @@ For single-sample streams, ARTMAP backends also support `add_sample(x, y)`, whic
 | --- | --- |---------------------------------------------------------------|
 | `fit(X, y)` | `self` | Full offline fitting on a labeled dataset.                    |
 | `partial_fit(X, y)` | `self` | Incremental batch updates for ARTMAP backends; offline backends refit on the provided batch. |
+| `score()` / `score(X, y)` | `float` | Read the current index, or refit on labeled data and return the new score. |
+| `predict(X)` | `np.ndarray` | Return the highest-scoring global prototype id for each sample. |
+| `fit_predict(X, y)` | `np.ndarray` | Fit and return per-sample prototype ids. |
 | `add_batch(X, y)` | `float` | Batch update when the current OI score is needed immediately. |
 | `add_sample(x, y)` | `float` | Single-sample online update for ARTMAP backends.              |
 
-After `fit` or `partial_fit`, read the current score from `oi.index`.
+After `fit` or `partial_fit`, read the current score from `oi.index` or call `score()`.
 
 For `model_type="KMeans"`, `model_type="MiniBatchKMeans"`, and
 `model_type="BallCover"`, `partial_fit(X, y)` is a convenience wrapper around
 recomputing the index on the provided labeled batch. Only the ARTMAP backends
 perform true incremental updates across calls.
+
+If a batch is empty or contains only one unique class, `OverlapIndex` emits a
+`RuntimeWarning` and leaves the score at its default value of `1.0`.
 
 ### Clustering Backends
 
@@ -346,6 +360,3 @@ This package is intended for researchers and practitioners working on:
 - clustering validation,
 - representation learning,
 - transfer learning
-
-
-## test

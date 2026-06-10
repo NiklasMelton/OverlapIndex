@@ -3,6 +3,8 @@ name: Run Python Unit Tests
 on:
   pull_request:
     branches: [ main, develop ]
+  push:
+    branches: [ main ]
 
   workflow_dispatch:
 
