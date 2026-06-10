@@ -10,6 +10,7 @@ import pytest
 from sklearn.datasets import load_iris
 from sklearn.preprocessing import MinMaxScaler
 import overlapindex.clustering as clustering
+overlap_index_module = import_module("overlapindex.OverlapIndex")
 
 try:
     from overlapindex.OverlapIndex import OverlapIndex
@@ -207,3 +208,113 @@ def test_art_backend_raises_helpful_error_without_artlib(monkeypatch):
     monkeypatch.setattr(clustering, "import_module", _missing)
     with pytest.raises(ImportError, match=r"overlapindex\[art\]"):
         OverlapIndex(model_type="Fuzzy")
+
+
+@pytest.mark.parametrize(
+    ("X", "y", "message"),
+    [
+        (np.zeros((2, 2)), np.array([0]), "same number of rows"),
+        (np.zeros((2,)), np.array([0, 1]), "X must be a 2D array"),
+        (np.zeros((2, 2)), np.array([[0], [1]]), "Y must be a 1D array"),
+    ],
+)
+def test_fit_validates_input_shapes(X, y, message):
+    model = _make_model("MiniBatchKMeans")
+
+    with pytest.raises(ValueError, match=message):
+        model.fit(X, y)
+
+
+def test_fit_rejects_non_finite_values():
+    X = np.array([[0.0, 0.0], [np.nan, 1.0]])
+    y = np.array([0, 1])
+    model = _make_model("MiniBatchKMeans")
+
+    with pytest.raises(ValueError, match="NaN or infinite"):
+        model.fit(X, y)
+
+
+def test_empty_data_warns_and_leaves_default_index():
+    X = np.empty((0, 2), dtype=float)
+    y = np.array([], dtype=int)
+    model = _make_model("MiniBatchKMeans")
+
+    with pytest.warns(RuntimeWarning, match="empty X/Y"):
+        returned = model.add_batch(X, y)
+
+    assert returned == 1.0
+    assert model.index == 1.0
+    assert dict(model.rev_map) == {}
+
+
+def test_single_class_warns_and_returns_default_index():
+    X = np.array([[0.0, 0.0], [0.2, 0.2], [0.4, 0.4]])
+    y = np.array([0, 0, 0])
+    model = _make_model("MiniBatchKMeans")
+
+    with pytest.warns(RuntimeWarning, match="single class"):
+        returned = model.add_batch(X, y)
+
+    assert returned == 1.0
+    assert model.index == 1.0
+
+
+def test_art_backend_still_requires_unit_interval_inputs():
+    X = np.array([[0.0, 2.0], [0.5, 0.5]])
+    y = np.array([0, 1])
+    model = OverlapIndex(model_type="Hypersphere", rho=0.95, r_hat=0.1)
+
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        model.fit(X, y)
+
+
+def test_offline_backends_do_not_use_complement_coding(monkeypatch):
+    def _boom(X):
+        raise AssertionError("complement_code should not be called for offline backends")
+
+    monkeypatch.setattr(overlap_index_module, "complement_code", _boom)
+    X, y = _iris_data()
+    model = _make_model("MiniBatchKMeans")
+    model.fit(X, y)
+
+    assert model._model.centers.shape[1] == X.shape[1]
+
+
+def test_sklearn_style_score_predict_and_fit_predict():
+    X, y = _iris_data()
+    model = _make_model("MiniBatchKMeans")
+
+    fit_predict_ids = model.fit_predict(X, y)
+    score = model.score()
+    predict_ids = model.predict(X[:5])
+
+    assert fit_predict_ids.shape == (X.shape[0],)
+    assert predict_ids.shape == (5,)
+    assert np.isclose(score, model.index, atol=0.0, rtol=0.0)
+
+
+def test_predict_raises_before_fit():
+    model = _make_model("MiniBatchKMeans")
+
+    with pytest.raises(ValueError, match="not fit yet"):
+        model.predict(np.zeros((1, 2), dtype=float))
+
+
+def test_score_with_data_refits_and_matches_index():
+    X, y = _iris_data()
+    model = _make_model("MiniBatchKMeans")
+
+    returned = model.score(X, y)
+
+    assert np.isclose(returned, model.index, atol=0.0, rtol=0.0)
+
+
+def test_get_params_and_set_params_follow_sklearn_conventions():
+    model = OverlapIndex(model_type="MiniBatchKMeans", kmeans_k=6)
+
+    params = model.get_params()
+    assert params["kmeans_k"] == 6
+
+    model.set_params(kmeans_k=4, offline_chunk_size=2048)
+    assert model.kmeans_k == 4
+    assert model.offline_chunk_size == 2048

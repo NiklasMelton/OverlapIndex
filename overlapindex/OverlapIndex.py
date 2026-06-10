@@ -1,6 +1,16 @@
-import numpy as np
+import warnings
 from collections import defaultdict
 from typing import Literal, Optional, Union, Dict, Any, Tuple
+
+import numpy as np
+
+try:
+    from sklearn.base import BaseEstimator
+except ImportError:  # pragma: no cover - sklearn is a required dependency for offline backends
+    class BaseEstimator:  # type: ignore[no-redef]
+        """Fallback base class when sklearn is unavailable at import time."""
+        pass
+
 from overlapindex.utils import (
     complement_code,
     top_two_indices_against_others_from_backend,
@@ -17,7 +27,7 @@ from overlapindex.clustering import (
 # OverlapIndex with model_type
 # ----------------------------
 
-class OverlapIndex:
+class OverlapIndex(BaseEstimator):
     """
     Compute an overlap index over class-owned clustering prototypes.
 
@@ -75,8 +85,15 @@ class OverlapIndex:
             Number of samples per chunk for optimized offline centroid scoring.
             If None, each class block is scored at once.
         """
+        self.rho = rho
+        self.r_hat = r_hat
         self.model_type = model_type
         self.match_tracking = match_tracking
+        self.kmeans_k = kmeans_k
+        self.kmeans_kwargs = kmeans_kwargs
+        self.ballcover_k = ballcover_k
+        self.ballcover_radius = ballcover_radius
+        self.ballcover_kwargs = ballcover_kwargs
         self.offline_chunk_size = offline_chunk_size
 
         # indices / bookkeeping
@@ -87,24 +104,35 @@ class OverlapIndex:
         self.singleton_index = defaultdict(lambda: 1.0)
         self.index = 1.0
 
-        # swappable backend
-        if model_type in ["Fuzzy", "Hypersphere"]:
-            self._model: _BaseManyToOneClusteringModel = _ARTMAPManyToOne(
-                model_type=model_type, rho=rho, r_hat=r_hat
+        self._model: _BaseManyToOneClusteringModel = self._build_model()
+
+    def _build_model(self) -> _BaseManyToOneClusteringModel:
+        """Construct the backend adapter from the current estimator parameters."""
+        if self.model_type in ["Fuzzy", "Hypersphere"]:
+            return _ARTMAPManyToOne(
+                model_type=self.model_type,
+                rho=self.rho,
+                r_hat=self.r_hat,
             )
-        elif model_type == "KMeans":
-            self._model = _KMeansManyToOne(k=kmeans_k, kmeans_kwargs=kmeans_kwargs)
-        elif model_type == "MiniBatchKMeans":
-            self._model = _MiniBatchKMeansManyToOne(k=kmeans_k, kmeans_kwargs=kmeans_kwargs)
-        elif model_type == "BallCover":
-            kwargs = ballcover_kwargs or {}
-            self._model = _BallCoverManyToOne(
-                k=ballcover_k,
-                radius=ballcover_radius,
+        if self.model_type == "KMeans":
+            return _KMeansManyToOne(k=self.kmeans_k, kmeans_kwargs=self.kmeans_kwargs)
+        if self.model_type == "MiniBatchKMeans":
+            return _MiniBatchKMeansManyToOne(k=self.kmeans_k, kmeans_kwargs=self.kmeans_kwargs)
+        if self.model_type == "BallCover":
+            kwargs = self.ballcover_kwargs or {}
+            return _BallCoverManyToOne(
+                k=self.ballcover_k,
+                radius=self.ballcover_radius,
                 **kwargs,
             )
-        else:
-            raise ValueError(f"Unknown model_type: {model_type}")
+        raise ValueError(f"Unknown model_type: {self.model_type}")
+
+    def set_params(self, **params: Any) -> "OverlapIndex":
+        """Update estimator parameters and rebuild the backend adapter."""
+        super().set_params(**params)
+        self._model = self._build_model()
+        self._reset_indices()
+        return self
 
     @property
     def _is_artmap_backend(self) -> bool:
@@ -120,7 +148,49 @@ class OverlapIndex:
 
     def _prep_X(self, X: np.ndarray) -> np.ndarray:
         """Preprocess raw samples before clustering."""
-        return complement_code(X)
+        X = np.asarray(X, dtype=float)
+        if self._is_artmap_backend:
+            return complement_code(X)
+        return X
+
+    def _validate_input_data(
+        self,
+        X: np.ndarray,
+        Y: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Validate aligned batch inputs before preprocessing."""
+        X_arr = np.asarray(X, dtype=float)
+        Y_arr = np.asarray(Y)
+
+        if X_arr.ndim != 2:
+            raise ValueError(f"X must be a 2D array; got shape {X_arr.shape}.")
+        if not np.all(np.isfinite(X_arr)):
+            raise ValueError("X contains NaN or infinite values.")
+        if Y_arr.ndim != 1:
+            raise ValueError(f"Y must be a 1D array; got shape {Y_arr.shape}.")
+        if X_arr.shape[0] != Y_arr.shape[0]:
+            raise ValueError(
+                f"X and Y must have the same number of rows; got {X_arr.shape[0]} and {Y_arr.shape[0]}."
+            )
+        return X_arr, Y_arr
+
+    @staticmethod
+    def _warn_empty_input() -> None:
+        """Warn when an operation receives no samples."""
+        warnings.warn(
+            "Received empty X/Y; leaving OverlapIndex at its default value of 1.0.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    @staticmethod
+    def _warn_single_class() -> None:
+        """Warn when an operation receives only one unique class."""
+        warnings.warn(
+            "Received data with a single class; OverlapIndex remains 1.0 until multiple classes are observed.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     def _reset_indices(self) -> None:
         """Reset overlap-index bookkeeping without replacing the clustering backend."""
@@ -201,6 +271,8 @@ class OverlapIndex:
 
         if x_.ndim != 1:
             raise ValueError("x must be a 1D array or list")
+        if not np.all(np.isfinite(x_)):
+            raise ValueError("x contains NaN or infinite values.")
 
         x_prep = self._prep_X(x_.reshape(1, -1))
         self._model.partial_fit(
@@ -236,6 +308,8 @@ class OverlapIndex:
                 [self.pairwise_index[(y, b)] for b in self.rev_map.keys() if b != y]
             )
             self.index = float(np.mean(list(self.singleton_index.values())))
+        else:
+            self._warn_single_class()
         return self.index
 
     def add_batch(self, X: np.ndarray, Y: np.ndarray) -> float:
@@ -248,6 +322,14 @@ class OverlapIndex:
         if self._is_offline_backend:
             # For consistency with your original API, treat add_batch as offline-fit+score.
             return self.fit_offline(X, Y, reset_state=True)
+
+        X, Y = self._validate_input_data(X, Y)
+        if X.shape[0] == 0:
+            self._warn_empty_input()
+            return self.index
+
+        if np.unique(Y).size <= 1:
+            self._warn_single_class()
 
         X_prep = self._prep_X(X)
         self._model.partial_fit(
@@ -330,6 +412,50 @@ class OverlapIndex:
         """
         self.add_batch(X, Y)
         return self
+
+    def score(
+        self,
+        X: Optional[np.ndarray] = None,
+        Y: Optional[np.ndarray] = None,
+    ) -> float:
+        """
+        Return the current overlap-index score.
+
+        If X and Y are provided together, refit on that labeled dataset first.
+        """
+        if X is None and Y is None:
+            return float(self.index)
+        if X is None or Y is None:
+            raise ValueError("score expects both X and Y, or neither.")
+        return float(self.fit_offline(X, Y, reset_state=True))
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        """
+        Return the highest-scoring global prototype id for each sample.
+        """
+        X_arr = np.asarray(X, dtype=float)
+        if X_arr.ndim != 2:
+            raise ValueError(f"X must be a 2D array; got shape {X_arr.shape}.")
+        if not np.all(np.isfinite(X_arr)):
+            raise ValueError("X contains NaN or infinite values.")
+        if not self.rev_map or self._model.n_clusters_total <= 0:
+            raise ValueError("This OverlapIndex instance is not fit yet.")
+
+        X_prep = self._prep_X(X_arr)
+        result = np.empty(X_prep.shape[0], dtype=int)
+        for i, x in enumerate(X_prep):
+            ids, _ = self._model.topk(x, k=1)
+            if ids.size == 0:
+                raise ValueError("The backend did not return any prototype ids for prediction.")
+            result[i] = int(ids[0])
+        return result
+
+    def fit_predict(self, X: np.ndarray, Y: np.ndarray) -> np.ndarray:
+        """
+        Fit the estimator and return per-sample global prototype ids.
+        """
+        self.fit(X, Y)
+        return self.predict(X)
 
     # ---- offline (centroid backends primary; also works for ARTMAP if you want) ----
 
@@ -469,9 +595,16 @@ class OverlapIndex:
         if reset_state:
             self._reset_indices()
 
-        X_prep = self._prep_X(X)
-        Y = np.asarray(Y)
+        X, Y = self._validate_input_data(X, Y)
+        if X.shape[0] == 0:
+            self._warn_empty_input()
+            return self.index
+
         classes = np.unique(Y)
+        if classes.size <= 1:
+            self._warn_single_class()
+
+        X_prep = self._prep_X(X)
 
         # Fit backend and sync rev_map
         self._model.fit_offline(X_prep, Y)

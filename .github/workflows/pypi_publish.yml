@@ -8,17 +8,56 @@ permissions:
   contents: read
   id-token: write
 
+env:
+  POETRY_VERSION: "2.4.1"
+
 jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install system libraries for SciPy builds
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenblas-dev
+
+      - name: Install Poetry
+        run: |
+          pipx install poetry==${POETRY_VERSION}
+          poetry --version
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "poetry"
+          cache-dependency-path: |
+            pyproject.toml
+            poetry.lock
+
+      - name: Install package and test dependencies
+        run: |
+          poetry env use python
+          poetry install --with dev --extras art --no-interaction --no-ansi
+
+      - name: Run pytest
+        run: |
+          poetry run python -m pytest -q tests/test_overlap_index_regression.py
+
   build-and-publish:
+    needs: test
     runs-on: ubuntu-latest
     environment: pypi
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
