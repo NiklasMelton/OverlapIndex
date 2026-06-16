@@ -248,7 +248,52 @@ def test_empty_data_warns_and_leaves_default_index():
 
     assert returned == 1.0
     assert model.index == 1.0
+    assert model.weighted_index == 1.0
     assert dict(model.rev_map) == {}
+
+
+def test_weighted_index_returns_default_before_fit():
+    model = _make_model("MiniBatchKMeans")
+
+    assert model.weighted_index == 1.0
+
+
+def test_weighted_index_uses_class_supports():
+    model = _make_model("MiniBatchKMeans")
+    model.singleton_index.update({"minority": 0.0, "majority": 1.0})
+    model.cluster_cardinality.update({"minority": 1, "majority": 9})
+    model.index = float(np.mean(list(model.singleton_index.values())))
+
+    assert model.index == 0.5
+    assert model.weighted_index == 0.9
+
+
+def test_weighted_index_matches_fitted_support_weighted_formula():
+    X, y = _iris_data()
+    X = X[y != 2]
+    y = y[y != 2]
+    X = np.concatenate([X[y == 0][:10], X[y == 1][:40]], axis=0)
+    y = np.concatenate([y[y == 0][:10], y[y == 1][:40]], axis=0)
+    model = OverlapIndex(
+        model_type="MiniBatchKMeans",
+        kmeans_k=3,
+        kmeans_kwargs={
+            "random_state": 0,
+            "n_init": 1,
+            "batch_size": 16,
+            "max_iter": 100,
+        },
+    )
+
+    model.add_batch(X, y)
+    total_support = sum(model.cluster_cardinality[y] for y in model.singleton_index)
+    expected = sum(
+        model.singleton_index[y] * model.cluster_cardinality[y]
+        for y in model.singleton_index
+    ) / total_support
+
+    assert total_support == 50
+    assert np.isclose(model.weighted_index, expected, atol=0.0, rtol=0.0)
 
 
 def test_single_class_warns_and_returns_default_index():

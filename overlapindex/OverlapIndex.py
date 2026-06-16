@@ -359,6 +359,27 @@ class OverlapIndex(BaseEstimator):
     # ---- compatibility accessors (optional) ----
 
     @property
+    def weighted_index(self) -> float:
+        """
+        Return the support-weighted overlap index across observed classes.
+
+        The default ``index`` is a macro average over per-class scores. This
+        property weights each per-class score by that class's positive support.
+        """
+        total_support = sum(
+            int(self.cluster_cardinality.get(y, 0))
+            for y in self.singleton_index
+        )
+        if total_support <= 0:
+            return float(self.index)
+
+        weighted_sum = sum(
+            float(score) * int(self.cluster_cardinality.get(y, 0))
+            for y, score in self.singleton_index.items()
+        )
+        return float(weighted_sum / float(total_support))
+
+    @property
     def module_a(self) -> Any:
         """Return the underlying ARTMAP module A object for ARTMAP backends."""
         if self._is_artmap_backend:
