@@ -4,6 +4,7 @@
 .venv/
 __pycache__/
 *.egg-info/
+tests/data_yeast.data
 *.py[cod]
 build/
 dist/
