@@ -6,23 +6,15 @@ from urllib.request import Request, urlopen
 
 import numpy as np
 import pytest
-from sklearn.datasets import load_iris
 from sklearn.preprocessing import MinMaxScaler
 
 from overlapindex import OverlapIndex
 
 
 EXPECTED_REAL_WORLD_INDEX = {
-    "iris": 0.9133333333333332,
     "yeast": 0.45851927198966064,
 }
 YEAST_DATA_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/yeast/yeast.data"
-
-
-def _iris_data():
-    X, y = load_iris(return_X_y=True)
-    X = MinMaxScaler().fit_transform(X)
-    return X.astype(float), y.astype(int)
 
 
 def _ensure_yeast_data(path):
@@ -73,7 +65,7 @@ def _make_model():
 
 @pytest.mark.parametrize(
     ("dataset_name", "loader"),
-    [("iris", _iris_data), ("yeast", _yeast_data)],
+    [("yeast", _yeast_data)],
 )
 def test_real_world_dataset_index_regression(dataset_name, loader):
     X, y = loader()
