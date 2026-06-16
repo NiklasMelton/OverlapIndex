@@ -215,7 +215,11 @@ def test_art_backend_raises_helpful_error_without_artlib(monkeypatch):
     [
         (np.zeros((2, 2)), np.array([0]), "same number of rows"),
         (np.zeros((2,)), np.array([0, 1]), "X must be a 2D array"),
-        (np.zeros((2, 2)), np.zeros((2, 1, 1)), "Y must be"),
+        (
+            np.zeros((2, 2)),
+            np.zeros((2, 1, 1)),
+            "Y must be a 1D label vector, a 1D sequence of label collections, or a 2D binary indicator matrix.",
+        ),
     ],
 )
 def test_fit_validates_input_shapes(X, y, message):
