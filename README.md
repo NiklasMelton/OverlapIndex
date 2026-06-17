@@ -1,4 +1,6 @@
-# OverlapIndex (OI)
+[![OverlapIndex logo](https://raw.githubusercontent.com/NiklasMelton/OverlapIndex/develop/img/overlap_index_logo.png)](https://github.com/NiklasMelton/OverlapIndex)
+# 
+OverlapIndex (OI)
 
 This package provides an implementation of the **Overlap Index (OI)**, a cluster-validity measure designed to quantify the degree of overlap between data classes or clusters. The OI can be updated online with ARTMAP-based backends, or computed in batch with offline clustering backends, making it useful for streaming, continual learning, large-scale representation analysis, and embedding-space diagnostics.
 
