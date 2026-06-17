@@ -1,4 +1,6 @@
-# OverlapIndex (OI)
+[![OverlapIndex logo](https://raw.githubusercontent.com/NiklasMelton/OverlapIndex/develop/img/overlap_index_logo.png)](https://github.com/NiklasMelton/OverlapIndex)
+# 
+OverlapIndex (OI)
 
 This package provides an implementation of the **Overlap Index (OI)**, a cluster-validity measure designed to quantify the degree of overlap between data classes or clusters. The OI can be updated online with ARTMAP-based backends, or computed in batch with offline clustering backends, making it useful for streaming, continual learning, large-scale representation analysis, and embedding-space diagnostics.
 
@@ -97,7 +99,8 @@ The Overlap Index can be used in several settings:
 - ART backends complement-code inputs internally and therefore require features in the `[0, 1]` interval.
 - Offline backends (`KMeans`, `MiniBatchKMeans`, and `BallCover`) consume normalized features directly and do not apply complement coding.
 - Overlap is estimated by monitoring shared best-matching units (BMUs) or top prototype activations between class pairs.
-- The global OI is computed as the mean of per-class minimum pairwise overlap scores.
+- The global OI is computed as the macro mean of per-class minimum pairwise overlap scores, so each observed class contributes equally to `index`.
+- A support-weighted companion score is available through `weighted_index` for workflows that need the score to reflect observed class frequencies.
 
 ---
 
@@ -342,7 +345,14 @@ The default parameters are intended for offline batch use with `MiniBatchKMeans`
 ## Output
 
 - **`index`**  
-  Global Overlap Index across all observed classes.
+  Global macro Overlap Index across all observed classes. This is the default
+  class-balanced score and is usually preferred for imbalance-sensitive
+  separation analysis.
+
+- **`weighted_index`**  
+  Support-weighted Overlap Index across observed classes. This weights each
+  class's `singleton_index` value by its positive sample count, which can be
+  useful when reporting should reflect observed class frequencies.
 
 - **`singleton_index[y]`**  
   Minimum pairwise overlap score for class `y`.

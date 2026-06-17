@@ -215,7 +215,11 @@ def test_art_backend_raises_helpful_error_without_artlib(monkeypatch):
     [
         (np.zeros((2, 2)), np.array([0]), "same number of rows"),
         (np.zeros((2,)), np.array([0, 1]), "X must be a 2D array"),
-        (np.zeros((2, 2)), np.array([[0], [1]]), "Y must be a 1D array"),
+        (
+            np.zeros((2, 2)),
+            np.zeros((2, 1, 1)),
+            "Y must be a 1D label vector, a 1D sequence of label collections, or a 2D binary indicator matrix.",
+        ),
     ],
 )
 def test_fit_validates_input_shapes(X, y, message):
@@ -244,7 +248,52 @@ def test_empty_data_warns_and_leaves_default_index():
 
     assert returned == 1.0
     assert model.index == 1.0
+    assert model.weighted_index == 1.0
     assert dict(model.rev_map) == {}
+
+
+def test_weighted_index_returns_default_before_fit():
+    model = _make_model("MiniBatchKMeans")
+
+    assert model.weighted_index == 1.0
+
+
+def test_weighted_index_uses_class_supports():
+    model = _make_model("MiniBatchKMeans")
+    model.singleton_index.update({"minority": 0.0, "majority": 1.0})
+    model.cluster_cardinality.update({"minority": 1, "majority": 9})
+    model.index = float(np.mean(list(model.singleton_index.values())))
+
+    assert model.index == 0.5
+    assert model.weighted_index == 0.9
+
+
+def test_weighted_index_matches_fitted_support_weighted_formula():
+    X, y = _iris_data()
+    X = X[y != 2]
+    y = y[y != 2]
+    X = np.concatenate([X[y == 0][:10], X[y == 1][:40]], axis=0)
+    y = np.concatenate([y[y == 0][:10], y[y == 1][:40]], axis=0)
+    model = OverlapIndex(
+        model_type="MiniBatchKMeans",
+        kmeans_k=3,
+        kmeans_kwargs={
+            "random_state": 0,
+            "n_init": 1,
+            "batch_size": 16,
+            "max_iter": 100,
+        },
+    )
+
+    model.add_batch(X, y)
+    total_support = sum(model.cluster_cardinality[y] for y in model.singleton_index)
+    expected = sum(
+        model.singleton_index[y] * model.cluster_cardinality[y]
+        for y in model.singleton_index
+    ) / total_support
+
+    assert total_support == 50
+    assert np.isclose(model.weighted_index, expected, atol=0.0, rtol=0.0)
 
 
 def test_single_class_warns_and_returns_default_index():
@@ -314,7 +363,107 @@ def test_get_params_and_set_params_follow_sklearn_conventions():
 
     params = model.get_params()
     assert params["kmeans_k"] == 6
+    assert params["multilabel_pair_mode"] == "all"
 
     model.set_params(kmeans_k=4, offline_chunk_size=2048)
     assert model.kmeans_k == 4
     assert model.offline_chunk_size == 2048
+
+
+def test_multilabel_sequence_of_same_length_label_lists_is_supported():
+    X = np.array(
+        [
+            [0.0, 0.0],
+            [0.2, 0.0],
+            [1.0, 0.0],
+            [1.2, 0.0],
+        ],
+        dtype=float,
+    )
+    y = [["A", "B"], ["A", "C"], ["B", "C"], ["A", "B"]]
+    model = OverlapIndex(
+        model_type="KMeans",
+        kmeans_k=1,
+        kmeans_kwargs={"random_state": 0, "n_init": 10},
+    )
+
+    returned = model.add_batch(X, y)
+
+    assert np.isclose(returned, model.index, atol=0.0, rtol=0.0)
+    assert model.pairwise_cardinality[("A", "B")] == 1
+    assert model.pairwise_cardinality[("A", "C")] == 2
+    assert model.cluster_cardinality["A"] == 3
+
+
+def test_multilabel_binary_indicator_matrix_uses_column_labels():
+    X = np.array(
+        [
+            [0.0, 0.0],
+            [0.2, 0.0],
+            [1.0, 0.0],
+            [1.2, 0.0],
+        ],
+        dtype=float,
+    )
+    y = np.array(
+        [
+            [1, 1, 0],
+            [1, 0, 1],
+            [0, 1, 1],
+            [1, 1, 0],
+        ],
+        dtype=int,
+    )
+    model = OverlapIndex(
+        model_type="MiniBatchKMeans",
+        kmeans_k=1,
+        kmeans_kwargs={"random_state": 0, "n_init": 1, "batch_size": 4},
+    )
+
+    model.fit(X, y)
+
+    assert set(model.label_to_index_) == {0, 1, 2}
+    assert model.pairwise_cardinality[(0, 1)] == 1
+    assert model.pairwise_cardinality[(0, 2)] == 2
+    assert model.cluster_cardinality[0] == 3
+
+
+def test_multilabel_top_m_limits_competitors():
+    X = np.array(
+        [
+            [0.0, 0.0],
+            [0.1, 0.0],
+            [1.0, 0.0],
+            [1.1, 0.0],
+            [2.0, 0.0],
+            [2.1, 0.0],
+        ],
+        dtype=float,
+    )
+    y = [
+        ["A", "B"],
+        ["A"],
+        ["B"],
+        ["B", "C"],
+        ["C"],
+        ["A", "C"],
+    ]
+    model = OverlapIndex(
+        model_type="KMeans",
+        kmeans_k=1,
+        kmeans_kwargs={"random_state": 0, "n_init": 10},
+        multilabel_pair_mode="top_m",
+        top_m=1,
+    )
+
+    model.fit(X, y)
+
+    assert set(model.competitors_) == {"A", "B", "C"}
+    for label, competitors in model.competitors_.items():
+        assert len(competitors) <= 1
+        assert label not in set(competitors)
+
+
+def test_multilabel_top_m_requires_positive_integer():
+    with pytest.raises(ValueError, match="top_m must be a positive integer"):
+        OverlapIndex(multilabel_pair_mode="top_m", top_m=0)

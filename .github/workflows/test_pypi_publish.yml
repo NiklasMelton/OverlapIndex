@@ -45,7 +45,7 @@ jobs:
 
       - name: Run pytest
         run: |
-          poetry run python -m pytest -q tests/test_overlap_index_regression.py
+          poetry run python -m pytest -q tests
 
   build-and-publish:
     needs: test
