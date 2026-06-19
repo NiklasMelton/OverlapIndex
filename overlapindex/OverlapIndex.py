@@ -137,6 +137,21 @@ def _ordered_unique_labels(Y_sets: list[set]) -> np.ndarray:
                 labels.append(label)
     return np.asarray(labels, dtype=object)
 
+
+def _deduplicated_labels(labels: Iterable[Any]) -> list[Any]:
+    """Return labels with first-seen order preserved after hashability checks."""
+    deduplicated = []
+    seen = set()
+    for label in labels:
+        try:
+            hash(label)
+        except TypeError as exc:
+            raise TypeError("exclude_classes entries must be hashable.") from exc
+        if label not in seen:
+            seen.add(label)
+            deduplicated.append(label)
+    return deduplicated
+
 # ----------------------------
 # OverlapIndex with model_type
 # ----------------------------
@@ -167,6 +182,7 @@ class OverlapIndex(BaseEstimator):
         offline_chunk_size: Optional[int] = 10_000,
         multilabel_pair_mode: Literal["all", "top_m"] = "all",
         top_m: Optional[int] = None,
+        exclude_classes: Optional[Any] = None,
     ) -> None:
         """
         Initialize the overlap index and its clustering backend.
@@ -206,6 +222,11 @@ class OverlapIndex(BaseEstimator):
         top_m : int, optional
             Number of nearest competing labels per source label when
             multilabel_pair_mode is "top_m".
+        exclude_classes : None, scalar label, or iterable of labels, optional
+            Label ids to exclude from the global ``index`` and
+            ``weighted_index`` aggregation. Excluded labels remain fully
+            involved in fitting, singleton scoring, pairwise scoring, and all
+            bookkeeping outputs.
         """
         self.rho = rho
         self.r_hat = r_hat
@@ -219,6 +240,7 @@ class OverlapIndex(BaseEstimator):
         self.offline_chunk_size = offline_chunk_size
         self.multilabel_pair_mode = multilabel_pair_mode
         self.top_m = top_m
+        self.exclude_classes = exclude_classes
         self._validate_multilabel_params()
 
         # indices / bookkeeping
@@ -340,6 +362,15 @@ class OverlapIndex(BaseEstimator):
             stacklevel=2,
         )
 
+    @staticmethod
+    def _warn_all_observed_classes_excluded() -> None:
+        """Warn when exclusions remove every observed class from summaries."""
+        warnings.warn(
+            "All observed classes were excluded from global aggregation; leaving OverlapIndex scores at 1.0.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
     def _reset_indices(self) -> None:
         """Reset overlap-index bookkeeping without replacing the clustering backend."""
         self.sparse_adj = defaultdict(lambda: 0)
@@ -366,9 +397,13 @@ class OverlapIndex(BaseEstimator):
         The default ``index`` is a macro average over per-class scores. This
         property weights each per-class score by that class's positive support.
         """
+        included_labels = self._included_singleton_labels()
+        if not included_labels:
+            return float(self.index)
+
         total_support = sum(
             int(self.cluster_cardinality.get(y, 0))
-            for y in self.singleton_index
+            for y in included_labels
         )
         if total_support <= 0:
             return float(self.index)
@@ -376,8 +411,45 @@ class OverlapIndex(BaseEstimator):
         weighted_sum = sum(
             float(score) * int(self.cluster_cardinality.get(y, 0))
             for y, score in self.singleton_index.items()
+            if y in included_labels
         )
         return float(weighted_sum / float(total_support))
+
+    def _normalized_exclude_classes(self) -> set[Any]:
+        """Normalize the configured global-aggregation exclusions."""
+        excluded = self.exclude_classes
+        if excluded is None:
+            return set()
+
+        if isinstance(excluded, (str, bytes)) or not isinstance(excluded, Iterable):
+            labels = [excluded]
+        else:
+            labels = list(excluded)
+
+        return set(_deduplicated_labels(labels))
+
+    def _included_singleton_labels(self) -> list[Any]:
+        """Return observed labels that still contribute to global summaries."""
+        observed_labels = list(self.singleton_index.keys())
+        if not observed_labels:
+            return []
+
+        excluded = self._normalized_exclude_classes()
+        return [label for label in observed_labels if label not in excluded]
+
+    def _recompute_global_index(self) -> float:
+        """Recompute the exclusion-aware global macro overlap index."""
+        included_labels = self._included_singleton_labels()
+        if not included_labels:
+            if self.singleton_index:
+                self._warn_all_observed_classes_excluded()
+            self.index = 1.0
+            return self.index
+
+        self.index = float(
+            np.mean([self.singleton_index[label] for label in included_labels])
+        )
+        return self.index
 
     @property
     def module_a(self) -> Any:
@@ -483,9 +555,12 @@ class OverlapIndex(BaseEstimator):
             self.singleton_index[y] = min(
                 [self.pairwise_index[(y, b)] for b in self.rev_map.keys() if b != y]
             )
-            self.index = float(np.mean(list(self.singleton_index.values())))
+            self._recompute_global_index()
         else:
-            self._warn_single_class()
+            if self._included_singleton_labels():
+                self._warn_single_class()
+            else:
+                self._warn_all_observed_classes_excluded()
         return self.index
 
     def add_batch(self, X: np.ndarray, Y: Any) -> float:
@@ -547,7 +622,7 @@ class OverlapIndex(BaseEstimator):
                 self.singleton_index[y] = min(
                     [self.pairwise_index[(y, b)] for b in self.rev_map.keys() if b != y]
                 )
-            self.index = float(np.mean(list(self.singleton_index.values())))
+            self._recompute_global_index()
         return self.index
 
     def fit(self, X: np.ndarray, Y: np.ndarray) -> "OverlapIndex":
@@ -836,7 +911,7 @@ class OverlapIndex(BaseEstimator):
                     if self.pairwise_cardinality[(y, b)] > 0
                 ]
                 self.singleton_index[y] = min(valid_scores) if valid_scores else 1.0
-            self.index = float(np.mean(list(self.singleton_index.values())))
+            self._recompute_global_index()
 
         return self.index
 
@@ -914,7 +989,7 @@ class OverlapIndex(BaseEstimator):
                 self.singleton_index[y] = min(
                     [self.pairwise_index[(y, b)] for b in self.rev_map.keys() if b != y]
                 )
-            self.index = float(np.mean(list(self.singleton_index.values())))
+            self._recompute_global_index()
         return self.index
 
     def _fit_offline_replay(
@@ -949,7 +1024,7 @@ class OverlapIndex(BaseEstimator):
                 self.singleton_index[y] = min(
                     [self.pairwise_index[(y, b)] for b in self.rev_map.keys() if b != y]
                 )
-            self.index = float(np.mean(list(self.singleton_index.values())))
+            self._recompute_global_index()
         return self.index
 
     def fit_offline(self, X: np.ndarray, Y: Any, reset_state: bool = True) -> float:
@@ -1010,6 +1085,10 @@ class OverlapIndex(BaseEstimator):
                 self.singleton_index[c] = 1.0
 
         if len(classes) <= 1:
+            if self._included_singleton_labels():
+                self._warn_single_class()
+            else:
+                self._warn_all_observed_classes_excluded()
             return self.index
 
         if is_multilabel:

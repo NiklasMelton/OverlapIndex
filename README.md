@@ -101,6 +101,7 @@ The Overlap Index can be used in several settings:
 - Overlap is estimated by monitoring shared best-matching units (BMUs) or top prototype activations between class pairs.
 - The global OI is computed as the macro mean of per-class minimum pairwise overlap scores, so each observed class contributes equally to `index`.
 - A support-weighted companion score is available through `weighted_index` for workflows that need the score to reflect observed class frequencies.
+- Global aggregation can exclude one or more label ids through `exclude_classes` without removing those labels from fitting, singleton scores, or pairwise scores.
 
 ---
 
@@ -126,6 +127,23 @@ score = oi.index
 
 
 The fitted value is available through `oi.index`. For users who prefer update methods that return the current score directly, `add_batch(X, y)` is also supported.
+
+### Excluding Classes From Global Aggregation
+
+`exclude_classes` lets you keep a label fully involved in overlap evaluation
+while omitting it from the two global summary scores:
+
+```python
+oi = OverlapIndex(exclude_classes=0)
+oi = OverlapIndex(exclude_classes=[0, "unlabeled"])
+```
+
+This is useful for segmentation workflows where only foreground objects are
+labeled but background-only samples should still contribute to pairwise overlap
+counts. A common pattern is to create one background class containing those
+samples, then pass that class id to `exclude_classes`. The background class will
+still appear in `singleton_index`, `pairwise_index`, and prototype ownership;
+only `index` and `weighted_index` omit it from aggregation.
 
 ### Online ARTMAP Usage
 
@@ -336,6 +354,10 @@ backends.
 - `ballcover_kwargs` *(dict, optional)*  
   Additional BallCover options such as `metric`, `cover_fraction`, `chunk_size`, `max_balls`, and `random_state`.
 
+- `exclude_classes` *(None, scalar label, or iterable of labels)*  
+  Label ids to omit from the global `index` and `weighted_index`
+  aggregation while leaving all fitting and per-class overlap outputs intact.
+
 ---
 
 The default parameters are intended for offline batch use with `MiniBatchKMeans`. For online or continual-learning workflows, explicitly choose `model_type="Fuzzy"` or `model_type="Hypersphere"`. For very large ART-based runs, smaller `rho` values (0.5-0.7) may improve run-time performance.
@@ -345,14 +367,15 @@ The default parameters are intended for offline batch use with `MiniBatchKMeans`
 ## Output
 
 - **`index`**  
-  Global macro Overlap Index across all observed classes. This is the default
-  class-balanced score and is usually preferred for imbalance-sensitive
-  separation analysis.
+  Global macro Overlap Index across all observed classes that are not listed in
+  `exclude_classes`. This is the default class-balanced score and is usually
+  preferred for imbalance-sensitive separation analysis.
 
 - **`weighted_index`**  
-  Support-weighted Overlap Index across observed classes. This weights each
-  class's `singleton_index` value by its positive sample count, which can be
-  useful when reporting should reflect observed class frequencies.
+  Support-weighted Overlap Index across observed classes that are not listed in
+  `exclude_classes`. This weights each included class's `singleton_index` value
+  by its positive sample count, which can be useful when reporting should
+  reflect observed class frequencies.
 
 - **`singleton_index[y]`**  
   Minimum pairwise overlap score for class `y`.

@@ -2,6 +2,7 @@
 Behavior-regression tests for OverlapIndex.
 """
 
+from collections.abc import Iterable
 from importlib import import_module
 from importlib.util import find_spec
 
@@ -52,15 +53,17 @@ def _iris_data():
 
 
 
-def _make_model(model_type):
+def _make_model(model_type, **overrides):
     if model_type == "KMeans":
-        return OverlapIndex(
+        params = dict(
             model_type="KMeans",
             kmeans_k=10,
             kmeans_kwargs={"random_state": 0, "n_init": 10},
         )
+        params.update(overrides)
+        return OverlapIndex(**params)
     if model_type == "MiniBatchKMeans":
-        return OverlapIndex(
+        params = dict(
             model_type="MiniBatchKMeans",
             kmeans_k=10,
             kmeans_kwargs={
@@ -70,8 +73,10 @@ def _make_model(model_type):
                 "max_iter": 100,
             },
         )
+        params.update(overrides)
+        return OverlapIndex(**params)
     if model_type == "BallCover":
-        return OverlapIndex(
+        params = dict(
             model_type="BallCover",
             ballcover_k=20,
             ballcover_radius="auto",
@@ -81,11 +86,57 @@ def _make_model(model_type):
                 "random_state": 0,
             },
         )
-    return OverlapIndex(
+        params.update(overrides)
+        return OverlapIndex(**params)
+    params = dict(
         model_type=model_type,
         rho=0.95,
         r_hat=0.1,
     )
+    params.update(overrides)
+    return OverlapIndex(**params)
+
+
+def _normalize_excluded_for_test(excluded):
+    if excluded is None:
+        return set()
+    if isinstance(excluded, (str, bytes)) or not isinstance(excluded, Iterable):
+        return {excluded}
+    return set(excluded)
+
+
+def _manual_global_scores(model, excluded):
+    excluded_set = _normalize_excluded_for_test(excluded)
+    included_labels = [
+        label for label in model.singleton_index if label not in excluded_set
+    ]
+    if not included_labels:
+        return 1.0, 1.0
+
+    macro = float(
+        np.mean([model.singleton_index[label] for label in included_labels])
+    )
+    total_support = sum(model.cluster_cardinality[label] for label in included_labels)
+    if total_support <= 0:
+        return macro, macro
+
+    weighted = sum(
+        model.singleton_index[label] * model.cluster_cardinality[label]
+        for label in included_labels
+    ) / total_support
+    return macro, float(weighted)
+
+
+def _assert_float_mapping_close(received, expected):
+    assert set(received) == set(expected)
+    for key, expected_value in expected.items():
+        assert np.isclose(received[key], expected_value, atol=0.0, rtol=0.0)
+
+
+def _assert_array_mapping_equal(received, expected):
+    assert set(received) == set(expected)
+    for key, expected_value in expected.items():
+        assert np.array_equal(received[key], expected_value)
 
 
 def _assert_index_close(received, expected, context):
@@ -370,6 +421,81 @@ def test_get_params_and_set_params_follow_sklearn_conventions():
     assert model.offline_chunk_size == 2048
 
 
+def test_exclude_classes_get_params_and_set_params_follow_sklearn_conventions():
+    model = OverlapIndex(
+        model_type="MiniBatchKMeans",
+        exclude_classes=[0, "unlabeled"],
+    )
+
+    params = model.get_params()
+    assert params["exclude_classes"] == [0, "unlabeled"]
+
+    model.set_params(exclude_classes="background")
+    assert model.exclude_classes == "background"
+
+
+@pytest.mark.parametrize("model_type", ["KMeans", "MiniBatchKMeans", "BallCover"])
+def test_exclude_classes_only_changes_global_aggregation_single_label(model_type):
+    X, y = _iris_data()
+
+    baseline = _make_model(model_type)
+    excluded = _make_model(model_type, exclude_classes=0)
+
+    baseline.fit(X, y)
+    excluded.fit(X, y)
+
+    _assert_float_mapping_close(
+        dict(excluded.singleton_index),
+        dict(baseline.singleton_index),
+    )
+    _assert_float_mapping_close(
+        dict(excluded.pairwise_index),
+        dict(baseline.pairwise_index),
+    )
+    assert dict(excluded.cluster_cardinality) == dict(baseline.cluster_cardinality)
+
+    expected_index, expected_weighted = _manual_global_scores(baseline, 0)
+    assert np.isclose(excluded.index, expected_index, atol=0.0, rtol=0.0)
+    assert np.isclose(excluded.weighted_index, expected_weighted, atol=0.0, rtol=0.0)
+
+
+def test_empty_and_absent_exclusions_preserve_current_behavior():
+    X, y = _iris_data()
+
+    baseline = _make_model("MiniBatchKMeans")
+    empty = _make_model("MiniBatchKMeans", exclude_classes=[])
+    absent = _make_model(
+        "MiniBatchKMeans",
+        exclude_classes=[999, "missing"],
+    )
+
+    baseline.fit(X, y)
+    empty.fit(X, y)
+    absent.fit(X, y)
+
+    assert np.isclose(empty.index, baseline.index, atol=0.0, rtol=0.0)
+    assert np.isclose(absent.index, baseline.index, atol=0.0, rtol=0.0)
+    assert np.isclose(empty.weighted_index, baseline.weighted_index, atol=0.0, rtol=0.0)
+    assert np.isclose(absent.weighted_index, baseline.weighted_index, atol=0.0, rtol=0.0)
+
+
+def test_all_observed_classes_excluded_warns_and_leaves_default_scores():
+    X, y = _iris_data()
+    model = _make_model("MiniBatchKMeans", exclude_classes=[0, 1, 2])
+
+    with pytest.warns(
+        RuntimeWarning,
+        match="All observed classes were excluded from global aggregation",
+    ):
+        returned = model.add_batch(X, y)
+
+    assert returned == 1.0
+    assert model.index == 1.0
+    assert model.weighted_index == 1.0
+    assert set(model.singleton_index) == {0, 1, 2}
+    assert dict(model.cluster_cardinality) == {0: 50, 1: 50, 2: 50}
+
+
 def test_multilabel_sequence_of_same_length_label_lists_is_supported():
     X = np.array(
         [
@@ -464,6 +590,168 @@ def test_multilabel_top_m_limits_competitors():
         assert label not in set(competitors)
 
 
+def test_multilabel_sequence_exclusions_change_only_global_aggregation():
+    X = np.array(
+        [
+            [0.0, 0.0],
+            [0.1, 0.0],
+            [1.0, 0.0],
+            [1.1, 0.0],
+            [2.0, 0.0],
+            [2.1, 0.0],
+        ],
+        dtype=float,
+    )
+    y = [
+        ["A", "B"],
+        ["A"],
+        ["B"],
+        ["B", "C"],
+        ["C"],
+        ["A", "C"],
+    ]
+    baseline = OverlapIndex(
+        model_type="KMeans",
+        kmeans_k=1,
+        kmeans_kwargs={"random_state": 0, "n_init": 10},
+        multilabel_pair_mode="top_m",
+        top_m=1,
+    )
+    excluded = OverlapIndex(
+        model_type="KMeans",
+        kmeans_k=1,
+        kmeans_kwargs={"random_state": 0, "n_init": 10},
+        multilabel_pair_mode="top_m",
+        top_m=1,
+        exclude_classes="B",
+    )
+
+    baseline.fit(X, y)
+    excluded.fit(X, y)
+
+    _assert_array_mapping_equal(excluded.competitors_, baseline.competitors_)
+    _assert_float_mapping_close(
+        dict(excluded.singleton_index),
+        dict(baseline.singleton_index),
+    )
+    _assert_float_mapping_close(
+        dict(excluded.pairwise_index),
+        dict(baseline.pairwise_index),
+    )
+    assert dict(excluded.pairwise_cardinality) == dict(baseline.pairwise_cardinality)
+    assert dict(excluded.cluster_cardinality) == dict(baseline.cluster_cardinality)
+
+    expected_index, expected_weighted = _manual_global_scores(baseline, "B")
+    assert np.isclose(excluded.index, expected_index, atol=0.0, rtol=0.0)
+    assert np.isclose(excluded.weighted_index, expected_weighted, atol=0.0, rtol=0.0)
+
+
+def test_multilabel_indicator_exclusions_change_only_global_aggregation():
+    X = np.array(
+        [
+            [0.0, 0.0],
+            [0.2, 0.0],
+            [1.0, 0.0],
+            [1.2, 0.0],
+        ],
+        dtype=float,
+    )
+    y = np.array(
+        [
+            [1, 1, 0],
+            [1, 0, 1],
+            [0, 1, 1],
+            [1, 1, 0],
+        ],
+        dtype=int,
+    )
+    baseline = OverlapIndex(
+        model_type="MiniBatchKMeans",
+        kmeans_k=1,
+        kmeans_kwargs={"random_state": 0, "n_init": 1, "batch_size": 4},
+    )
+    excluded = OverlapIndex(
+        model_type="MiniBatchKMeans",
+        kmeans_k=1,
+        kmeans_kwargs={"random_state": 0, "n_init": 1, "batch_size": 4},
+        exclude_classes=[1, "absent"],
+    )
+
+    baseline.fit(X, y)
+    excluded.fit(X, y)
+
+    assert excluded.label_to_index_ == baseline.label_to_index_
+    _assert_float_mapping_close(
+        dict(excluded.singleton_index),
+        dict(baseline.singleton_index),
+    )
+    _assert_float_mapping_close(
+        dict(excluded.pairwise_index),
+        dict(baseline.pairwise_index),
+    )
+    assert dict(excluded.pairwise_cardinality) == dict(baseline.pairwise_cardinality)
+    assert dict(excluded.cluster_cardinality) == dict(baseline.cluster_cardinality)
+
+    expected_index, expected_weighted = _manual_global_scores(baseline, [1, "absent"])
+    assert np.isclose(excluded.index, expected_index, atol=0.0, rtol=0.0)
+    assert np.isclose(excluded.weighted_index, expected_weighted, atol=0.0, rtol=0.0)
+
+
 def test_multilabel_top_m_requires_positive_integer():
     with pytest.raises(ValueError, match="top_m must be a positive integer"):
         OverlapIndex(multilabel_pair_mode="top_m", top_m=0)
+
+
+@ARTLIB_REQUIRED
+@pytest.mark.parametrize("model_type", ["Fuzzy", "Hypersphere"])
+def test_art_backends_exclude_classes_only_changes_global_aggregation_after_add_batch(model_type):
+    X, y = _iris_data()
+
+    baseline = _make_model(model_type)
+    excluded = _make_model(model_type, exclude_classes=0)
+
+    baseline.add_batch(X, y)
+    excluded.add_batch(X, y)
+
+    _assert_float_mapping_close(
+        dict(excluded.singleton_index),
+        dict(baseline.singleton_index),
+    )
+    _assert_float_mapping_close(
+        dict(excluded.pairwise_index),
+        dict(baseline.pairwise_index),
+    )
+    assert dict(excluded.cluster_cardinality) == dict(baseline.cluster_cardinality)
+
+    expected_index, expected_weighted = _manual_global_scores(baseline, 0)
+    assert np.isclose(excluded.index, expected_index, atol=0.0, rtol=0.0)
+    assert np.isclose(excluded.weighted_index, expected_weighted, atol=0.0, rtol=0.0)
+
+
+@ARTLIB_REQUIRED
+@pytest.mark.parametrize("model_type", ["Fuzzy", "Hypersphere"])
+def test_art_backends_exclude_classes_only_changes_global_aggregation_after_add_sample(model_type):
+    X, y = _iris_data()
+
+    baseline = _make_model(model_type)
+    excluded = _make_model(model_type, exclude_classes=0)
+
+    baseline.add_batch(X[:-ADD_SAMPLE_IDX], y[:-ADD_SAMPLE_IDX])
+    excluded.add_batch(X[:-ADD_SAMPLE_IDX], y[:-ADD_SAMPLE_IDX])
+
+    baseline.add_sample(X[ADD_SAMPLE_IDX], int(y[ADD_SAMPLE_IDX]))
+    excluded.add_sample(X[ADD_SAMPLE_IDX], int(y[ADD_SAMPLE_IDX]))
+
+    _assert_float_mapping_close(
+        dict(excluded.singleton_index),
+        dict(baseline.singleton_index),
+    )
+    _assert_float_mapping_close(
+        dict(excluded.pairwise_index),
+        dict(baseline.pairwise_index),
+    )
+    assert dict(excluded.cluster_cardinality) == dict(baseline.cluster_cardinality)
+
+    expected_index, expected_weighted = _manual_global_scores(baseline, 0)
+    assert np.isclose(excluded.index, expected_index, atol=0.0, rtol=0.0)
+    assert np.isclose(excluded.weighted_index, expected_weighted, atol=0.0, rtol=0.0)
