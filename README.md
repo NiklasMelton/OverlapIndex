@@ -299,6 +299,64 @@ Additional runnable examples are available in the `examples/` directory.
 
 ---
 
+## Continuous Targets
+
+`ContinuousOverlapIndex` is a regression-capable companion estimator for
+continuous targets. It preserves the OI interpretation by measuring whether
+feature-space prototype overlap occurs between incompatible empirical target
+distributions:
+
+- **COI = 1.0** indicates no observed harmful continuous-target overlap.
+- **COI = 0.5** indicates overlap no better than a permutation/null target
+  assignment.
+- **COI < 0.5** indicates pathological overlap relative to the permutation
+  null.
+
+Version 1 is offline-first and supports `model_type="MiniBatchKMeans"`,
+`model_type="KMeans"`, and `model_type="BallCover"`. ARTMAP online support is
+intentionally deferred for continuous targets.
+
+```python
+from sklearn.preprocessing import MinMaxScaler
+from overlapindex import ContinuousOverlapIndex
+
+X = MinMaxScaler().fit_transform(X)
+
+coi = ContinuousOverlapIndex(
+    model_type="MiniBatchKMeans",
+    kmeans_k=8,
+    kmeans_kwargs={"random_state": 0},
+    n_target_cells="auto",
+    n_null_permutations=20,
+    random_state=0,
+)
+
+coi.fit(X, y_regression)
+score = coi.index
+```
+
+For univariate regression targets, `target_cover="auto"` uses quantile target
+cells and `target_distance="auto"` uses 1D Wasserstein distance. For
+multivariate regression targets, `target_cover="auto"` uses KMeans target cells
+and `target_distance="auto"` uses sliced Wasserstein distance.
+
+COI stores empirical target measures per feature prototype instead of reducing
+targets to means or variances. The permutation null refits the target cover and
+feature prototypes for each target shuffle so that random target assignments
+calibrate near 0.5. As with discrete OI, use enough prototypes per target cell
+for overlap structure to be observable; one prototype per cell is usually too
+coarse for separation diagnostics.
+
+Key diagnostics after fitting include:
+
+- **`actual_loss_`**, **`null_loss_`**, and **`loss_ratio_`**
+- **`raw_index_`** before optional clipping
+- **`macro_index_`** and **`weighted_index`**
+- **`prototype_index_`**, **`prototype_loss_`**, and
+  **`prototype_target_values_`**
+
+---
+
 ## Release Verification
 
 For release testing, start from a fresh Poetry environment so the package under
