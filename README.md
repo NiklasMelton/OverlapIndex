@@ -101,6 +101,7 @@ The Overlap Index can be used in several settings:
 - Overlap is estimated by monitoring shared best-matching units (BMUs) or top prototype activations between class pairs.
 - The global OI is computed as the macro mean of per-class minimum pairwise overlap scores, so each observed class contributes equally to `index`.
 - A support-weighted companion score is available through `weighted_index` for workflows that need the score to reflect observed class frequencies.
+- Global aggregation can exclude one or more label ids through `exclude_classes` without removing those labels from fitting, singleton scores, or pairwise scores.
 
 ---
 
@@ -126,6 +127,23 @@ score = oi.index
 
 
 The fitted value is available through `oi.index`. For users who prefer update methods that return the current score directly, `add_batch(X, y)` is also supported.
+
+### Excluding Classes From Global Aggregation
+
+`exclude_classes` lets you keep a label fully involved in overlap evaluation
+while omitting it from the two global summary scores:
+
+```python
+oi = OverlapIndex(exclude_classes=0)
+oi = OverlapIndex(exclude_classes=[0, "unlabeled"])
+```
+
+This is useful for segmentation workflows where only foreground objects are
+labeled but background-only samples should still contribute to pairwise overlap
+counts. A common pattern is to create one background class containing those
+samples, then pass that class id to `exclude_classes`. The background class will
+still appear in `singleton_index`, `pairwise_index`, and prototype ownership;
+only `index` and `weighted_index` omit it from aggregation.
 
 ### Online ARTMAP Usage
 
@@ -281,6 +299,64 @@ Additional runnable examples are available in the `examples/` directory.
 
 ---
 
+## Continuous Targets
+
+`ContinuousOverlapIndex` is a regression-capable companion estimator for
+continuous targets. It preserves the OI interpretation by measuring whether
+feature-space prototype overlap occurs between incompatible empirical target
+distributions:
+
+- **COI = 1.0** indicates no observed harmful continuous-target overlap.
+- **COI = 0.5** indicates overlap no better than a permutation/null target
+  assignment.
+- **COI < 0.5** indicates pathological overlap relative to the permutation
+  null.
+
+Version 1 is offline-first and supports `model_type="MiniBatchKMeans"`,
+`model_type="KMeans"`, and `model_type="BallCover"`. ARTMAP online support is
+intentionally deferred for continuous targets.
+
+```python
+from sklearn.preprocessing import MinMaxScaler
+from overlapindex import ContinuousOverlapIndex
+
+X = MinMaxScaler().fit_transform(X)
+
+coi = ContinuousOverlapIndex(
+    model_type="MiniBatchKMeans",
+    kmeans_k=8,
+    kmeans_kwargs={"random_state": 0},
+    n_target_cells="auto",
+    n_null_permutations=20,
+    random_state=0,
+)
+
+coi.fit(X, y_regression)
+score = coi.index
+```
+
+For univariate regression targets, `target_cover="auto"` uses quantile target
+cells and `target_distance="auto"` uses 1D Wasserstein distance. For
+multivariate regression targets, `target_cover="auto"` uses KMeans target cells
+and `target_distance="auto"` uses sliced Wasserstein distance.
+
+COI stores empirical target measures per feature prototype instead of reducing
+targets to means or variances. The permutation null refits the target cover and
+feature prototypes for each target shuffle so that random target assignments
+calibrate near 0.5. As with discrete OI, use enough prototypes per target cell
+for overlap structure to be observable; one prototype per cell is usually too
+coarse for separation diagnostics.
+
+Key diagnostics after fitting include:
+
+- **`actual_loss_`**, **`null_loss_`**, and **`loss_ratio_`**
+- **`raw_index_`** before optional clipping
+- **`macro_index_`** and **`weighted_index`**
+- **`prototype_index_`**, **`prototype_loss_`**, and
+  **`prototype_target_values_`**
+
+---
+
 ## Release Verification
 
 For release testing, start from a fresh Poetry environment so the package under
@@ -336,6 +412,10 @@ backends.
 - `ballcover_kwargs` *(dict, optional)*  
   Additional BallCover options such as `metric`, `cover_fraction`, `chunk_size`, `max_balls`, and `random_state`.
 
+- `exclude_classes` *(None, scalar label, or iterable of labels)*  
+  Label ids to omit from the global `index` and `weighted_index`
+  aggregation while leaving all fitting and per-class overlap outputs intact.
+
 ---
 
 The default parameters are intended for offline batch use with `MiniBatchKMeans`. For online or continual-learning workflows, explicitly choose `model_type="Fuzzy"` or `model_type="Hypersphere"`. For very large ART-based runs, smaller `rho` values (0.5-0.7) may improve run-time performance.
@@ -345,14 +425,15 @@ The default parameters are intended for offline batch use with `MiniBatchKMeans`
 ## Output
 
 - **`index`**  
-  Global macro Overlap Index across all observed classes. This is the default
-  class-balanced score and is usually preferred for imbalance-sensitive
-  separation analysis.
+  Global macro Overlap Index across all observed classes that are not listed in
+  `exclude_classes`. This is the default class-balanced score and is usually
+  preferred for imbalance-sensitive separation analysis.
 
 - **`weighted_index`**  
-  Support-weighted Overlap Index across observed classes. This weights each
-  class's `singleton_index` value by its positive sample count, which can be
-  useful when reporting should reflect observed class frequencies.
+  Support-weighted Overlap Index across observed classes that are not listed in
+  `exclude_classes`. This weights each included class's `singleton_index` value
+  by its positive sample count, which can be useful when reporting should
+  reflect observed class frequencies.
 
 - **`singleton_index[y]`**  
   Minimum pairwise overlap score for class `y`.
