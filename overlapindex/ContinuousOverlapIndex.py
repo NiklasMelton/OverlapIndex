@@ -32,6 +32,7 @@ TargetDistance = Literal["auto", "wasserstein", "sliced_wasserstein"]
 TargetScaling = Literal["standard", "none", "minmax", "robust"]
 AdjacencyMode = Literal["hard_top1", "soft_topk"]
 Aggregation = Literal["support_weighted", "macro"]
+NullMode = Literal["auto", "refit_permutation", "fixed_structure_permutation"]
 
 
 class ContinuousOverlapIndex(BaseEstimator):
@@ -62,11 +63,13 @@ class ContinuousOverlapIndex(BaseEstimator):
         n_target_cells: Union[int, Literal["auto"]] = "auto",
         target_cover_kwargs: Optional[dict] = None,
         target_distance: TargetDistance = "auto",
-        adjacency_mode: AdjacencyMode = "hard_top1",
+        adjacency_mode: AdjacencyMode = "soft_topk",
         top_k: int = 5,
         feature_temperature: float = 1.0,
         normalization: Literal["permutation"] = "permutation",
+        null_mode: NullMode = "auto",
         n_null_permutations: int = 20,
+        auto_null_work_threshold: int = 100_000,
         aggregation: Aggregation = "support_weighted",
         target_scaling: TargetScaling = "standard",
         n_projections: int = 64,
@@ -91,7 +94,9 @@ class ContinuousOverlapIndex(BaseEstimator):
         self.top_k = top_k
         self.feature_temperature = feature_temperature
         self.normalization = normalization
+        self.null_mode = null_mode
         self.n_null_permutations = n_null_permutations
+        self.auto_null_work_threshold = auto_null_work_threshold
         self.aggregation = aggregation
         self.target_scaling = target_scaling
         self.n_projections = n_projections
@@ -107,7 +112,10 @@ class ContinuousOverlapIndex(BaseEstimator):
         self.macro_index_ = 1.0
         self.actual_loss_ = 0.0
         self.null_loss_ = 0.0
+        self.null_loss_samples_ = []
         self.loss_ratio_ = 0.0
+        self.null_mode_ = None
+        self.auto_null_work_ = 0
         self.prototype_index_ = {}
         self.prototype_loss_ = {}
         self.prototype_null_loss_ = {}
@@ -215,6 +223,8 @@ class ContinuousOverlapIndex(BaseEstimator):
             self._warn_empty_input()
             return self.index
 
+        self.auto_null_work_ = int(X_arr.shape[0]) * int(self.n_null_permutations)
+        self.null_mode_ = self._resolve_null_mode(X_arr.shape[0])
         Y_scaled = self._scale_targets(Y_arr)
         target_cell_ids = self._build_target_cells(Y_scaled)
         unique_cells = np.unique(target_cell_ids)
@@ -258,18 +268,20 @@ class ContinuousOverlapIndex(BaseEstimator):
             )
         if self.adjacency_mode not in {"hard_top1", "soft_topk"}:
             raise ValueError("adjacency_mode must be one of {'hard_top1', 'soft_topk'}.")
-        if self.adjacency_mode != "hard_top1":
-            raise NotImplementedError(
-                "ContinuousOverlapIndex V1 implements adjacency_mode='hard_top1' only."
-            )
         if self.normalization != "permutation":
             raise ValueError("normalization must be 'permutation'.")
+        if self.null_mode not in {"auto", "refit_permutation", "fixed_structure_permutation"}:
+            raise ValueError(
+                "null_mode must be one of {'auto', 'refit_permutation', 'fixed_structure_permutation'}."
+            )
         if self.aggregation not in {"support_weighted", "macro"}:
             raise ValueError("aggregation must be one of {'support_weighted', 'macro'}.")
         if self.target_scaling not in {"standard", "none", "minmax", "robust"}:
             raise ValueError("target_scaling must be one of {'standard', 'none', 'minmax', 'robust'}.")
         if int(self.n_null_permutations) <= 0:
             raise ValueError("n_null_permutations must be a positive integer.")
+        if int(self.auto_null_work_threshold) <= 0:
+            raise ValueError("auto_null_work_threshold must be a positive integer.")
         if int(self.n_projections) <= 0:
             raise ValueError("n_projections must be a positive integer.")
         if int(self.top_k) <= 0:
@@ -470,7 +482,7 @@ class ContinuousOverlapIndex(BaseEstimator):
         self._rows_by_prototype_ = rows_by_proto
 
     def _build_prototype_adjacency(self, X: np.ndarray, own_proto: np.ndarray) -> None:
-        """Build hard top-1 prototype adjacency from feature-space competitors."""
+        """Build prototype adjacency from feature-space competitors."""
         counts, normalized = self._adjacency_for_model(X, own_proto, self._model)
         self.prototype_adjacency_count_ = counts
         self.prototype_adjacency_ = counts
@@ -482,18 +494,26 @@ class ContinuousOverlapIndex(BaseEstimator):
         own_proto: np.ndarray,
         model: _BaseManyToOneClusteringModel,
     ) -> Tuple[Dict[Tuple[int, int], float], Dict[Tuple[int, int], float]]:
-        """Return hard top-1 prototype adjacency for a fitted backend."""
+        """Return prototype adjacency for a fitted backend."""
         counts: Dict[Tuple[int, int], float] = defaultdict(float)
         n_clusters = int(model.n_clusters_total)
         top_k = min(max(2, int(self.top_k) + 1), n_clusters)
 
         for x, p in zip(X, own_proto):
             p_int = int(p)
-            ids, _ = model.topk(x, k=top_k)
-            q_ids = ids[ids != p_int]
+            ids, scores = model.topk(x, k=top_k)
+            mask = ids != p_int
+            q_ids = ids[mask]
+            q_scores = scores[mask]
             if q_ids.size == 0:
                 continue
-            counts[(p_int, int(q_ids[0]))] += 1.0
+            if self.adjacency_mode == "hard_top1":
+                counts[(p_int, int(q_ids[0]))] += 1.0
+                continue
+
+            weights = self._soft_topk_weights(q_scores)
+            for q_id, weight in zip(q_ids, weights):
+                counts[(p_int, int(q_id))] += float(weight)
 
         normalized = {}
         outgoing = defaultdict(float)
@@ -504,6 +524,18 @@ class ContinuousOverlapIndex(BaseEstimator):
             normalized[key] = float(value) / float(outgoing[p])
 
         return dict(counts), normalized
+
+    def _soft_topk_weights(self, scores: np.ndarray) -> np.ndarray:
+        """Return temperature-scaled softmax weights over competing prototype scores."""
+        scores = np.asarray(scores, dtype=float)
+        if scores.size == 0:
+            return np.asarray([], dtype=float)
+        scaled = (scores - np.max(scores)) / float(self.feature_temperature)
+        weights = np.exp(scaled)
+        total = float(np.sum(weights))
+        if total <= np.finfo(float).eps:
+            return np.full(scores.shape, 1.0 / float(scores.size), dtype=float)
+        return weights / total
 
     def _compute_index_from_current_state(self, X: np.ndarray, Y_scaled: np.ndarray) -> None:
         """Compute actual/null losses and derived COI summaries."""
@@ -544,25 +576,48 @@ class ContinuousOverlapIndex(BaseEstimator):
         self.macro_index_ = float(self._aggregate_index("macro"))
         self.index = float(self._aggregate_index(self.aggregation))
 
+    def _resolve_null_mode(self, n_samples: int) -> str:
+        """Resolve the null estimation mode for the current fit."""
+        if self.null_mode != "auto":
+            return str(self.null_mode)
+        work = int(n_samples) * int(self.n_null_permutations)
+        if work >= int(self.auto_null_work_threshold):
+            return "fixed_structure_permutation"
+        return "refit_permutation"
+
     def _estimate_null_loss(self, X: np.ndarray, Y_scaled: np.ndarray) -> float:
         """
-        Estimate permutation-null loss by refitting target cells and prototypes.
-
-        Target cells are pseudo-labels in COI, so conditioning the null on the
-        actual target-cell prototype assignment would make random targets look
-        artificially compatible. Recomputing the full cover/backend path for
-        each permutation preserves the intended null relationship between X and
-        Y at the cost of extra work.
+        Estimate permutation-null loss for the configured null mode.
         """
         rng = np.random.default_rng(self.random_state)
         losses = []
 
         for _ in range(int(self.n_null_permutations)):
             permuted = Y_scaled[rng.permutation(Y_scaled.shape[0])]
-            loss = self._loss_for_permuted_dataset(X, permuted)
+            if self.null_mode_ == "fixed_structure_permutation":
+                loss = self._loss_for_fixed_structure_permutation(permuted)
+            else:
+                loss = self._loss_for_permuted_dataset(X, permuted)
             losses.append(loss)
 
+        self.null_loss_samples_ = [float(loss) for loss in losses]
         return float(np.mean(losses)) if losses else 0.0
+
+    def _loss_for_fixed_structure_permutation(self, Y_scaled: np.ndarray) -> float:
+        """Compute null loss with fitted prototype structure held fixed."""
+        if not self.prototype_adjacency_normalized_:
+            return 0.0
+
+        values_by_proto = {
+            int(pid): Y_scaled[rows]
+            for pid, rows in self._rows_by_prototype_.items()
+        }
+        loss, _ = self._loss_for_components(
+            values_by_proto,
+            self.prototype_support_,
+            self.prototype_adjacency_normalized_,
+        )
+        return float(loss)
 
     def _loss_for_permuted_dataset(self, X: np.ndarray, Y_scaled: np.ndarray) -> float:
         """Compute actual-style loss for one permuted target assignment."""
