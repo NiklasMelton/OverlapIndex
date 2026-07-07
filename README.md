@@ -326,6 +326,9 @@ coi = ContinuousOverlapIndex(
     model_type="MiniBatchKMeans",
     kmeans_k=8,
     kmeans_kwargs={"random_state": 0},
+    adjacency_mode="soft_topk",
+    top_k=5,
+    feature_temperature=1.0,
     n_target_cells="auto",
     n_null_permutations=20,
     random_state=0,
@@ -339,6 +342,13 @@ For univariate regression targets, `target_cover="auto"` uses quantile target
 cells and `target_distance="auto"` uses 1D Wasserstein distance. For
 multivariate regression targets, `target_cover="auto"` uses KMeans target cells
 and `target_distance="auto"` uses sliced Wasserstein distance.
+
+By default, COI builds prototype adjacency with `adjacency_mode="soft_topk"`.
+Each sample spreads one unit of competitor mass across up to `top_k` nearby
+non-own prototypes using a temperature-scaled softmax over backend feature
+scores. Lower `feature_temperature` values make the weighting approach the
+legacy `hard_top1` behavior, while `adjacency_mode="hard_top1"` remains
+available for strict single-competitor scoring and backwards comparison.
 
 COI stores empirical target measures per feature prototype instead of reducing
 targets to means or variances. The permutation null refits the target cover and

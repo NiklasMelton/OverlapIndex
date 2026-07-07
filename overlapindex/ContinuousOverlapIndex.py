@@ -62,7 +62,7 @@ class ContinuousOverlapIndex(BaseEstimator):
         n_target_cells: Union[int, Literal["auto"]] = "auto",
         target_cover_kwargs: Optional[dict] = None,
         target_distance: TargetDistance = "auto",
-        adjacency_mode: AdjacencyMode = "hard_top1",
+        adjacency_mode: AdjacencyMode = "soft_topk",
         top_k: int = 5,
         feature_temperature: float = 1.0,
         normalization: Literal["permutation"] = "permutation",
@@ -258,10 +258,6 @@ class ContinuousOverlapIndex(BaseEstimator):
             )
         if self.adjacency_mode not in {"hard_top1", "soft_topk"}:
             raise ValueError("adjacency_mode must be one of {'hard_top1', 'soft_topk'}.")
-        if self.adjacency_mode != "hard_top1":
-            raise NotImplementedError(
-                "ContinuousOverlapIndex V1 implements adjacency_mode='hard_top1' only."
-            )
         if self.normalization != "permutation":
             raise ValueError("normalization must be 'permutation'.")
         if self.aggregation not in {"support_weighted", "macro"}:
@@ -470,7 +466,7 @@ class ContinuousOverlapIndex(BaseEstimator):
         self._rows_by_prototype_ = rows_by_proto
 
     def _build_prototype_adjacency(self, X: np.ndarray, own_proto: np.ndarray) -> None:
-        """Build hard top-1 prototype adjacency from feature-space competitors."""
+        """Build prototype adjacency from feature-space competitors."""
         counts, normalized = self._adjacency_for_model(X, own_proto, self._model)
         self.prototype_adjacency_count_ = counts
         self.prototype_adjacency_ = counts
@@ -482,18 +478,26 @@ class ContinuousOverlapIndex(BaseEstimator):
         own_proto: np.ndarray,
         model: _BaseManyToOneClusteringModel,
     ) -> Tuple[Dict[Tuple[int, int], float], Dict[Tuple[int, int], float]]:
-        """Return hard top-1 prototype adjacency for a fitted backend."""
+        """Return prototype adjacency for a fitted backend."""
         counts: Dict[Tuple[int, int], float] = defaultdict(float)
         n_clusters = int(model.n_clusters_total)
         top_k = min(max(2, int(self.top_k) + 1), n_clusters)
 
         for x, p in zip(X, own_proto):
             p_int = int(p)
-            ids, _ = model.topk(x, k=top_k)
-            q_ids = ids[ids != p_int]
+            ids, scores = model.topk(x, k=top_k)
+            mask = ids != p_int
+            q_ids = ids[mask]
+            q_scores = scores[mask]
             if q_ids.size == 0:
                 continue
-            counts[(p_int, int(q_ids[0]))] += 1.0
+            if self.adjacency_mode == "hard_top1":
+                counts[(p_int, int(q_ids[0]))] += 1.0
+                continue
+
+            weights = self._soft_topk_weights(q_scores)
+            for q_id, weight in zip(q_ids, weights):
+                counts[(p_int, int(q_id))] += float(weight)
 
         normalized = {}
         outgoing = defaultdict(float)
@@ -504,6 +508,18 @@ class ContinuousOverlapIndex(BaseEstimator):
             normalized[key] = float(value) / float(outgoing[p])
 
         return dict(counts), normalized
+
+    def _soft_topk_weights(self, scores: np.ndarray) -> np.ndarray:
+        """Return temperature-scaled softmax weights over competing prototype scores."""
+        scores = np.asarray(scores, dtype=float)
+        if scores.size == 0:
+            return np.asarray([], dtype=float)
+        scaled = (scores - np.max(scores)) / float(self.feature_temperature)
+        weights = np.exp(scaled)
+        total = float(np.sum(weights))
+        if total <= np.finfo(float).eps:
+            return np.full(scores.shape, 1.0 / float(scores.size), dtype=float)
+        return weights / total
 
     def _compute_index_from_current_state(self, X: np.ndarray, Y_scaled: np.ndarray) -> None:
         """Compute actual/null losses and derived COI summaries."""

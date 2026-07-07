@@ -56,6 +56,10 @@ def test_import_and_basic_api_returns_expected_types():
     assert 0.0 <= model.weighted_index <= 1.0
 
 
+def test_default_adjacency_mode_is_soft_topk():
+    assert ContinuousOverlapIndex().adjacency_mode == "soft_topk"
+
+
 def test_univariate_auto_defaults_to_quantile_and_wasserstein():
     X, y = _separated_regression_data()
     model = _model(target_cover="auto", target_distance="auto")
@@ -105,7 +109,7 @@ def test_random_target_assignment_scores_near_null():
 
 def test_pathological_overlap_scores_below_null():
     X, y = _overlapping_pathological_data()
-    model = _model(kmeans_k=2)
+    model = _model(kmeans_k=2, adjacency_mode="hard_top1")
 
     model.fit(X, y)
 
@@ -153,6 +157,41 @@ def test_random_state_makes_result_reproducible():
     assert np.isclose(a.null_loss_, b.null_loss_, atol=0.0, rtol=0.0)
 
 
+def test_soft_topk_adjacency_normalizes_outgoing_weights():
+    X, y = _separated_regression_data()
+    model = _model(adjacency_mode="soft_topk", top_k=2, feature_temperature=0.5)
+
+    model.fit(X, y)
+
+    outgoing = {}
+    for (p, _), value in model.prototype_adjacency_normalized_.items():
+        outgoing[p] = outgoing.get(p, 0.0) + float(value)
+        assert np.isfinite(value)
+        assert value >= 0.0
+
+    assert outgoing
+    assert any(
+        sum(1 for (src, _dst) in model.prototype_adjacency_normalized_ if src == p) > 1
+        for p in outgoing
+    )
+    for total in outgoing.values():
+        assert np.isclose(total, 1.0, atol=1e-12, rtol=0.0)
+
+
+def test_soft_topk_low_temperature_concentrates_mass_on_dominant_competitor():
+    X, y = _separated_regression_data()
+    model = _model(adjacency_mode="soft_topk", top_k=2, feature_temperature=1e-6)
+
+    model.fit(X, y)
+
+    by_source = {}
+    for (p, q), value in model.prototype_adjacency_normalized_.items():
+        by_source.setdefault(p, []).append((q, float(value)))
+
+    assert by_source
+    assert any(max(weight for _, weight in edges) > 0.999 for edges in by_source.values())
+
+
 def test_validation_errors_are_clear():
     X, y = _separated_regression_data()
 
@@ -164,5 +203,4 @@ def test_validation_errors_are_clear():
         _model().fit(X, y[:-1])
     with pytest.raises(NotImplementedError, match="offline backends"):
         _model(model_type="Fuzzy").fit(X, y)
-    with pytest.raises(NotImplementedError, match="hard_top1"):
-        _model(adjacency_mode="soft_topk").fit(X, y)
+    _model(adjacency_mode="soft_topk").fit(X, y)
