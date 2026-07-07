@@ -60,6 +60,13 @@ def test_default_adjacency_mode_is_soft_topk():
     assert ContinuousOverlapIndex().adjacency_mode == "soft_topk"
 
 
+def test_default_null_mode_is_auto():
+    model = ContinuousOverlapIndex()
+
+    assert model.null_mode == "auto"
+    assert model.auto_null_work_threshold == 100_000
+
+
 def test_univariate_auto_defaults_to_quantile_and_wasserstein():
     X, y = _separated_regression_data()
     model = _model(target_cover="auto", target_distance="auto")
@@ -157,6 +164,47 @@ def test_random_state_makes_result_reproducible():
     assert np.isclose(a.null_loss_, b.null_loss_, atol=0.0, rtol=0.0)
 
 
+def test_auto_null_mode_defaults_to_refit_on_small_data():
+    X, y = _separated_regression_data()
+    auto = _model(null_mode="auto").fit(X, y)
+    refit = _model(null_mode="refit_permutation").fit(X, y)
+
+    assert auto.null_mode_ == "refit_permutation"
+    assert auto.auto_null_work_ == X.shape[0] * auto.n_null_permutations
+    assert np.isclose(auto.null_loss_, refit.null_loss_, atol=0.0, rtol=0.0)
+    assert np.allclose(auto.null_loss_samples_, refit.null_loss_samples_, atol=0.0, rtol=0.0)
+
+
+def test_auto_null_mode_can_switch_to_fixed_structure():
+    X, y = _separated_regression_data()
+    model = _model(null_mode="auto", auto_null_work_threshold=1).fit(X, y)
+
+    assert model.null_mode_ == "fixed_structure_permutation"
+    assert model.auto_null_work_ == X.shape[0] * model.n_null_permutations
+    assert np.isfinite(model.null_loss_)
+    assert np.isfinite(model.index)
+    assert len(model.null_loss_samples_) == model.n_null_permutations
+
+
+def test_fixed_structure_null_mode_supports_multivariate_targets():
+    X, y = _separated_regression_data()
+    Y = np.column_stack([y, y ** 2])
+    model = _model(
+        null_mode="fixed_structure_permutation",
+        target_cover="auto",
+        target_distance="auto",
+        target_cover_kwargs={"n_init": 10},
+        n_projections=8,
+    )
+
+    model.fit(X, Y)
+
+    assert model.null_mode_ == "fixed_structure_permutation"
+    assert np.isfinite(model.null_loss_)
+    assert len(model.null_loss_samples_) == model.n_null_permutations
+    assert all(np.isfinite(loss) for loss in model.null_loss_samples_)
+
+
 def test_soft_topk_adjacency_normalizes_outgoing_weights():
     X, y = _separated_regression_data()
     model = _model(adjacency_mode="soft_topk", top_k=2, feature_temperature=0.5)
@@ -203,4 +251,8 @@ def test_validation_errors_are_clear():
         _model().fit(X, y[:-1])
     with pytest.raises(NotImplementedError, match="offline backends"):
         _model(model_type="Fuzzy").fit(X, y)
+    with pytest.raises(ValueError, match="null_mode must be one of"):
+        _model(null_mode="bad").fit(X, y)
+    with pytest.raises(ValueError, match="auto_null_work_threshold must be a positive integer"):
+        _model(auto_null_work_threshold=0).fit(X, y)
     _model(adjacency_mode="soft_topk").fit(X, y)

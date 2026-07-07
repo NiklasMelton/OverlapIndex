@@ -329,6 +329,7 @@ coi = ContinuousOverlapIndex(
     adjacency_mode="soft_topk",
     top_k=5,
     feature_temperature=1.0,
+    null_mode="auto",
     n_target_cells="auto",
     n_null_permutations=20,
     random_state=0,
@@ -351,15 +352,23 @@ legacy `hard_top1` behavior, while `adjacency_mode="hard_top1"` remains
 available for strict single-competitor scoring and backwards comparison.
 
 COI stores empirical target measures per feature prototype instead of reducing
-targets to means or variances. The permutation null refits the target cover and
-feature prototypes for each target shuffle so that random target assignments
-calibrate near 0.5. As with discrete OI, use enough prototypes per target cell
-for overlap structure to be observable; one prototype per cell is usually too
-coarse for separation diagnostics.
+targets to means or variances. By default, `null_mode="auto"` uses the current
+refit-permutation null on smaller workloads and automatically switches to a
+faster fixed-structure permutation null when
+`n_samples * n_null_permutations >= 100_000`. The refit null rebuilds target
+cells and feature prototypes for each target shuffle so that random target
+assignments calibrate near 0.5. The fixed-structure null keeps the fitted
+prototype geometry and shuffles target values across that structure, which is
+substantially faster on large datasets but should be treated as an approximate
+calibration mode. Use `null_mode="refit_permutation"` for final reporting when
+you want the strongest null semantics. As with discrete OI, use enough
+prototypes per target cell for overlap structure to be observable; one
+prototype per cell is usually too coarse for separation diagnostics.
 
 Key diagnostics after fitting include:
 
 - **`actual_loss_`**, **`null_loss_`**, and **`loss_ratio_`**
+- **`null_mode_`**, **`null_loss_samples_`**, and **`auto_null_work_`**
 - **`raw_index_`** before optional clipping
 - **`macro_index_`** and **`weighted_index`**
 - **`prototype_index_`**, **`prototype_loss_`**, and
