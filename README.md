@@ -95,6 +95,12 @@ The Overlap Index can be used in several settings:
   `"Fuzzy"` or `"Hypersphere"` backends.
 - Offline centroid backends fit one clustering model per class and concatenate the resulting class-owned prototypes into global cluster ids.
 - The `BallCover` backend fits one greedy ball cover per class and treats ball centers as class-owned prototypes.
+- `KMeans` and `MiniBatchKMeans` accept SciPy sparse feature matrices and
+  normalize sparse formats to CSR internally. `BallCover` and ART backends
+  require dense feature arrays.
+- Sparse feature matrices remain sparse during fitting, slicing, prediction,
+  multi-label expansion, and overlap scoring. KMeans centroids and the bounded
+  prototype-distance score blocks are still dense.
 - Normalize input features before fitting. Examples in this repository use `MinMaxScaler` for convenience.
 - ART backends complement-code inputs internally and therefore require features in the `[0, 1]` interval.
 - Offline backends (`KMeans`, `MiniBatchKMeans`, and `BallCover`) consume normalized features directly and do not apply complement coding.
@@ -123,6 +129,15 @@ oi = OverlapIndex(
 # sklearn-style API
 oi.fit(X, y)
 score = oi.index
+```
+
+Sparse feature matrices can be passed directly to either centroid backend:
+
+```python
+from scipy import sparse
+
+X_csr = sparse.csr_matrix(X)
+oi.fit(X_csr, y)
 ```
 
 
@@ -338,6 +353,11 @@ coi = ContinuousOverlapIndex(
 coi.fit(X, y_regression)
 score = coi.index
 ```
+
+The KMeans-backed continuous paths also accept SciPy sparse feature matrices.
+The same CSR matrix is reused by prototype construction, adjacency scoring,
+and permutation-null refits without materializing a dense copy of the complete
+feature matrix. Continuous targets remain dense numeric arrays.
 
 For univariate regression targets, `target_cover="auto"` uses quantile target
 cells and `target_distance="auto"` uses 1D Wasserstein distance. For
