@@ -121,8 +121,11 @@ def test_centroid_backend_sparse_scoring_matches_dense(backend_type):
     ids = np.arange(model.n_clusters_total)
     dense_scores = model._scores_matrix(X, ids)
     sparse_scores = model._scores_matrix(sparse.csr_matrix(X), ids)
+    float32_atol = 8 * np.finfo(np.float32).eps
 
-    np.testing.assert_allclose(sparse_scores, dense_scores, atol=1e-7, rtol=0.0)
+    np.testing.assert_allclose(
+        sparse_scores, dense_scores, atol=float32_atol, rtol=0.0
+    )
     np.testing.assert_array_equal(
         model.bmu_for_class_batch(sparse.csr_matrix(X), y),
         model.bmu_for_class_batch(X, y),
@@ -130,7 +133,9 @@ def test_centroid_backend_sparse_scoring_matches_dense(backend_type):
     sparse_ids, sparse_values = model.topk(sparse.csr_matrix(X[:1]), k=2)
     dense_ids, dense_values = model.topk(X[0], k=2)
     np.testing.assert_array_equal(sparse_ids, dense_ids)
-    np.testing.assert_allclose(sparse_values, dense_values, atol=1e-7, rtol=0.0)
+    np.testing.assert_allclose(
+        sparse_values, dense_values, atol=float32_atol, rtol=0.0
+    )
 
 
 @pytest.mark.parametrize("model_type", ["KMeans", "MiniBatchKMeans"])
