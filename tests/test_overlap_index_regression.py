@@ -359,6 +359,7 @@ def test_single_class_warns_and_returns_default_index():
     assert model.index == 1.0
 
 
+@ARTLIB_REQUIRED
 def test_art_backend_still_requires_unit_interval_inputs():
     X = np.array([[0.0, 2.0], [0.5, 0.5]])
     y = np.array([0, 1])

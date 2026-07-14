@@ -1,4 +1,24 @@
 import numpy as np
+from scipy import sparse
+
+
+def _validate_feature_matrix(X):
+    """Return a finite 2D dense array or floating-point CSR matrix."""
+    if sparse.issparse(X):
+        if X.ndim != 2:
+            raise ValueError(f"X must be a 2D array; got shape {X.shape}.")
+        X_csr = sparse.csr_matrix(X, dtype=float, copy=False)
+        if not np.all(np.isfinite(X_csr.data)):
+            raise ValueError("X contains NaN or infinite values.")
+        return X_csr
+
+    X_arr = np.asarray(X, dtype=float)
+    if X_arr.ndim != 2:
+        raise ValueError(f"X must be a 2D array; got shape {X_arr.shape}.")
+    if not np.all(np.isfinite(X_arr)):
+        raise ValueError("X contains NaN or infinite values.")
+    return X_arr
+
 
 def complement_code(X):
     """

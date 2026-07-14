@@ -15,6 +15,7 @@ except ImportError:  # pragma: no cover - sklearn is a required dependency for o
         pass
 
 from overlapindex.utils import (
+    _validate_feature_matrix,
     complement_code,
     top_two_indices_against_others_from_backend,
 )
@@ -115,15 +116,18 @@ def _expand_multilabel_for_backend(
     Y_sets: list[set],
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Duplicate each sample once for every positive label before backend fit."""
-    X_expanded = []
+    row_indices = []
     Y_expanded = []
 
-    for x, labels in zip(X, Y_sets):
+    for i, labels in enumerate(Y_sets):
         for label in labels:
-            X_expanded.append(x)
+            row_indices.append(i)
             Y_expanded.append(label)
 
-    return np.asarray(X_expanded, dtype=float), np.asarray(Y_expanded, dtype=object)
+    X_expanded = X[np.asarray(row_indices, dtype=int)]
+    if not sparse.issparse(X_expanded):
+        X_expanded = np.asarray(X_expanded, dtype=float)
+    return X_expanded, np.asarray(Y_expanded, dtype=object)
 
 
 def _ordered_unique_labels(Y_sets: list[set]) -> np.ndarray:
@@ -319,10 +323,17 @@ class OverlapIndex(BaseEstimator):
 
     def _prep_X(self, X: np.ndarray) -> np.ndarray:
         """Preprocess raw samples before clustering."""
-        X = np.asarray(X, dtype=float)
         if self._is_artmap_backend:
-            return complement_code(X)
+            return complement_code(np.asarray(X, dtype=float))
         return X
+
+    def _validate_sparse_backend(self, X: Any) -> None:
+        """Reject sparse features for backends that require dense arrays."""
+        if sparse.issparse(X) and self.model_type not in {"KMeans", "MiniBatchKMeans"}:
+            raise TypeError(
+                "Sparse X is supported only for model_type='KMeans' and "
+                f"'MiniBatchKMeans'; got model_type={self.model_type!r}."
+            )
 
     def _validate_input_data(
         self,
@@ -330,12 +341,8 @@ class OverlapIndex(BaseEstimator):
         Y: Any,
     ) -> Tuple[np.ndarray, list[set]]:
         """Validate aligned batch inputs before preprocessing."""
-        X_arr = np.asarray(X, dtype=float)
-
-        if X_arr.ndim != 2:
-            raise ValueError(f"X must be a 2D array; got shape {X_arr.shape}.")
-        if not np.all(np.isfinite(X_arr)):
-            raise ValueError("X contains NaN or infinite values.")
+        self._validate_sparse_backend(X)
+        X_arr = _validate_feature_matrix(X)
 
         Y_sets = _normalize_label_sets(Y)
         if X_arr.shape[0] != len(Y_sets):
@@ -691,11 +698,8 @@ class OverlapIndex(BaseEstimator):
         """
         Return the highest-scoring global prototype id for each sample.
         """
-        X_arr = np.asarray(X, dtype=float)
-        if X_arr.ndim != 2:
-            raise ValueError(f"X must be a 2D array; got shape {X_arr.shape}.")
-        if not np.all(np.isfinite(X_arr)):
-            raise ValueError("X contains NaN or infinite values.")
+        self._validate_sparse_backend(X)
+        X_arr = _validate_feature_matrix(X)
         if not self.rev_map or self._model.n_clusters_total <= 0:
             raise ValueError("This OverlapIndex instance is not fit yet.")
 

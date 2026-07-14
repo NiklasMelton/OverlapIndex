@@ -7,6 +7,7 @@ from collections import defaultdict
 from typing import Any, Dict, Literal, Optional, Tuple, Union
 
 import numpy as np
+from scipy import sparse
 from scipy.stats import wasserstein_distance
 from sklearn.cluster import KMeans
 
@@ -24,6 +25,7 @@ from overlapindex.clustering import (
     _KMeansManyToOne,
     _MiniBatchKMeansManyToOne,
 )
+from overlapindex.utils import _validate_feature_matrix
 
 
 ModelType = Literal["KMeans", "MiniBatchKMeans", "BallCover", "Fuzzy", "Hypersphere"]
@@ -211,6 +213,7 @@ class ContinuousOverlapIndex(BaseEstimator):
         """Fit the backend on a complete regression dataset and compute COI."""
         if reset_state:
             self._reset_state()
+        self._validate_sparse_backend(X)
         self._validate_params()
 
         X_arr = self._validate_X(X)
@@ -291,15 +294,18 @@ class ContinuousOverlapIndex(BaseEstimator):
         if self.offline_chunk_size is not None and int(self.offline_chunk_size) <= 0:
             raise ValueError("offline_chunk_size must be a positive integer or None.")
 
-    @staticmethod
-    def _validate_X(X: np.ndarray) -> np.ndarray:
+    def _validate_sparse_backend(self, X: Any) -> None:
+        """Reject sparse features for backends that require dense arrays."""
+        if sparse.issparse(X) and self.model_type not in {"KMeans", "MiniBatchKMeans"}:
+            raise TypeError(
+                "Sparse X is supported only for model_type='KMeans' and "
+                f"'MiniBatchKMeans'; got model_type={self.model_type!r}."
+            )
+
+    def _validate_X(self, X: np.ndarray) -> np.ndarray:
         """Validate feature input."""
-        X_arr = np.asarray(X, dtype=float)
-        if X_arr.ndim != 2:
-            raise ValueError(f"X must be a 2D array; got shape {X_arr.shape}.")
-        if not np.all(np.isfinite(X_arr)):
-            raise ValueError("X contains NaN or infinite values.")
-        return X_arr
+        self._validate_sparse_backend(X)
+        return _validate_feature_matrix(X)
 
     @staticmethod
     def _validate_Y(Y: np.ndarray) -> np.ndarray:
