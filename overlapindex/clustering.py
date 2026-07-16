@@ -4,6 +4,11 @@ from importlib import import_module
 from scipy import sparse
 from sklearn.cluster import KMeans, MiniBatchKMeans
 from overlapindex.BallCover import BallCoverManyToOne
+from overlapindex.utils import (
+    _ordered_unique_1d,
+    _validate_class_dictionary_coverage,
+    _validate_positive_integer,
+)
 from typing import Literal, Optional, Union, Dict, Any, Sequence, Tuple, Type
 
 
@@ -204,6 +209,11 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
             Floating-point dtype used to store centroid arrays.
         """
         self._k = k
+        if isinstance(k, dict):
+            for label, value in k.items():
+                _validate_positive_integer(value, f"k for class {label!r}")
+        else:
+            _validate_positive_integer(k, "k")
         self._model_kwargs = model_kwargs or {}
         self._dtype = dtype
 
@@ -231,7 +241,8 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
             Class labels aligned with X.
         """
         Y = np.asarray(Y)
-        classes = np.unique(Y)
+        classes = _ordered_unique_1d(Y)
+        _validate_class_dictionary_coverage(self._k, classes, "k")
 
         centers_list = []
         cluster_classes = []
@@ -248,8 +259,11 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
             if nc == 0:
                 continue
 
-            k = self._k[c] if isinstance(self._k, dict) and c in self._k else self._k
-            k = int(max(1, min(int(k), int(nc))))
+            if isinstance(self._k, dict):
+                k = _validate_positive_integer(self._k[c], f"k for class {c!r}")
+            else:
+                k = _validate_positive_integer(self._k, "k")
+            k = min(k, int(nc))
 
             model = self._make_model(k)
             model.fit(Xc)
@@ -316,7 +330,7 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
             X = np.asarray(X, dtype=self._centers.dtype)
         Y = np.asarray(Y)
         result = np.empty(X.shape[0], dtype=int)
-        for c in np.unique(Y):
+        for c in _ordered_unique_1d(Y):
             row_idx = np.where(Y == c)[0]
             ids = self._class_center_id_arrays.get(c)
             if ids is None or ids.size == 0:

@@ -108,6 +108,18 @@ The Overlap Index can be used in several settings:
 - The global OI is computed as the macro mean of per-class minimum pairwise overlap scores, so each observed class contributes equally to `index`.
 - A support-weighted companion score is available through `weighted_index` for workflows that need the score to reflect observed class frequencies.
 - Global aggregation can exclude one or more label ids through `exclude_classes` without removing those labels from fitting, singleton scores, or pairwise scores.
+- Offline backends support multi-label targets supplied as per-sample label
+  collections or as dense/sparse binary indicator matrices. Rectangular Python
+  lists retain collection semantics; convert them to NumPy or SciPy to request
+  indicator-matrix semantics explicitly.
+- Multi-label directional pairs are evaluated only where the source label is
+  present and the competitor is absent. Pairs without such rows are exposed in
+  `unevaluable_pairs_`; source labels with no evaluable selected pairs are
+  exposed in `unevaluable_labels_`, assigned `NaN`, and omitted from global
+  summaries. Fitting raises if no non-excluded label remains evaluable.
+- Labels that own fewer than two prototypes are exposed in
+  `under_prototyped_labels_` and emit a warning because top-two scoring is
+  degenerate in that case. Their scores are still computed.
 
 ---
 
@@ -142,6 +154,25 @@ oi.fit(X_csr, y)
 
 
 The fitted value is available through `oi.index`. For users who prefer update methods that return the current score directly, `add_batch(X, y)` is also supported.
+
+### Multi-Label Targets
+
+```python
+import numpy as np
+
+# Sequence-of-collections form
+y_multilabel = [{"cat"}, {"cat", "pet"}, {"dog", "pet"}]
+oi.fit(X, y_multilabel)
+
+# Binary indicator form: positive column indices become integer labels
+Y_indicator = np.asarray([[1, 0, 0], [1, 1, 0], [0, 1, 1]])
+oi.fit(X, Y_indicator)
+```
+
+`multilabel_pair_mode="all"` evaluates all directional label pairs.
+`multilabel_pair_mode="top_m"` with a positive integer `top_m` restricts each
+source label to its nearest prototype-owning competitors. KMeans,
+MiniBatchKMeans, and BallCover support both modes.
 
 ### Excluding Classes From Global Aggregation
 
@@ -201,6 +232,17 @@ For `model_type="KMeans"`, `model_type="MiniBatchKMeans"`, and
 recomputing the index on the provided labeled batch. Only the ARTMAP backends
 perform true incremental updates across calls.
 
+Full `fit(X, y)` and `score(X, y)` calls always construct a fresh backend.
+`fit_offline(..., reset_state=False)` is accepted only for explicit ARTMAP
+continuation; offline backends reject it because their prototype ids cannot be
+safely accumulated across independent refits.
+
+Count, neighborhood, projection, permutation, threshold, and chunk-size
+parameters use strict validation: booleans, strings, and fractional values are
+not coerced to integers. Radii and temperatures must be finite and positive,
+and class-specific dictionaries must provide a valid entry for every observed
+label.
+
 If a batch is empty or contains only one unique class, `OverlapIndex` emits a
 `RuntimeWarning` and leaves the score at its default value of `1.0`.
 
@@ -217,6 +259,10 @@ If a batch is empty or contains only one unique class, `OverlapIndex` emits a
 | `"BallCover"` | Offline batch only | Fits one greedy landmark-ball cover per class. Useful when preserving class-support geometry is important. |
 
 Offline backends should be used with `fit` or `add_batch`. They do not support `add_sample` because their prototypes are fit from a complete labeled batch.
+
+Top-two overlap scoring requires at least two owned prototypes per class for a
+well-resolved estimate. If fitting yields fewer than two, the estimator warns
+and continues; inspect `under_prototyped_labels_` before reporting the score.
 
 #### KMeans backend
 
@@ -354,6 +400,11 @@ coi.fit(X, y_regression)
 score = coi.index
 ```
 
+`ContinuousOverlapIndex.random_state` seeds target-cell construction,
+projection directions, permutation sampling, and the selected feature backend.
+An explicit `random_state` inside `kmeans_kwargs` or `ballcover_kwargs` takes
+precedence over the top-level value.
+
 The KMeans-backed continuous paths also accept SciPy sparse feature matrices.
 The same CSR matrix is reused by prototype construction, adjacency scoring,
 and permutation-null refits without materializing a dense copy of the complete
@@ -455,6 +506,15 @@ backends.
   Label ids to omit from the global `index` and `weighted_index`
   aggregation while leaving all fitting and per-class overlap outputs intact.
 
+- `offline_chunk_size` *(positive int or None)*
+  Maximum row block used for vectorized offline prototype scoring.
+
+- `multilabel_pair_mode` *("all" or "top_m")*
+  Directional competitor selection strategy for multi-label offline scoring.
+
+- `top_m` *(positive int, required for "top_m")*
+  Maximum number of prototype-nearest competitors selected per source label.
+
 ---
 
 The default parameters are intended for offline batch use with `MiniBatchKMeans`. For online or continual-learning workflows, explicitly choose `model_type="Fuzzy"` or `model_type="Hypersphere"`. For very large ART-based runs, smaller `rho` values (0.5-0.7) may improve run-time performance.
@@ -479,6 +539,12 @@ The default parameters are intended for offline batch use with `MiniBatchKMeans`
 
 - **`pairwise_index[(y, b)]`**  
   Pairwise overlap score between classes `y` and `b`.
+
+- **`under_prototyped_labels_`**
+  Labels owning fewer than two prototypes after fitting.
+
+- **`unevaluable_pairs_` / `unevaluable_labels_`**
+  Multi-label diagnostics for directional comparisons without sufficient rows.
 
 ---
 
