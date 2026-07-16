@@ -82,6 +82,88 @@ class ContinuousOverlapIndex(BaseEstimator):
         random_state: Optional[int] = None,
         clip: bool = True,
     ) -> None:
+        """Initialize the continuous-target overlap estimator.
+
+        Parameters
+        ----------
+        rho : float, default=0.9
+            Reserved ARTMAP vigilance parameter. Continuous-target ARTMAP
+            backends are not supported in the current offline implementation.
+        r_hat : float, default=np.inf
+            Reserved Hypersphere ARTMAP radius constraint.
+        model_type : {"KMeans", "MiniBatchKMeans", "BallCover"}, default="MiniBatchKMeans"
+            Offline backend used to build feature-space prototypes. ``"Fuzzy"``
+            and ``"Hypersphere"`` are accepted by the type signature for API
+            consistency but raise ``NotImplementedError`` during fitting.
+        match_tracking : str, default="MT+"
+            Reserved ARTMAP match-tracking setting.
+        kmeans_k : int or dict, default=8
+            Number of feature prototypes per target cell for KMeans backends,
+            or a dictionary keyed by every target-cell id.
+        kmeans_kwargs : dict, optional
+            Keyword arguments forwarded to the selected scikit-learn centroid
+            backend. An explicit ``random_state`` here overrides the top-level
+            seed for feature-prototype fitting.
+        ballcover_k : int, dict, or "auto", default="auto"
+            Number of balls per target cell, cell-specific counts, or ``"auto"``
+            for greedy fixed-radius covering.
+        ballcover_radius : float, dict, or "auto", default=0.25
+            Ball radius, cell-specific radii, or ``"auto"`` when a fixed number
+            of balls should determine the radius. Exactly one of
+            ``ballcover_k`` and ``ballcover_radius`` may be ``"auto"``.
+        ballcover_kwargs : dict, optional
+            Additional options forwarded to BallCover. An explicit
+            ``random_state`` here overrides the top-level seed for the backend.
+        offline_chunk_size : int or None, default=10000
+            Maximum row block used for feature-prototype adjacency scoring.
+            ``None`` scores each available row block at once.
+        target_cover : {"auto", "quantile", "kmeans"}, default="auto"
+            Target-space cell construction. Auto selects quantiles for a
+            univariate target and KMeans for multivariate targets.
+        n_target_cells : int or "auto", default="auto"
+            Requested number of target cells. Auto uses a sample-size-dependent
+            value between 8 and 64, capped by the sample count.
+        target_cover_kwargs : dict, optional
+            Extra keyword arguments forwarded to target-space KMeans.
+        target_distance : {"auto", "wasserstein", "sliced_wasserstein"}, default="auto"
+            Distance between empirical target distributions. Auto selects 1D
+            Wasserstein distance for a univariate target and sliced Wasserstein
+            distance for multivariate targets.
+        adjacency_mode : {"hard_top1", "soft_topk"}, default="soft_topk"
+            Rule used to connect each own feature prototype to competing
+            prototypes.
+        top_k : int, default=5
+            Maximum number of non-own competitors receiving adjacency mass in
+            ``"soft_topk"`` mode.
+        feature_temperature : float, default=1.0
+            Positive softmax temperature for soft top-k adjacency. Lower values
+            concentrate mass on the strongest competitor.
+        normalization : {"permutation"}, default="permutation"
+            Continuous-index calibration method. Permutation is currently the
+            only supported value.
+        null_mode : {"auto", "refit_permutation", "fixed_structure_permutation"}, default="auto"
+            Permutation-null strategy. Auto switches from refitting to the
+            approximate fixed-structure mode at ``auto_null_work_threshold``.
+        n_null_permutations : int, default=20
+            Number of shuffled target assignments used to estimate null loss.
+        auto_null_work_threshold : int, default=100000
+            Auto-mode cutoff applied to
+            ``n_samples * n_null_permutations``.
+        aggregation : {"support_weighted", "macro"}, default="support_weighted"
+            Aggregation used for the public ``index`` value.
+        target_scaling : {"standard", "none", "minmax", "robust"}, default="standard"
+            Scaling applied to target columns before cell construction and
+            target-distribution distances.
+        n_projections : int, default=64
+            Number of random directions used by sliced Wasserstein distance.
+        random_state : int, optional
+            Seed for target-cell construction, sliced-Wasserstein projections,
+            null permutations, and backend fitting when no backend-specific
+            seed is provided.
+        clip : bool, default=True
+            If true, clip local and aggregate reported indices to ``[0, 1]``.
+            ``raw_index_`` retains the unclipped global calibration.
+        """
         self.rho = rho
         self.r_hat = r_hat
         self.model_type = model_type

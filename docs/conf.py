@@ -44,5 +44,6 @@ html_theme_options = {
 autodoc_member_order = "bysource"
 autodoc_typehints = "description"
 autodoc_preserve_defaults = True
+autoclass_content = "both"
 napoleon_numpy_docstring = True
 napoleon_google_docstring = False
