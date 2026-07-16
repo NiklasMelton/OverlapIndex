@@ -25,7 +25,11 @@ from overlapindex.clustering import (
     _KMeansManyToOne,
     _MiniBatchKMeansManyToOne,
 )
-from overlapindex.utils import _validate_feature_matrix
+from overlapindex.utils import (
+    _validate_feature_matrix,
+    _validate_finite_positive_real,
+    _validate_positive_integer,
+)
 
 
 ModelType = Literal["KMeans", "MiniBatchKMeans", "BallCover", "Fuzzy", "Hypersphere"]
@@ -144,6 +148,8 @@ class ContinuousOverlapIndex(BaseEstimator):
         self.own_prototype_ids_ = None
         self._rows_by_prototype_ = {}
         self._model: Optional[_BaseManyToOneClusteringModel] = None
+        if hasattr(self, "n_features_in_"):
+            del self.n_features_in_
 
     @property
     def weighted_index(self) -> float:
@@ -196,6 +202,12 @@ class ContinuousOverlapIndex(BaseEstimator):
             raise ValueError("This ContinuousOverlapIndex instance is not fit yet.")
 
         X_arr = self._validate_X(X)
+        if X_arr.shape[1] != self.n_features_in_:
+            raise ValueError(
+                f"X has {X_arr.shape[1]} features, but this "
+                f"ContinuousOverlapIndex instance was fit with "
+                f"{self.n_features_in_} features."
+            )
         result = np.empty(X_arr.shape[0], dtype=int)
         for i, x in enumerate(X_arr):
             ids, _ = self._model.topk(x, k=1)
@@ -211,8 +223,11 @@ class ContinuousOverlapIndex(BaseEstimator):
 
     def fit_offline(self, X: np.ndarray, Y: np.ndarray, reset_state: bool = True) -> float:
         """Fit the backend on a complete regression dataset and compute COI."""
-        if reset_state:
-            self._reset_state()
+        if not reset_state:
+            raise ValueError(
+                "reset_state=False is not supported by ContinuousOverlapIndex; "
+                "continuous backends must be fit from a complete dataset."
+            )
         self._validate_sparse_backend(X)
         self._validate_params()
 
@@ -222,6 +237,7 @@ class ContinuousOverlapIndex(BaseEstimator):
             raise ValueError(
                 f"X and Y must have the same number of rows; got {X_arr.shape[0]} and {Y_arr.shape[0]}."
             )
+        self._reset_state()
         if X_arr.shape[0] == 0:
             self._warn_empty_input()
             return self.index
@@ -231,18 +247,19 @@ class ContinuousOverlapIndex(BaseEstimator):
         Y_scaled = self._scale_targets(Y_arr)
         target_cell_ids = self._build_target_cells(Y_scaled)
         unique_cells = np.unique(target_cell_ids)
-        if unique_cells.size <= 1:
-            self._warn_single_target_cell()
-            self._store_training_targets(Y_arr, Y_scaled, target_cell_ids)
-            return self.index
 
         self._model = self._build_model()
         self._model.fit_offline(X_arr, target_cell_ids)
 
         own_proto = self._model.bmu_for_class_batch(X_arr, target_cell_ids)
+        self.n_features_in_ = int(X_arr.shape[1])
         self._store_training_targets(Y_arr, Y_scaled, target_cell_ids)
         self.own_prototype_ids_ = own_proto
         self._sync_prototype_bookkeeping(target_cell_ids, own_proto)
+
+        if unique_cells.size <= 1:
+            self._warn_single_target_cell()
+            return self.index
 
         if self._model.n_clusters_total <= 1:
             self._warn_single_prototype()
@@ -281,18 +298,15 @@ class ContinuousOverlapIndex(BaseEstimator):
             raise ValueError("aggregation must be one of {'support_weighted', 'macro'}.")
         if self.target_scaling not in {"standard", "none", "minmax", "robust"}:
             raise ValueError("target_scaling must be one of {'standard', 'none', 'minmax', 'robust'}.")
-        if int(self.n_null_permutations) <= 0:
-            raise ValueError("n_null_permutations must be a positive integer.")
-        if int(self.auto_null_work_threshold) <= 0:
-            raise ValueError("auto_null_work_threshold must be a positive integer.")
-        if int(self.n_projections) <= 0:
-            raise ValueError("n_projections must be a positive integer.")
-        if int(self.top_k) <= 0:
-            raise ValueError("top_k must be a positive integer.")
-        if float(self.feature_temperature) <= 0:
-            raise ValueError("feature_temperature must be positive.")
-        if self.offline_chunk_size is not None and int(self.offline_chunk_size) <= 0:
-            raise ValueError("offline_chunk_size must be a positive integer or None.")
+        _validate_positive_integer(self.n_null_permutations, "n_null_permutations")
+        _validate_positive_integer(self.auto_null_work_threshold, "auto_null_work_threshold")
+        _validate_positive_integer(self.n_projections, "n_projections")
+        _validate_positive_integer(self.top_k, "top_k")
+        _validate_finite_positive_real(self.feature_temperature, "feature_temperature")
+        if self.offline_chunk_size is not None:
+            _validate_positive_integer(self.offline_chunk_size, "offline_chunk_size")
+        if self.n_target_cells != "auto":
+            _validate_positive_integer(self.n_target_cells, "n_target_cells")
 
     def _validate_sparse_backend(self, X: Any) -> None:
         """Reject sparse features for backends that require dense arrays."""
@@ -318,6 +332,8 @@ class ContinuousOverlapIndex(BaseEstimator):
             Y_arr = Y_arr.reshape(-1, 1)
         elif Y_arr.ndim != 2:
             raise ValueError(f"Y must be a 1D or 2D numeric array; got shape {Y_arr.shape}.")
+        if Y_arr.shape[1] == 0:
+            raise ValueError("Y must contain at least one target column.")
         if not np.all(np.isfinite(Y_arr)):
             raise ValueError("Y contains NaN or infinite values.")
         return Y_arr.astype(float, copy=False)
@@ -365,11 +381,9 @@ class ContinuousOverlapIndex(BaseEstimator):
         if self.n_target_cells == "auto":
             return int(min(max(8, int(np.sqrt(n_samples))), 64, n_samples))
         try:
-            n_cells = int(self.n_target_cells)
-        except (TypeError, ValueError) as exc:
+            n_cells = _validate_positive_integer(self.n_target_cells, "n_target_cells")
+        except ValueError as exc:
             raise ValueError("n_target_cells must be a positive integer or 'auto'.") from exc
-        if n_cells <= 0:
-            raise ValueError("n_target_cells must be a positive integer or 'auto'.")
         return int(min(n_cells, n_samples))
 
     @staticmethod
@@ -396,12 +410,15 @@ class ContinuousOverlapIndex(BaseEstimator):
 
     def _build_model(self) -> _BaseManyToOneClusteringModel:
         """Construct the selected offline backend."""
+        kmeans_kwargs = dict(self.kmeans_kwargs or {})
+        kmeans_kwargs.setdefault("random_state", self.random_state)
         if self.model_type == "KMeans":
-            return _KMeansManyToOne(k=self.kmeans_k, kmeans_kwargs=self.kmeans_kwargs)
+            return _KMeansManyToOne(k=self.kmeans_k, kmeans_kwargs=kmeans_kwargs)
         if self.model_type == "MiniBatchKMeans":
-            return _MiniBatchKMeansManyToOne(k=self.kmeans_k, kmeans_kwargs=self.kmeans_kwargs)
+            return _MiniBatchKMeansManyToOne(k=self.kmeans_k, kmeans_kwargs=kmeans_kwargs)
         if self.model_type == "BallCover":
-            kwargs = self.ballcover_kwargs or {}
+            kwargs = dict(self.ballcover_kwargs or {})
+            kwargs.setdefault("random_state", self.random_state)
             return _BallCoverManyToOne(
                 k=self.ballcover_k,
                 radius=self.ballcover_radius,
@@ -503,14 +520,15 @@ class ContinuousOverlapIndex(BaseEstimator):
         """Return prototype adjacency for a fitted backend."""
         counts: Dict[Tuple[int, int], float] = defaultdict(float)
         n_clusters = int(model.n_clusters_total)
-        top_k = min(max(2, int(self.top_k) + 1), n_clusters)
+        n_competitors = min(int(self.top_k), max(0, n_clusters - 1))
+        requested = min(n_competitors + 1, n_clusters)
 
         for x, p in zip(X, own_proto):
             p_int = int(p)
-            ids, scores = model.topk(x, k=top_k)
+            ids, scores = model.topk(x, k=requested)
             mask = ids != p_int
-            q_ids = ids[mask]
-            q_scores = scores[mask]
+            q_ids = ids[mask][:n_competitors]
+            q_scores = scores[mask][:n_competitors]
             if q_ids.size == 0:
                 continue
             if self.adjacency_mode == "hard_top1":

@@ -1,8 +1,7 @@
 """Regression tests on small real-world datasets."""
 
+import hashlib
 from pathlib import Path
-from urllib.error import URLError
-from urllib.request import Request, urlopen
 
 import numpy as np
 import pytest
@@ -15,26 +14,19 @@ EXPECTED_REAL_WORLD_INDEX = {
     "yeast": 0.45851927198966064,
 }
 YEAST_DATA_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/yeast/yeast.data"
-
-
-def _ensure_yeast_data(path):
-    if path.exists():
-        return
-
-    request = Request(
-        YEAST_DATA_URL,
-        headers={"User-Agent": "overlapindex-ci/1.0"},
-    )
-    try:
-        with urlopen(request, timeout=30) as response:
-            path.write_bytes(response.read())
-    except (OSError, URLError) as exc:
-        pytest.fail(f"Could not fetch UCI yeast dataset from {YEAST_DATA_URL}: {exc}")
+YEAST_DATA_SHA256 = "7cf61776fc04f527f93bf57a327b863893a1225d82df02d457e8950173218258"
 
 
 def _yeast_data():
     path = Path(__file__).with_name("data_yeast.data")
-    _ensure_yeast_data(path)
+    if not path.exists():
+        pytest.fail(
+            "The committed UCI yeast fixture is missing; source: "
+            f"{YEAST_DATA_URL}"
+        )
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if digest != YEAST_DATA_SHA256:
+        pytest.fail("The committed UCI yeast fixture failed its SHA-256 check.")
     rows = []
     labels = []
 

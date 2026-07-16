@@ -1,5 +1,57 @@
 import numpy as np
 from scipy import sparse
+from numbers import Integral, Real
+
+
+def _validate_positive_integer(value, name):
+    """Return a strictly positive integer without lossy coercion."""
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, Integral):
+        raise ValueError(f"{name} must be a positive integer.")
+    value = int(value)
+    if value <= 0:
+        raise ValueError(f"{name} must be a positive integer.")
+    return value
+
+
+def _validate_finite_positive_real(value, name):
+    """Return a finite positive float without accepting booleans."""
+    if isinstance(value, (bool, np.bool_)) or not isinstance(value, Real):
+        raise ValueError(f"{name} must be a finite positive number.")
+    value = float(value)
+    if not np.isfinite(value) or value <= 0.0:
+        raise ValueError(f"{name} must be a finite positive number.")
+    return value
+
+
+def _ordered_unique_1d(values):
+    """Return first-observed unique values without requiring them to sort."""
+    result = []
+    seen = set()
+    for value in np.asarray(values, dtype=object).reshape(-1):
+        try:
+            is_new = value not in seen
+        except TypeError as exc:
+            raise TypeError("Labels must be hashable.") from exc
+        if is_new:
+            seen.add(value)
+            result.append(value)
+    return np.asarray(result, dtype=object)
+
+
+def _validate_class_dictionary_coverage(value, labels, name):
+    """Reject class-specific dictionaries that omit observed labels."""
+    if not isinstance(value, dict):
+        return
+    missing = [label for label in labels if label not in value]
+    if not missing:
+        return
+    if len(missing) == 1:
+        raise ValueError(
+            f"Missing class-specific {name} for class {missing[0]!r}."
+        )
+    raise ValueError(
+        f"Missing class-specific {name} for classes {tuple(missing)!r}."
+    )
 
 
 def _validate_feature_matrix(X):
@@ -7,6 +59,8 @@ def _validate_feature_matrix(X):
     if sparse.issparse(X):
         if X.ndim != 2:
             raise ValueError(f"X must be a 2D array; got shape {X.shape}.")
+        if X.shape[1] == 0:
+            raise ValueError("X must contain at least one feature column.")
         X_csr = sparse.csr_matrix(X, dtype=float, copy=False)
         if not np.all(np.isfinite(X_csr.data)):
             raise ValueError("X contains NaN or infinite values.")
@@ -15,6 +69,8 @@ def _validate_feature_matrix(X):
     X_arr = np.asarray(X, dtype=float)
     if X_arr.ndim != 2:
         raise ValueError(f"X must be a 2D array; got shape {X_arr.shape}.")
+    if X_arr.shape[1] == 0:
+        raise ValueError("X must contain at least one feature column.")
     if not np.all(np.isfinite(X_arr)):
         raise ValueError("X contains NaN or infinite values.")
     return X_arr
