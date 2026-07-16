@@ -6,5 +6,7 @@
 :hidden:
 :maxdepth: 2
 
+use_cases
+backends/index
 api
 ```

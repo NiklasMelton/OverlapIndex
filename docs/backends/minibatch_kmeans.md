@@ -1,0 +1,58 @@
+# MiniBatchKMeans
+
+`MiniBatchKMeans` is the default backend and the recommended starting point for
+offline analysis. OverlapIndex fits one scikit-learn MiniBatchKMeans model per
+label, concatenates their centers into global prototype IDs, and scores samples
+using squared Euclidean distance to those centers.
+
+## When to use it
+
+Choose this backend for most batch workflows, especially when the dataset is
+too large for repeated full KMeans fits. It supports dense arrays, SciPy sparse
+feature matrices, and all supported multi-label target formats.
+
+Despite the backend's name, OverlapIndex treats it as an offline backend.
+Calling `partial_fit` on `OverlapIndex` refits and recomputes the score from the
+provided batch; it does not call scikit-learn's incremental MiniBatchKMeans API
+across batches.
+
+## Invocation
+
+Because it is the default, `model_type` may be omitted:
+
+```python
+from overlapindex import OverlapIndex
+
+oi = OverlapIndex(
+    kmeans_k=10,
+    kmeans_kwargs={
+        "random_state": 0,
+        "batch_size": 8192,
+        "n_init": 1,
+    },
+)
+oi.fit(X, y)
+print(oi.index)
+```
+
+The adapter defaults to `batch_size=8192`, `n_init=1`, and `init="random"`.
+Entries in `kmeans_kwargs` override those defaults and are forwarded to
+scikit-learn. `kmeans_k` may be one positive integer for every label or a
+dictionary of label-specific counts.
+
+## Tuning guidance
+
+- Increase `kmeans_k` when a label has multimodal or curved support that a few
+  centers cannot represent. More centers increase runtime and may also resolve
+  finer overlap.
+- Never request fewer than two centers per label when a top-two overlap result
+  needs to be well resolved. If a label has fewer samples than requested
+  centers, the backend caps its center count at its sample count.
+- Use a fixed `random_state` for comparisons.
+- Adjust `batch_size` for memory and throughput; it does not control
+  `OverlapIndex.partial_fit` semantics.
+- Use `offline_chunk_size` to bound the number of rows scored at once when the
+  fitted centroid set is large.
+
+See the runnable `examples/iris_default_minibatch_kmeans.py` example in the
+repository.
