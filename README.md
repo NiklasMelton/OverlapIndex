@@ -35,6 +35,17 @@ Or to install directly from the most recent source:
 pip install git+https://github.com/NiklasMelton/OverlapIndex.git@develop
 ```
 
+The complete user guide and source-generated API reference are published on
+[Read the Docs](https://overlapindex.readthedocs.io/).
+
+To validate the documentation locally:
+
+```bash
+python -m pip install -r docs/requirements.txt
+python -m pip install -e .
+sphinx-build --fail-on-warning --keep-going -b html docs docs/_build/html
+```
+
 ---
 
 ## Overview

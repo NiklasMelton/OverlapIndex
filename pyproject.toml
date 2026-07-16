@@ -7,7 +7,7 @@ license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/NiklasMelton/OverlapIndex"
 repository = "https://github.com/NiklasMelton/OverlapIndex"
-documentation = "https://github.com/NiklasMelton/OverlapIndex"
+documentation = "https://overlapindex.readthedocs.io/"
 keywords = ["incremental cluster validity", "cluster validity", "ART", "machine learning", "transfer learning", "clustering"]
 
 packages = [{ include = "overlapindex" }]
