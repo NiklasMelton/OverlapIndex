@@ -22,10 +22,16 @@ version = release
 
 extensions = [
     "myst_parser",
+    "sphinx.ext.mathjax",
     "sphinx.ext.autodoc",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
 ]
+
+# MyST leaves dollar-delimited math disabled unless this extension is enabled.
+# It applies to both inline ``$...$`` and display ``$$...$$`` expressions in
+# the Markdown documentation; Sphinx renders the resulting math with MathJax.
+myst_enable_extensions = ["dollarmath"]
 
 source_suffix = {
     ".rst": "restructuredtext",
