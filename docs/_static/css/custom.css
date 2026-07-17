@@ -1,0 +1,10 @@
+/* Keep the transparent, blue wordmark legible in the RTD side navigation. */
+.wy-side-nav-search {
+    background-color: #eaf4fb;
+}
+
+.wy-side-nav-search > a img.logo {
+    background-color: #ffffff;
+    border-radius: 4px;
+    padding: 6px;
+}

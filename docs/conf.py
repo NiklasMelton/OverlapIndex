@@ -46,6 +46,8 @@ html_theme_options = {
     "logo_only": True,
     "navigation_depth": 3,
 }
+html_static_path = ["_static"]
+html_css_files = ["css/custom.css"]
 
 autodoc_member_order = "bysource"
 autodoc_typehints = "description"
