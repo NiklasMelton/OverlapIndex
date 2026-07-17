@@ -1535,4 +1535,4 @@ art = ["artlib", "matplotlib", "matplotlib"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.9,<3.15"
-content-hash = "2e8f6b5f5c75bdb13f9cd75d776dcd6f9073398e0c230bae06c113f065e50eac"
+content-hash = "0ad1f0eb9ec623ee23ed7c34ec508e116f66e4fb01edb775e13bfe97fad4d172"

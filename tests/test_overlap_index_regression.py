@@ -261,6 +261,46 @@ def test_art_backend_raises_helpful_error_without_artlib(monkeypatch):
         OverlapIndex(model_type="Fuzzy")
 
 
+@ARTLIB_REQUIRED
+@pytest.mark.parametrize("model_type", ["Fuzzy", "Hypersphere"])
+def test_art_full_fit_rebuilds_backend_instead_of_accumulating(model_type):
+    X, y = _iris_data()
+    repeated = _make_model(model_type)
+    fresh = _make_model(model_type)
+
+    repeated.fit(X, y)
+    repeated.fit(X, y)
+    fresh.fit(X, y)
+
+    assert repeated._model.n_clusters_total == fresh._model.n_clusters_total
+    assert np.isclose(repeated.index, fresh.index, atol=0.0, rtol=0.0)
+    assert dict(repeated.cluster_cardinality) == dict(fresh.cluster_cardinality)
+
+
+@ARTLIB_REQUIRED
+def test_art_full_fit_forwards_match_tracking(monkeypatch):
+    X, y = _iris_data()
+    observed = []
+    original = clustering._ARTMAPManyToOne.partial_fit
+
+    def recording_partial_fit(self, X_fit, Y_fit, **kwargs):
+        observed.append(kwargs.get("match_tracking"))
+        return original(self, X_fit, Y_fit, **kwargs)
+
+    monkeypatch.setattr(
+        clustering._ARTMAPManyToOne,
+        "partial_fit",
+        recording_partial_fit,
+    )
+    OverlapIndex(
+        model_type="Fuzzy",
+        rho=0.95,
+        match_tracking="MT-",
+    ).fit(X, y)
+
+    assert observed == ["MT-"]
+
+
 @pytest.mark.parametrize(
     ("X", "y", "message"),
     [
@@ -359,6 +399,7 @@ def test_single_class_warns_and_returns_default_index():
     assert model.index == 1.0
 
 
+@ARTLIB_REQUIRED
 def test_art_backend_still_requires_unit_interval_inputs():
     X = np.array([[0.0, 2.0], [0.5, 0.5]])
     y = np.array([0, 1])

@@ -24,6 +24,13 @@ from typing import Any, Dict, Literal, Optional, Sequence, Tuple, Type, Union
 
 import numpy as np
 
+from overlapindex.utils import (
+    _ordered_unique_1d,
+    _validate_class_dictionary_coverage,
+    _validate_finite_positive_real,
+    _validate_positive_integer,
+)
+
 Metric = Literal["auto", "euclidean", "cosine"]
 Selection = Literal["greedy_uncovered", "farthest"]
 Auto = Literal["auto"]
@@ -50,8 +57,8 @@ class BallCoverManyToOne:
     cover_fraction : float, default=1.0
         Target fraction of each class to cover. Values must be in ``(0, 1]``.
         For fixed-radius mode, greedy selection stops after this fraction is
-        covered. For fixed-k mode, radius is chosen as this quantile of nearest
-        center distances.
+        covered. For fixed-k mode, radius is chosen from the upper empirical
+        order statistic that guarantees at least this observed coverage.
     selection : {"greedy_uncovered", "farthest"}, default="greedy_uncovered"
         Center-selection policy. ``"greedy_uncovered"`` chooses subsequent
         centers among currently uncovered samples. ``"farthest"`` chooses the
@@ -98,18 +105,32 @@ class BallCoverManyToOne:
         self.k = k
         self.radius = radius
         self.metric = metric
-        self.high_dim_threshold = int(high_dim_threshold)
-        self.cover_fraction = float(cover_fraction)
+        self.high_dim_threshold = _validate_positive_integer(
+            high_dim_threshold, "high_dim_threshold"
+        )
+        self.cover_fraction = _validate_finite_positive_real(
+            cover_fraction, "cover_fraction"
+        )
         self.selection = selection
-        self.chunk_size = int(chunk_size)
-        self.max_balls = None if max_balls is None else int(max_balls)
+        self.chunk_size = _validate_positive_integer(chunk_size, "chunk_size")
+        self.max_balls = (
+            None
+            if max_balls is None
+            else _validate_positive_integer(max_balls, "max_balls")
+        )
         self.store_memberships = bool(store_memberships)
-        self.dtype = dtype
+        try:
+            dtype_obj = np.dtype(dtype)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("dtype must be a NumPy floating-point dtype.") from exc
+        if not np.issubdtype(dtype_obj, np.floating):
+            raise ValueError("dtype must be a NumPy floating-point dtype.")
+        self.dtype = dtype_obj.type
         self.random_state = random_state
 
         self._rng = np.random.default_rng(random_state)
         self._resolved_metric: Optional[str] = None
-        self._eps = np.finfo(dtype).eps if np.issubdtype(dtype, np.floating) else np.finfo(np.float32).eps
+        self._eps = np.finfo(self.dtype).eps
 
         self._centers: Optional[np.ndarray] = None
         self._radii: Optional[np.ndarray] = None
@@ -136,10 +157,12 @@ class BallCoverManyToOne:
         if X.shape[0] != Y.shape[0]:
             raise ValueError(f"X and Y must have aligned rows; got {X.shape[0]} and {Y.shape[0]}.")
 
+        classes = _ordered_unique_1d(Y)
+        _validate_class_dictionary_coverage(self.k, classes, "k")
+        _validate_class_dictionary_coverage(self.radius, classes, "radius")
+        self._rng = np.random.default_rng(self.random_state)
         self._resolved_metric = self._resolve_metric(X.shape[1])
         X_work = self._prepare_X(X)
-
-        classes = np.unique(Y)
         centers_list = []
         radii_list = []
         cluster_classes = []
@@ -156,8 +179,8 @@ class BallCoverManyToOne:
             if Xc.shape[0] == 0:
                 continue
 
-            k_c = self._value_for_class(self.k, c)
-            radius_c = self._value_for_class(self.radius, c)
+            k_c = self._value_for_class(self.k, c, "k")
+            radius_c = self._value_for_class(self.radius, c, "radius")
             centers_c, radii_c, memberships_c, diag_c = self._fit_cover_for_class(Xc, k_c, radius_c)
 
             n_c_balls = centers_c.shape[0]
@@ -218,7 +241,7 @@ class BallCoverManyToOne:
         if X.shape[0] != Y.shape[0]:
             raise ValueError(f"X and Y must have aligned rows; got {X.shape[0]} and {Y.shape[0]}.")
         result = np.empty(X.shape[0], dtype=int)
-        for c in np.unique(Y):
+        for c in _ordered_unique_1d(Y):
             row_idx = np.where(Y == c)[0]
             ids = self._class_ball_id_arrays.get(c)
             if ids is None or ids.size == 0:
@@ -360,9 +383,21 @@ class BallCoverManyToOne:
 
         centers_arr = np.vstack(centers).astype(self.dtype, copy=False)
         if radius_c == "auto":
-            # np.quantile with 1.0 returns the max; clip for numerical safety.
-            q = float(np.clip(self.cover_fraction, 0.0, 1.0))
-            radius = float(np.sqrt(max(np.quantile(nearest_d2, q), 0.0)))
+            # Use the upper empirical order statistic so observed coverage is
+            # never lower than the requested fraction.
+            rank = int(np.ceil(self.cover_fraction * n) - 1)
+            rank = int(np.clip(rank, 0, n - 1))
+            radius_d2 = float(np.partition(nearest_d2, rank)[rank])
+            radius_value = np.asarray(
+                np.sqrt(max(radius_d2, 0.0)),
+                dtype=self.dtype,
+            )
+            radius = float(
+                np.nextafter(
+                    radius_value,
+                    np.asarray(np.inf, dtype=self.dtype),
+                )
+            )
             radius = max(radius, float(np.sqrt(self._eps)))
             mode = "fixed_k_auto_radius"
         else:
@@ -395,17 +430,36 @@ class BallCoverManyToOne:
         mean = np.mean(X, axis=0).astype(self.dtype, copy=False)
         mean_norm = float(np.dot(mean, mean))
         d2 = X_norms + mean_norm - 2.0 * (X @ mean)
-        return int(np.argmin(d2))
+        return self._select_extreme_index(d2, maximize=False)
 
     def _next_center_index(self, nearest_d2: np.ndarray, covered: Optional[np.ndarray]) -> int:
         """Choose the next center by farthest-current-distance policy."""
         if covered is not None and self.selection == "greedy_uncovered":
             candidates = np.flatnonzero(~covered)
             if candidates.size == 0:
-                return int(np.argmax(nearest_d2))
-            rel = int(np.argmax(nearest_d2[candidates]))
-            return int(candidates[rel])
-        return int(np.argmax(nearest_d2))
+                return self._select_extreme_index(nearest_d2, maximize=True)
+            return self._select_extreme_index(
+                nearest_d2[candidates],
+                maximize=True,
+                candidates=candidates,
+            )
+        return self._select_extreme_index(nearest_d2, maximize=True)
+
+    def _select_extreme_index(
+        self,
+        values: np.ndarray,
+        maximize: bool,
+        candidates: Optional[np.ndarray] = None,
+    ) -> int:
+        """Select an extreme value, using the seed only for exact ties."""
+        values = np.asarray(values)
+        target = np.max(values) if maximize else np.min(values)
+        tied = np.flatnonzero(values == target)
+        if candidates is not None:
+            tied = np.asarray(candidates, dtype=int)[tied]
+        if self.random_state is None or tied.size == 1:
+            return int(tied[0])
+        return int(self._rng.choice(tied))
 
     # ------------------------------------------------------------------
     # Distance and score helpers
@@ -454,6 +508,11 @@ class BallCoverManyToOne:
             scores[start:stop] = 1.0 - d2 / radius2[None, :]
         return scores
 
+    def _scores_matrix(self, X: np.ndarray, ids: Optional[Sequence[int]] = None) -> np.ndarray:
+        """Return ball scores for a raw dense query matrix."""
+        X_prepared = self._prepare_X(self._as_2d_float_array(X))
+        return self._scores_matrix_prepared(X_prepared, ids)
+
     # ------------------------------------------------------------------
     # Validation / preparation
     # ------------------------------------------------------------------
@@ -467,16 +526,20 @@ class BallCoverManyToOne:
             raise ValueError("cover_fraction must be in (0, 1].")
         if self.chunk_size <= 0:
             raise ValueError("chunk_size must be positive.")
-        k_auto = self.k == "auto"
-        radius_auto = self.radius == "auto"
+        k_auto = isinstance(self.k, str) and self.k == "auto"
+        radius_auto = isinstance(self.radius, str) and self.radius == "auto"
         if k_auto and radius_auto:
             raise ValueError("Only one of k or radius may be 'auto'.")
-        if not k_auto and not isinstance(self.k, dict):
-            if int(self.k) <= 0:  # type: ignore[arg-type]
-                raise ValueError("k must be positive, a class-specific dict, or 'auto'.")
-        if not radius_auto and not isinstance(self.radius, dict):
-            if float(self.radius) <= 0:  # type: ignore[arg-type]
-                raise ValueError("radius must be positive, a class-specific dict, or 'auto'.")
+        if isinstance(self.k, dict):
+            for label, value in self.k.items():
+                _validate_positive_integer(value, f"k for class {label!r}")
+        elif not k_auto:
+            _validate_positive_integer(self.k, "k")
+        if isinstance(self.radius, dict):
+            for label, value in self.radius.items():
+                _validate_finite_positive_real(value, f"radius for class {label!r}")
+        elif not radius_auto:
+            _validate_finite_positive_real(self.radius, "radius")
         if self.high_dim_threshold <= 0:
             raise ValueError("high_dim_threshold must be positive.")
         if self.max_balls is not None and self.max_balls <= 0:
@@ -509,15 +572,17 @@ class BallCoverManyToOne:
         X = np.asarray(X, dtype=self.dtype)
         if X.ndim != 2:
             raise ValueError(f"X must be a 2D array; got shape {X.shape}.")
+        if X.shape[1] == 0:
+            raise ValueError("X must contain at least one feature column.")
         if not np.all(np.isfinite(X)):
             raise ValueError("X contains NaN or infinite values.")
         return X
 
     @staticmethod
-    def _value_for_class(value: Any, c: Any) -> Any:
+    def _value_for_class(value: Any, c: Any, name: str) -> Any:
         if isinstance(value, dict):
             if c not in value:
-                raise ValueError(f"Missing class-specific parameter for class {c!r}.")
+                raise ValueError(f"Missing class-specific {name} for class {c!r}.")
             return value[c]
         return value
 

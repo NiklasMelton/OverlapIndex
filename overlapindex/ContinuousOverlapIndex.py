@@ -7,6 +7,7 @@ from collections import defaultdict
 from typing import Any, Dict, Literal, Optional, Tuple, Union
 
 import numpy as np
+from scipy import sparse
 from scipy.stats import wasserstein_distance
 from sklearn.cluster import KMeans
 
@@ -24,6 +25,11 @@ from overlapindex.clustering import (
     _KMeansManyToOne,
     _MiniBatchKMeansManyToOne,
 )
+from overlapindex.utils import (
+    _validate_feature_matrix,
+    _validate_finite_positive_real,
+    _validate_positive_integer,
+)
 
 
 ModelType = Literal["KMeans", "MiniBatchKMeans", "BallCover", "Fuzzy", "Hypersphere"]
@@ -32,6 +38,7 @@ TargetDistance = Literal["auto", "wasserstein", "sliced_wasserstein"]
 TargetScaling = Literal["standard", "none", "minmax", "robust"]
 AdjacencyMode = Literal["hard_top1", "soft_topk"]
 Aggregation = Literal["support_weighted", "macro"]
+NullMode = Literal["auto", "refit_permutation", "fixed_structure_permutation"]
 
 
 class ContinuousOverlapIndex(BaseEstimator):
@@ -62,17 +69,101 @@ class ContinuousOverlapIndex(BaseEstimator):
         n_target_cells: Union[int, Literal["auto"]] = "auto",
         target_cover_kwargs: Optional[dict] = None,
         target_distance: TargetDistance = "auto",
-        adjacency_mode: AdjacencyMode = "hard_top1",
+        adjacency_mode: AdjacencyMode = "soft_topk",
         top_k: int = 5,
         feature_temperature: float = 1.0,
         normalization: Literal["permutation"] = "permutation",
+        null_mode: NullMode = "auto",
         n_null_permutations: int = 20,
+        auto_null_work_threshold: int = 100_000,
         aggregation: Aggregation = "support_weighted",
         target_scaling: TargetScaling = "standard",
         n_projections: int = 64,
         random_state: Optional[int] = None,
         clip: bool = True,
     ) -> None:
+        """Initialize the continuous-target overlap estimator.
+
+        Parameters
+        ----------
+        rho : float, default=0.9
+            Reserved ARTMAP vigilance parameter. Continuous-target ARTMAP
+            backends are not supported in the current offline implementation.
+        r_hat : float, default=np.inf
+            Reserved Hypersphere ARTMAP radius constraint.
+        model_type : {"KMeans", "MiniBatchKMeans", "BallCover"}, default="MiniBatchKMeans"
+            Offline backend used to build feature-space prototypes. ``"Fuzzy"``
+            and ``"Hypersphere"`` are accepted by the type signature for API
+            consistency but raise ``NotImplementedError`` during fitting.
+        match_tracking : str, default="MT+"
+            Reserved ARTMAP match-tracking setting.
+        kmeans_k : int or dict, default=8
+            Number of feature prototypes per target cell for KMeans backends,
+            or a dictionary keyed by every target-cell id.
+        kmeans_kwargs : dict, optional
+            Keyword arguments forwarded to the selected scikit-learn centroid
+            backend. An explicit ``random_state`` here overrides the top-level
+            seed for feature-prototype fitting.
+        ballcover_k : int, dict, or "auto", default="auto"
+            Number of balls per target cell, cell-specific counts, or ``"auto"``
+            for greedy fixed-radius covering.
+        ballcover_radius : float, dict, or "auto", default=0.25
+            Ball radius, cell-specific radii, or ``"auto"`` when a fixed number
+            of balls should determine the radius. Exactly one of
+            ``ballcover_k`` and ``ballcover_radius`` may be ``"auto"``.
+        ballcover_kwargs : dict, optional
+            Additional options forwarded to BallCover. An explicit
+            ``random_state`` here overrides the top-level seed for the backend.
+        offline_chunk_size : int or None, default=10000
+            Maximum row block used for feature-prototype adjacency scoring.
+            ``None`` scores each available row block at once.
+        target_cover : {"auto", "quantile", "kmeans"}, default="auto"
+            Target-space cell construction. Auto selects quantiles for a
+            univariate target and KMeans for multivariate targets.
+        n_target_cells : int or "auto", default="auto"
+            Requested number of target cells. Auto uses a sample-size-dependent
+            value between 8 and 64, capped by the sample count.
+        target_cover_kwargs : dict, optional
+            Extra keyword arguments forwarded to target-space KMeans.
+        target_distance : {"auto", "wasserstein", "sliced_wasserstein"}, default="auto"
+            Distance between empirical target distributions. Auto selects 1D
+            Wasserstein distance for a univariate target and sliced Wasserstein
+            distance for multivariate targets.
+        adjacency_mode : {"hard_top1", "soft_topk"}, default="soft_topk"
+            Rule used to connect each own feature prototype to competing
+            prototypes.
+        top_k : int, default=5
+            Maximum number of non-own competitors receiving adjacency mass in
+            ``"soft_topk"`` mode.
+        feature_temperature : float, default=1.0
+            Positive softmax temperature for soft top-k adjacency. Lower values
+            concentrate mass on the strongest competitor.
+        normalization : {"permutation"}, default="permutation"
+            Continuous-index calibration method. Permutation is currently the
+            only supported value.
+        null_mode : {"auto", "refit_permutation", "fixed_structure_permutation"}, default="auto"
+            Permutation-null strategy. Auto switches from refitting to the
+            approximate fixed-structure mode at ``auto_null_work_threshold``.
+        n_null_permutations : int, default=20
+            Number of shuffled target assignments used to estimate null loss.
+        auto_null_work_threshold : int, default=100000
+            Auto-mode cutoff applied to
+            ``n_samples * n_null_permutations``.
+        aggregation : {"support_weighted", "macro"}, default="support_weighted"
+            Aggregation used for the public ``index`` value.
+        target_scaling : {"standard", "none", "minmax", "robust"}, default="standard"
+            Scaling applied to target columns before cell construction and
+            target-distribution distances.
+        n_projections : int, default=64
+            Number of random directions used by sliced Wasserstein distance.
+        random_state : int, optional
+            Seed for target-cell construction, sliced-Wasserstein projections,
+            null permutations, and backend fitting when no backend-specific
+            seed is provided.
+        clip : bool, default=True
+            If true, clip local and aggregate reported indices to ``[0, 1]``.
+            ``raw_index_`` retains the unclipped global calibration.
+        """
         self.rho = rho
         self.r_hat = r_hat
         self.model_type = model_type
@@ -91,7 +182,9 @@ class ContinuousOverlapIndex(BaseEstimator):
         self.top_k = top_k
         self.feature_temperature = feature_temperature
         self.normalization = normalization
+        self.null_mode = null_mode
         self.n_null_permutations = n_null_permutations
+        self.auto_null_work_threshold = auto_null_work_threshold
         self.aggregation = aggregation
         self.target_scaling = target_scaling
         self.n_projections = n_projections
@@ -107,7 +200,10 @@ class ContinuousOverlapIndex(BaseEstimator):
         self.macro_index_ = 1.0
         self.actual_loss_ = 0.0
         self.null_loss_ = 0.0
+        self.null_loss_samples_ = []
         self.loss_ratio_ = 0.0
+        self.null_mode_ = None
+        self.auto_null_work_ = 0
         self.prototype_index_ = {}
         self.prototype_loss_ = {}
         self.prototype_null_loss_ = {}
@@ -134,6 +230,8 @@ class ContinuousOverlapIndex(BaseEstimator):
         self.own_prototype_ids_ = None
         self._rows_by_prototype_ = {}
         self._model: Optional[_BaseManyToOneClusteringModel] = None
+        if hasattr(self, "n_features_in_"):
+            del self.n_features_in_
 
     @property
     def weighted_index(self) -> float:
@@ -186,6 +284,12 @@ class ContinuousOverlapIndex(BaseEstimator):
             raise ValueError("This ContinuousOverlapIndex instance is not fit yet.")
 
         X_arr = self._validate_X(X)
+        if X_arr.shape[1] != self.n_features_in_:
+            raise ValueError(
+                f"X has {X_arr.shape[1]} features, but this "
+                f"ContinuousOverlapIndex instance was fit with "
+                f"{self.n_features_in_} features."
+            )
         result = np.empty(X_arr.shape[0], dtype=int)
         for i, x in enumerate(X_arr):
             ids, _ = self._model.topk(x, k=1)
@@ -201,8 +305,12 @@ class ContinuousOverlapIndex(BaseEstimator):
 
     def fit_offline(self, X: np.ndarray, Y: np.ndarray, reset_state: bool = True) -> float:
         """Fit the backend on a complete regression dataset and compute COI."""
-        if reset_state:
-            self._reset_state()
+        if not reset_state:
+            raise ValueError(
+                "reset_state=False is not supported by ContinuousOverlapIndex; "
+                "continuous backends must be fit from a complete dataset."
+            )
+        self._validate_sparse_backend(X)
         self._validate_params()
 
         X_arr = self._validate_X(X)
@@ -211,25 +319,29 @@ class ContinuousOverlapIndex(BaseEstimator):
             raise ValueError(
                 f"X and Y must have the same number of rows; got {X_arr.shape[0]} and {Y_arr.shape[0]}."
             )
+        self._reset_state()
         if X_arr.shape[0] == 0:
             self._warn_empty_input()
             return self.index
 
+        self.auto_null_work_ = int(X_arr.shape[0]) * int(self.n_null_permutations)
+        self.null_mode_ = self._resolve_null_mode(X_arr.shape[0])
         Y_scaled = self._scale_targets(Y_arr)
         target_cell_ids = self._build_target_cells(Y_scaled)
         unique_cells = np.unique(target_cell_ids)
-        if unique_cells.size <= 1:
-            self._warn_single_target_cell()
-            self._store_training_targets(Y_arr, Y_scaled, target_cell_ids)
-            return self.index
 
         self._model = self._build_model()
         self._model.fit_offline(X_arr, target_cell_ids)
 
         own_proto = self._model.bmu_for_class_batch(X_arr, target_cell_ids)
+        self.n_features_in_ = int(X_arr.shape[1])
         self._store_training_targets(Y_arr, Y_scaled, target_cell_ids)
         self.own_prototype_ids_ = own_proto
         self._sync_prototype_bookkeeping(target_cell_ids, own_proto)
+
+        if unique_cells.size <= 1:
+            self._warn_single_target_cell()
+            return self.index
 
         if self._model.n_clusters_total <= 1:
             self._warn_single_prototype()
@@ -258,36 +370,38 @@ class ContinuousOverlapIndex(BaseEstimator):
             )
         if self.adjacency_mode not in {"hard_top1", "soft_topk"}:
             raise ValueError("adjacency_mode must be one of {'hard_top1', 'soft_topk'}.")
-        if self.adjacency_mode != "hard_top1":
-            raise NotImplementedError(
-                "ContinuousOverlapIndex V1 implements adjacency_mode='hard_top1' only."
-            )
         if self.normalization != "permutation":
             raise ValueError("normalization must be 'permutation'.")
+        if self.null_mode not in {"auto", "refit_permutation", "fixed_structure_permutation"}:
+            raise ValueError(
+                "null_mode must be one of {'auto', 'refit_permutation', 'fixed_structure_permutation'}."
+            )
         if self.aggregation not in {"support_weighted", "macro"}:
             raise ValueError("aggregation must be one of {'support_weighted', 'macro'}.")
         if self.target_scaling not in {"standard", "none", "minmax", "robust"}:
             raise ValueError("target_scaling must be one of {'standard', 'none', 'minmax', 'robust'}.")
-        if int(self.n_null_permutations) <= 0:
-            raise ValueError("n_null_permutations must be a positive integer.")
-        if int(self.n_projections) <= 0:
-            raise ValueError("n_projections must be a positive integer.")
-        if int(self.top_k) <= 0:
-            raise ValueError("top_k must be a positive integer.")
-        if float(self.feature_temperature) <= 0:
-            raise ValueError("feature_temperature must be positive.")
-        if self.offline_chunk_size is not None and int(self.offline_chunk_size) <= 0:
-            raise ValueError("offline_chunk_size must be a positive integer or None.")
+        _validate_positive_integer(self.n_null_permutations, "n_null_permutations")
+        _validate_positive_integer(self.auto_null_work_threshold, "auto_null_work_threshold")
+        _validate_positive_integer(self.n_projections, "n_projections")
+        _validate_positive_integer(self.top_k, "top_k")
+        _validate_finite_positive_real(self.feature_temperature, "feature_temperature")
+        if self.offline_chunk_size is not None:
+            _validate_positive_integer(self.offline_chunk_size, "offline_chunk_size")
+        if self.n_target_cells != "auto":
+            _validate_positive_integer(self.n_target_cells, "n_target_cells")
 
-    @staticmethod
-    def _validate_X(X: np.ndarray) -> np.ndarray:
+    def _validate_sparse_backend(self, X: Any) -> None:
+        """Reject sparse features for backends that require dense arrays."""
+        if sparse.issparse(X) and self.model_type not in {"KMeans", "MiniBatchKMeans"}:
+            raise TypeError(
+                "Sparse X is supported only for model_type='KMeans' and "
+                f"'MiniBatchKMeans'; got model_type={self.model_type!r}."
+            )
+
+    def _validate_X(self, X: np.ndarray) -> np.ndarray:
         """Validate feature input."""
-        X_arr = np.asarray(X, dtype=float)
-        if X_arr.ndim != 2:
-            raise ValueError(f"X must be a 2D array; got shape {X_arr.shape}.")
-        if not np.all(np.isfinite(X_arr)):
-            raise ValueError("X contains NaN or infinite values.")
-        return X_arr
+        self._validate_sparse_backend(X)
+        return _validate_feature_matrix(X)
 
     @staticmethod
     def _validate_Y(Y: np.ndarray) -> np.ndarray:
@@ -300,6 +414,8 @@ class ContinuousOverlapIndex(BaseEstimator):
             Y_arr = Y_arr.reshape(-1, 1)
         elif Y_arr.ndim != 2:
             raise ValueError(f"Y must be a 1D or 2D numeric array; got shape {Y_arr.shape}.")
+        if Y_arr.shape[1] == 0:
+            raise ValueError("Y must contain at least one target column.")
         if not np.all(np.isfinite(Y_arr)):
             raise ValueError("Y contains NaN or infinite values.")
         return Y_arr.astype(float, copy=False)
@@ -347,11 +463,9 @@ class ContinuousOverlapIndex(BaseEstimator):
         if self.n_target_cells == "auto":
             return int(min(max(8, int(np.sqrt(n_samples))), 64, n_samples))
         try:
-            n_cells = int(self.n_target_cells)
-        except (TypeError, ValueError) as exc:
+            n_cells = _validate_positive_integer(self.n_target_cells, "n_target_cells")
+        except ValueError as exc:
             raise ValueError("n_target_cells must be a positive integer or 'auto'.") from exc
-        if n_cells <= 0:
-            raise ValueError("n_target_cells must be a positive integer or 'auto'.")
         return int(min(n_cells, n_samples))
 
     @staticmethod
@@ -378,12 +492,15 @@ class ContinuousOverlapIndex(BaseEstimator):
 
     def _build_model(self) -> _BaseManyToOneClusteringModel:
         """Construct the selected offline backend."""
+        kmeans_kwargs = dict(self.kmeans_kwargs or {})
+        kmeans_kwargs.setdefault("random_state", self.random_state)
         if self.model_type == "KMeans":
-            return _KMeansManyToOne(k=self.kmeans_k, kmeans_kwargs=self.kmeans_kwargs)
+            return _KMeansManyToOne(k=self.kmeans_k, kmeans_kwargs=kmeans_kwargs)
         if self.model_type == "MiniBatchKMeans":
-            return _MiniBatchKMeansManyToOne(k=self.kmeans_k, kmeans_kwargs=self.kmeans_kwargs)
+            return _MiniBatchKMeansManyToOne(k=self.kmeans_k, kmeans_kwargs=kmeans_kwargs)
         if self.model_type == "BallCover":
-            kwargs = self.ballcover_kwargs or {}
+            kwargs = dict(self.ballcover_kwargs or {})
+            kwargs.setdefault("random_state", self.random_state)
             return _BallCoverManyToOne(
                 k=self.ballcover_k,
                 radius=self.ballcover_radius,
@@ -470,7 +587,7 @@ class ContinuousOverlapIndex(BaseEstimator):
         self._rows_by_prototype_ = rows_by_proto
 
     def _build_prototype_adjacency(self, X: np.ndarray, own_proto: np.ndarray) -> None:
-        """Build hard top-1 prototype adjacency from feature-space competitors."""
+        """Build prototype adjacency from feature-space competitors."""
         counts, normalized = self._adjacency_for_model(X, own_proto, self._model)
         self.prototype_adjacency_count_ = counts
         self.prototype_adjacency_ = counts
@@ -482,18 +599,27 @@ class ContinuousOverlapIndex(BaseEstimator):
         own_proto: np.ndarray,
         model: _BaseManyToOneClusteringModel,
     ) -> Tuple[Dict[Tuple[int, int], float], Dict[Tuple[int, int], float]]:
-        """Return hard top-1 prototype adjacency for a fitted backend."""
+        """Return prototype adjacency for a fitted backend."""
         counts: Dict[Tuple[int, int], float] = defaultdict(float)
         n_clusters = int(model.n_clusters_total)
-        top_k = min(max(2, int(self.top_k) + 1), n_clusters)
+        n_competitors = min(int(self.top_k), max(0, n_clusters - 1))
+        requested = min(n_competitors + 1, n_clusters)
 
         for x, p in zip(X, own_proto):
             p_int = int(p)
-            ids, _ = model.topk(x, k=top_k)
-            q_ids = ids[ids != p_int]
+            ids, scores = model.topk(x, k=requested)
+            mask = ids != p_int
+            q_ids = ids[mask][:n_competitors]
+            q_scores = scores[mask][:n_competitors]
             if q_ids.size == 0:
                 continue
-            counts[(p_int, int(q_ids[0]))] += 1.0
+            if self.adjacency_mode == "hard_top1":
+                counts[(p_int, int(q_ids[0]))] += 1.0
+                continue
+
+            weights = self._soft_topk_weights(q_scores)
+            for q_id, weight in zip(q_ids, weights):
+                counts[(p_int, int(q_id))] += float(weight)
 
         normalized = {}
         outgoing = defaultdict(float)
@@ -504,6 +630,18 @@ class ContinuousOverlapIndex(BaseEstimator):
             normalized[key] = float(value) / float(outgoing[p])
 
         return dict(counts), normalized
+
+    def _soft_topk_weights(self, scores: np.ndarray) -> np.ndarray:
+        """Return temperature-scaled softmax weights over competing prototype scores."""
+        scores = np.asarray(scores, dtype=float)
+        if scores.size == 0:
+            return np.asarray([], dtype=float)
+        scaled = (scores - np.max(scores)) / float(self.feature_temperature)
+        weights = np.exp(scaled)
+        total = float(np.sum(weights))
+        if total <= np.finfo(float).eps:
+            return np.full(scores.shape, 1.0 / float(scores.size), dtype=float)
+        return weights / total
 
     def _compute_index_from_current_state(self, X: np.ndarray, Y_scaled: np.ndarray) -> None:
         """Compute actual/null losses and derived COI summaries."""
@@ -544,25 +682,48 @@ class ContinuousOverlapIndex(BaseEstimator):
         self.macro_index_ = float(self._aggregate_index("macro"))
         self.index = float(self._aggregate_index(self.aggregation))
 
+    def _resolve_null_mode(self, n_samples: int) -> str:
+        """Resolve the null estimation mode for the current fit."""
+        if self.null_mode != "auto":
+            return str(self.null_mode)
+        work = int(n_samples) * int(self.n_null_permutations)
+        if work >= int(self.auto_null_work_threshold):
+            return "fixed_structure_permutation"
+        return "refit_permutation"
+
     def _estimate_null_loss(self, X: np.ndarray, Y_scaled: np.ndarray) -> float:
         """
-        Estimate permutation-null loss by refitting target cells and prototypes.
-
-        Target cells are pseudo-labels in COI, so conditioning the null on the
-        actual target-cell prototype assignment would make random targets look
-        artificially compatible. Recomputing the full cover/backend path for
-        each permutation preserves the intended null relationship between X and
-        Y at the cost of extra work.
+        Estimate permutation-null loss for the configured null mode.
         """
         rng = np.random.default_rng(self.random_state)
         losses = []
 
         for _ in range(int(self.n_null_permutations)):
             permuted = Y_scaled[rng.permutation(Y_scaled.shape[0])]
-            loss = self._loss_for_permuted_dataset(X, permuted)
+            if self.null_mode_ == "fixed_structure_permutation":
+                loss = self._loss_for_fixed_structure_permutation(permuted)
+            else:
+                loss = self._loss_for_permuted_dataset(X, permuted)
             losses.append(loss)
 
+        self.null_loss_samples_ = [float(loss) for loss in losses]
         return float(np.mean(losses)) if losses else 0.0
+
+    def _loss_for_fixed_structure_permutation(self, Y_scaled: np.ndarray) -> float:
+        """Compute null loss with fitted prototype structure held fixed."""
+        if not self.prototype_adjacency_normalized_:
+            return 0.0
+
+        values_by_proto = {
+            int(pid): Y_scaled[rows]
+            for pid, rows in self._rows_by_prototype_.items()
+        }
+        loss, _ = self._loss_for_components(
+            values_by_proto,
+            self.prototype_support_,
+            self.prototype_adjacency_normalized_,
+        )
+        return float(loss)
 
     def _loss_for_permuted_dataset(self, X: np.ndarray, Y_scaled: np.ndarray) -> float:
         """Compute actual-style loss for one permuted target assignment."""

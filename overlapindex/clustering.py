@@ -1,8 +1,14 @@
 import numpy as np
 from collections import defaultdict
 from importlib import import_module
+from scipy import sparse
 from sklearn.cluster import KMeans, MiniBatchKMeans
 from overlapindex.BallCover import BallCoverManyToOne
+from overlapindex.utils import (
+    _ordered_unique_1d,
+    _validate_class_dictionary_coverage,
+    _validate_positive_integer,
+)
 from typing import Literal, Optional, Union, Dict, Any, Sequence, Tuple, Type
 
 
@@ -203,6 +209,11 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
             Floating-point dtype used to store centroid arrays.
         """
         self._k = k
+        if isinstance(k, dict):
+            for label, value in k.items():
+                _validate_positive_integer(value, f"k for class {label!r}")
+        else:
+            _validate_positive_integer(k, "k")
         self._model_kwargs = model_kwargs or {}
         self._dtype = dtype
 
@@ -230,7 +241,8 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
             Class labels aligned with X.
         """
         Y = np.asarray(Y)
-        classes = np.unique(Y)
+        classes = _ordered_unique_1d(Y)
+        _validate_class_dictionary_coverage(self._k, classes, "k")
 
         centers_list = []
         cluster_classes = []
@@ -247,8 +259,11 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
             if nc == 0:
                 continue
 
-            k = self._k[c] if isinstance(self._k, dict) and c in self._k else self._k
-            k = int(max(1, min(int(k), int(nc))))
+            if isinstance(self._k, dict):
+                k = _validate_positive_integer(self._k[c], f"k for class {c!r}")
+            else:
+                k = _validate_positive_integer(self._k, "k")
+            k = min(k, int(nc))
 
             model = self._make_model(k)
             model.fit(Xc)
@@ -288,6 +303,12 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
         ids = np.asarray(ids, dtype=int)
         if ids.size == 0:
             return np.asarray([], dtype=float)
+        if sparse.issparse(x):
+            if x.ndim != 2 or x.shape[0] != 1:
+                raise ValueError(
+                    f"Sparse x must contain exactly one row; got shape {x.shape}."
+                )
+            return self._scores_matrix(x, ids)[0]
         x = np.asarray(x, dtype=self._centers.dtype)
         x_norm = float(np.dot(x, x))
         d2 = self._center_norms[ids] + x_norm - 2.0 * (self._centers[ids] @ x)
@@ -303,10 +324,13 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
 
     def bmu_for_class_batch(self, X: np.ndarray, Y: np.ndarray) -> np.ndarray:
         """Return nearest class-owned centroids for a batch of samples."""
-        X = np.asarray(X, dtype=self._centers.dtype)
+        if sparse.issparse(X):
+            X = sparse.csr_matrix(X, dtype=self._centers.dtype, copy=False)
+        else:
+            X = np.asarray(X, dtype=self._centers.dtype)
         Y = np.asarray(Y)
         result = np.empty(X.shape[0], dtype=int)
-        for c in np.unique(Y):
+        for c in _ordered_unique_1d(Y):
             row_idx = np.where(Y == c)[0]
             ids = self._class_center_id_arrays.get(c)
             if ids is None or ids.size == 0:
@@ -318,7 +342,11 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
     def _scores_matrix(self, X: np.ndarray, ids: Optional[Sequence[int]] = None) -> np.ndarray:
         """Return negative squared distances from a sample matrix to selected centers."""
         self._check_fit()
-        X = np.asarray(X, dtype=self._centers.dtype)
+        is_sparse = sparse.issparse(X)
+        if is_sparse:
+            X = sparse.csr_matrix(X, dtype=self._centers.dtype, copy=False)
+        else:
+            X = np.asarray(X, dtype=self._centers.dtype)
         if ids is None:
             centers = self._centers
             center_norms = self._center_norms
@@ -328,8 +356,12 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
             center_norms = self._center_norms[ids]
         if centers.shape[0] == 0:
             return np.zeros((X.shape[0], 0), dtype=self._centers.dtype)
-        X_norms = np.einsum("ij,ij->i", X, X)
-        d2 = X_norms[:, None] + center_norms[None, :] - 2.0 * (X @ centers.T)
+        if is_sparse:
+            X_norms = np.asarray(X.multiply(X).sum(axis=1)).reshape(-1)
+        else:
+            X_norms = np.einsum("ij,ij->i", X, X)
+        cross = np.asarray(X @ centers.T)
+        d2 = X_norms[:, None] + center_norms[None, :] - 2.0 * cross
         return -d2
 
     def scores_all(self, x: np.ndarray) -> np.ndarray:

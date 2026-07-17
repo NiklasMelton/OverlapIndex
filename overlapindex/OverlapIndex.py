@@ -15,6 +15,9 @@ except ImportError:  # pragma: no cover - sklearn is a required dependency for o
         pass
 
 from overlapindex.utils import (
+    _ordered_unique_1d,
+    _validate_feature_matrix,
+    _validate_positive_integer,
     complement_code,
     top_two_indices_against_others_from_backend,
 )
@@ -27,6 +30,34 @@ from overlapindex.clustering import (
 )
 
 
+def _default_one() -> float:
+    """Return the picklable default score used by overlap mappings."""
+    return 1.0
+
+
+def _validate_label(label: Any) -> None:
+    """Require one hashable, non-missing label value."""
+    try:
+        hash(label)
+    except TypeError as exc:
+        raise TypeError("Labels must be hashable.") from exc
+
+    if label is None:
+        raise ValueError("Labels must not contain None or NaN values.")
+    try:
+        unequal_to_self = label != label
+    except Exception:
+        unequal_to_self = False
+    try:
+        is_missing = bool(unequal_to_self)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "Labels must be scalar, non-missing values with unambiguous equality."
+        ) from exc
+    if is_missing:
+        raise ValueError("Labels must not contain None or NaN values.")
+
+
 def _is_multilabel_entry(y: Any) -> bool:
     """Return True when one target entry is a collection of labels."""
     if isinstance(y, (str, bytes)):
@@ -34,15 +65,16 @@ def _is_multilabel_entry(y: Any) -> bool:
     return isinstance(y, Iterable)
 
 
-def _label_sets_from_indicator_matrix(Y: Any) -> list[set]:
-    """Convert a dense or sparse binary indicator matrix to label sets."""
+def _label_sets_from_indicator_matrix(Y: Any) -> list[tuple]:
+    """Convert a dense or sparse binary indicator matrix to label tuples."""
     if sparse.issparse(Y):
         Y_csr = Y.tocsr(copy=True)
         Y_csr.eliminate_zeros()
+        Y_csr.sort_indices()
         if not np.all(Y_csr.data == 1):
             raise ValueError("2D Y must contain only 0/1 indicators.")
         return [
-            set(Y_csr.indices[Y_csr.indptr[i] : Y_csr.indptr[i + 1]])
+            tuple(Y_csr.indices[Y_csr.indptr[i] : Y_csr.indptr[i + 1]])
             for i in range(Y_csr.shape[0])
         ]
 
@@ -61,10 +93,32 @@ def _label_sets_from_indicator_matrix(Y: Any) -> list[set]:
     if not np.all((Y_num == 0) | (Y_num == 1)):
         raise ValueError("2D Y must contain only 0/1 indicators.")
 
-    return [set(np.flatnonzero(row)) for row in Y_num]
+    return [tuple(np.flatnonzero(row)) for row in Y_num]
 
 
-def _normalize_label_sets(Y: Any) -> list[set]:
+def _stable_collection_labels(labels: Iterable[Any]) -> tuple:
+    """Validate and deduplicate one label collection without losing list order."""
+    if isinstance(labels, (set, frozenset)):
+        labels = sorted(
+            labels,
+            key=lambda label: (
+                type(label).__module__,
+                type(label).__qualname__,
+                repr(label),
+            ),
+        )
+
+    result = []
+    seen = set()
+    for label in labels:
+        _validate_label(label)
+        if label not in seen:
+            seen.add(label)
+            result.append(label)
+    return tuple(result)
+
+
+def _normalize_label_sets(Y: Any) -> list[tuple]:
     """
     Convert supported label formats to per-sample label sets.
 
@@ -93,10 +147,37 @@ def _normalize_label_sets(Y: Any) -> list[set]:
                 "or a 2D binary indicator matrix."
             )
 
-        entries = list(Y)
+        if Y_arr.ndim == 2 and not isinstance(Y, np.ndarray):
+            try:
+                numeric = np.asarray(Y, dtype=float)
+            except (TypeError, ValueError):
+                numeric = None
+            if numeric is not None and np.all((numeric == 0) | (numeric == 1)):
+                warnings.warn(
+                    "A rectangular binary Python sequence is interpreted as a "
+                    "sequence of label collections. Convert it to a NumPy array "
+                    "or SciPy sparse matrix for indicator-matrix semantics.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+
+        try:
+            entries = list(Y)
+        except TypeError as exc:
+            raise ValueError(
+                "Y must be a 1D label vector, a 1D sequence of label collections, "
+                "or a 2D binary indicator matrix."
+            ) from exc
         label_sets = []
         for y in entries:
-            labels = set(y) if _is_multilabel_entry(y) else {y}
+            try:
+                labels = (
+                    _stable_collection_labels(y)
+                    if _is_multilabel_entry(y)
+                    else _stable_collection_labels((y,))
+                )
+            except TypeError as exc:
+                raise TypeError("Labels must be hashable.") from exc
             label_sets.append(labels)
 
     if any(len(labels) == 0 for labels in label_sets):
@@ -105,33 +186,36 @@ def _normalize_label_sets(Y: Any) -> list[set]:
     return label_sets
 
 
-def _flatten_single_label_sets(Y_sets: list[set]) -> np.ndarray:
+def _flatten_single_label_sets(Y_sets: list[tuple]) -> np.ndarray:
     """Convert normalized singleton label sets back to a 1D label vector."""
-    return np.asarray([next(iter(labels)) for labels in Y_sets], dtype=object)
+    return np.asarray([labels[0] for labels in Y_sets], dtype=object)
 
 
 def _expand_multilabel_for_backend(
     X: np.ndarray,
-    Y_sets: list[set],
+    Y_sets: list[Iterable[Any]],
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Duplicate each sample once for every positive label before backend fit."""
-    X_expanded = []
+    row_indices = []
     Y_expanded = []
 
-    for x, labels in zip(X, Y_sets):
-        for label in labels:
-            X_expanded.append(x)
+    for i, labels in enumerate(Y_sets):
+        for label in _stable_collection_labels(labels):
+            row_indices.append(i)
             Y_expanded.append(label)
 
-    return np.asarray(X_expanded, dtype=float), np.asarray(Y_expanded, dtype=object)
+    X_expanded = X[np.asarray(row_indices, dtype=int)]
+    if not sparse.issparse(X_expanded):
+        X_expanded = np.asarray(X_expanded, dtype=float)
+    return X_expanded, np.asarray(Y_expanded, dtype=object)
 
 
-def _ordered_unique_labels(Y_sets: list[set]) -> np.ndarray:
+def _ordered_unique_labels(Y_sets: list[Iterable[Any]]) -> np.ndarray:
     """Return labels in first-observed order across normalized label sets."""
     labels = []
     seen = set()
     for sample_labels in Y_sets:
-        for label in sample_labels:
+        for label in _stable_collection_labels(sample_labels):
             if label not in seen:
                 seen.add(label)
                 labels.append(label)
@@ -144,7 +228,7 @@ def _deduplicated_labels(labels: Iterable[Any]) -> list[Any]:
     seen = set()
     for label in labels:
         try:
-            hash(label)
+            _validate_label(label)
         except TypeError as exc:
             raise TypeError("exclude_classes entries must be hashable.") from exc
         if label not in seen:
@@ -244,13 +328,16 @@ class OverlapIndex(BaseEstimator):
         self._validate_multilabel_params()
 
         # indices / bookkeeping
-        self.sparse_adj = defaultdict(lambda: 0)
+        self.sparse_adj = defaultdict(int)
         self.cluster_cardinality = defaultdict(int)
         self.rev_map = defaultdict(set)
-        self.pairwise_index = defaultdict(lambda: 1.0)
-        self.singleton_index = defaultdict(lambda: 1.0)
+        self.pairwise_index = defaultdict(_default_one)
+        self.singleton_index = defaultdict(_default_one)
         self.pairwise_cardinality = defaultdict(int)
         self.competitors_ = {}
+        self.under_prototyped_labels_ = ()
+        self.unevaluable_pairs_ = ()
+        self.unevaluable_labels_ = ()
         self.label_to_index_ = {}
         self.index_to_label_ = {}
         self._label_indicator_csr_ = None
@@ -265,16 +352,18 @@ class OverlapIndex(BaseEstimator):
         if self.multilabel_pair_mode not in {"all", "top_m"}:
             raise ValueError("multilabel_pair_mode must be one of {'all', 'top_m'}.")
         if self.multilabel_pair_mode == "top_m":
-            try:
-                top_m = int(self.top_m) if self.top_m is not None else None
-            except (TypeError, ValueError) as exc:
-                raise ValueError(
-                    "top_m must be a positive integer when multilabel_pair_mode='top_m'."
-                ) from exc
-            if top_m is None or top_m <= 0:
+            if self.top_m is None:
                 raise ValueError(
                     "top_m must be a positive integer when multilabel_pair_mode='top_m'."
                 )
+            try:
+                _validate_positive_integer(self.top_m, "top_m")
+            except ValueError as exc:
+                raise ValueError(
+                    "top_m must be a positive integer when multilabel_pair_mode='top_m'."
+                ) from exc
+        if self.offline_chunk_size is not None:
+            _validate_positive_integer(self.offline_chunk_size, "offline_chunk_size")
 
     def _build_model(self) -> _BaseManyToOneClusteringModel:
         """Construct the backend adapter from the current estimator parameters."""
@@ -319,23 +408,26 @@ class OverlapIndex(BaseEstimator):
 
     def _prep_X(self, X: np.ndarray) -> np.ndarray:
         """Preprocess raw samples before clustering."""
-        X = np.asarray(X, dtype=float)
         if self._is_artmap_backend:
-            return complement_code(X)
+            return complement_code(np.asarray(X, dtype=float))
         return X
+
+    def _validate_sparse_backend(self, X: Any) -> None:
+        """Reject sparse features for backends that require dense arrays."""
+        if sparse.issparse(X) and self.model_type not in {"KMeans", "MiniBatchKMeans"}:
+            raise TypeError(
+                "Sparse X is supported only for model_type='KMeans' and "
+                f"'MiniBatchKMeans'; got model_type={self.model_type!r}."
+            )
 
     def _validate_input_data(
         self,
         X: np.ndarray,
         Y: Any,
-    ) -> Tuple[np.ndarray, list[set]]:
+    ) -> Tuple[np.ndarray, list[tuple]]:
         """Validate aligned batch inputs before preprocessing."""
-        X_arr = np.asarray(X, dtype=float)
-
-        if X_arr.ndim != 2:
-            raise ValueError(f"X must be a 2D array; got shape {X_arr.shape}.")
-        if not np.all(np.isfinite(X_arr)):
-            raise ValueError("X contains NaN or infinite values.")
+        self._validate_sparse_backend(X)
+        X_arr = _validate_feature_matrix(X)
 
         Y_sets = _normalize_label_sets(Y)
         if X_arr.shape[0] != len(Y_sets):
@@ -371,21 +463,69 @@ class OverlapIndex(BaseEstimator):
             stacklevel=2,
         )
 
+    @staticmethod
+    def _warn_under_prototyped(labels: Tuple[Any, ...]) -> None:
+        """Warn once when top-two scoring has fewer than two owned prototypes."""
+        warnings.warn(
+            "Top-two overlap scoring is degenerate for labels owning fewer than "
+            f"two prototypes: {labels!r}. Scores are still computed.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    @staticmethod
+    def _warn_unevaluable_multilabel(labels: Tuple[Any, ...]) -> None:
+        """Warn once when multi-label source labels lack comparison rows."""
+        warnings.warn(
+            "Some multi-label source labels have no evaluable selected competitor "
+            f"pairs and were excluded from global aggregation: {labels!r}.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    def _check_feature_count(self, X: np.ndarray) -> None:
+        """Validate raw feature count against a previously fitted estimator."""
+        if hasattr(self, "n_features_in_") and X.shape[1] != self.n_features_in_:
+            raise ValueError(
+                f"X has {X.shape[1]} features, but this OverlapIndex instance "
+                f"was fit with {self.n_features_in_} features."
+            )
+
+    def _refresh_under_prototyped_labels(self) -> None:
+        """Refresh deterministic diagnostics and warn only when they change."""
+        previous = self.under_prototyped_labels_
+        if len(self.rev_map) <= 1:
+            current = ()
+        else:
+            current = tuple(
+                label
+                for label in self.rev_map
+                if len(self.rev_map[label]) < 2
+            )
+        self.under_prototyped_labels_ = current
+        if current and current != previous:
+            self._warn_under_prototyped(current)
+
     def _reset_indices(self) -> None:
         """Reset overlap-index bookkeeping without replacing the clustering backend."""
-        self.sparse_adj = defaultdict(lambda: 0)
+        self.sparse_adj = defaultdict(int)
         self.cluster_cardinality = defaultdict(int)
         self.rev_map = defaultdict(set)
-        self.pairwise_index = defaultdict(lambda: 1.0)
-        self.singleton_index = defaultdict(lambda: 1.0)
+        self.pairwise_index = defaultdict(_default_one)
+        self.singleton_index = defaultdict(_default_one)
         self.pairwise_cardinality = defaultdict(int)
         self.competitors_ = {}
+        self.under_prototyped_labels_ = ()
+        self.unevaluable_pairs_ = ()
+        self.unevaluable_labels_ = ()
         self.label_to_index_ = {}
         self.index_to_label_ = {}
         self._label_indicator_csr_ = None
         self._label_indicator_csc_ = None
         self._positive_rows_by_label_index_ = {}
         self.index = 1.0
+        if hasattr(self, "n_features_in_"):
+            del self.n_features_in_
 
     # ---- compatibility accessors (optional) ----
 
@@ -435,7 +575,14 @@ class OverlapIndex(BaseEstimator):
             return []
 
         excluded = self._normalized_exclude_classes()
-        return [label for label in observed_labels if label not in excluded]
+        unevaluable = set(self.unevaluable_labels_)
+        return [
+            label
+            for label in observed_labels
+            if label not in excluded
+            and label not in unevaluable
+            and np.isfinite(self.singleton_index[label])
+        ]
 
     def _recompute_global_index(self) -> float:
         """Recompute the exclusion-aware global macro overlap index."""
@@ -515,23 +662,31 @@ class OverlapIndex(BaseEstimator):
             raise NotImplementedError(
                 f"{self.model_type} backend is offline-only here. Use fit_offline(X, Y)."
             )
+        _validate_label(y)
         x_ = np.asarray(x, dtype=float)
 
         if x_.ndim != 1:
             raise ValueError("x must be a 1D array or list")
         if not np.all(np.isfinite(x_)):
             raise ValueError("x contains NaN or infinite values.")
+        if hasattr(self, "n_features_in_") and x_.shape[0] != self.n_features_in_:
+            raise ValueError(
+                f"x has {x_.shape[0]} features, but this OverlapIndex instance "
+                f"was fit with {self.n_features_in_} features."
+            )
 
         x_prep = self._prep_X(x_.reshape(1, -1))
         self._model.partial_fit(
             x_prep, [y], match_tracking=self.match_tracking
         )
+        self.n_features_in_ = int(x_.shape[0])
 
         # ARTMAP path: latest assigned label is BMU1
         bmu1 = int(self._model.model.module_a.labels_[-1])
 
         # keep rev_map in sync with backend
         self.rev_map[y].add(bmu1)
+        self._refresh_under_prototyped_labels()
 
         self.cluster_cardinality[y] += 1
         top2bmu = self.predict_subset_pairs(x_prep[0], y)
@@ -575,6 +730,7 @@ class OverlapIndex(BaseEstimator):
             return self.fit_offline(X, Y, reset_state=True)
 
         X, Y_sets = self._validate_input_data(X, Y)
+        self._check_feature_count(X)
         if X.shape[0] == 0:
             self._warn_empty_input()
             return self.index
@@ -586,13 +742,14 @@ class OverlapIndex(BaseEstimator):
 
         Y_single = _flatten_single_label_sets(Y_sets)
 
-        if np.unique(Y_single).size <= 1:
+        if _ordered_unique_1d(Y_single).size <= 1:
             self._warn_single_class()
 
         X_prep = self._prep_X(X)
         self._model.partial_fit(
             X_prep, Y_single, match_tracking=self.match_tracking
         )
+        self.n_features_in_ = int(X.shape[1])
 
         BMU1 = self._model.model.module_a.labels_[-len(Y_single):]
         for x, y, bmu1 in zip(X_prep, Y_single, BMU1):
@@ -616,7 +773,9 @@ class OverlapIndex(BaseEstimator):
                         float(self.sparse_adj[(y, b)]) / float(self.cluster_cardinality[y])
                     )
 
-        unique_y = np.unique(Y_single)
+        self._refresh_under_prototyped_labels()
+
+        unique_y = _ordered_unique_1d(Y_single)
         if len(self.rev_map) > 1:
             for y in unique_y:
                 self.singleton_index[y] = min(
@@ -691,13 +850,11 @@ class OverlapIndex(BaseEstimator):
         """
         Return the highest-scoring global prototype id for each sample.
         """
-        X_arr = np.asarray(X, dtype=float)
-        if X_arr.ndim != 2:
-            raise ValueError(f"X must be a 2D array; got shape {X_arr.shape}.")
-        if not np.all(np.isfinite(X_arr)):
-            raise ValueError("X contains NaN or infinite values.")
+        self._validate_sparse_backend(X)
+        X_arr = _validate_feature_matrix(X)
         if not self.rev_map or self._model.n_clusters_total <= 0:
             raise ValueError("This OverlapIndex instance is not fit yet.")
+        self._check_feature_count(X_arr)
 
         X_prep = self._prep_X(X_arr)
         result = np.empty(X_prep.shape[0], dtype=int)
@@ -719,7 +876,7 @@ class OverlapIndex(BaseEstimator):
 
     def _build_label_indicator_matrices(
         self,
-        Y_sets: list[set],
+        Y_sets: list[tuple],
         classes: np.ndarray,
     ) -> None:
         """Build cached sparse label matrices for pairwise row retrieval."""
@@ -773,9 +930,7 @@ class OverlapIndex(BaseEstimator):
         Select each label's nearest prototype-owning competitors by minimum
         prototype-to-prototype distance.
         """
-        if top_m is None or int(top_m) <= 0:
-            raise ValueError("top_m must be a positive integer.")
-        top_m = int(top_m)
+        top_m = _validate_positive_integer(top_m, "top_m")
 
         try:
             centers = self._model.centers
@@ -833,7 +988,7 @@ class OverlapIndex(BaseEstimator):
     def _fit_offline_centroid_optimized_multilabel(
         self,
         X_prep: np.ndarray,
-        Y_sets: list[set],
+        Y_sets: list[tuple],
         classes: np.ndarray,
     ) -> float:
         """
@@ -843,6 +998,7 @@ class OverlapIndex(BaseEstimator):
 
         self._build_label_indicator_matrices(Y_sets, classes)
         self.competitors_ = self._build_multilabel_competitors(classes)
+        unevaluable_pairs = []
 
         for y in classes:
             own_ids = class_to_cluster_arrays.get(y)
@@ -860,6 +1016,10 @@ class OverlapIndex(BaseEstimator):
                 valid_rows = self._valid_rows_for_pair(y, b)
                 n_valid = int(valid_rows.size)
                 if n_valid == 0:
+                    pair = (y, b)
+                    self.pairwise_cardinality[pair] = 0
+                    self.pairwise_index[pair] = np.nan
+                    unevaluable_pairs.append(pair)
                     continue
 
                 self.pairwise_cardinality[(y, b)] += n_valid
@@ -904,13 +1064,36 @@ class OverlapIndex(BaseEstimator):
                 )
 
         if len(classes) > 1:
+            unevaluable_labels = []
             for y in classes:
                 valid_scores = [
                     self.pairwise_index[(y, b)]
                     for b in self.competitors_.get(y, [])
                     if self.pairwise_cardinality[(y, b)] > 0
                 ]
-                self.singleton_index[y] = min(valid_scores) if valid_scores else 1.0
+                if valid_scores:
+                    self.singleton_index[y] = min(valid_scores)
+                else:
+                    self.singleton_index[y] = np.nan
+                    unevaluable_labels.append(y)
+
+            self.unevaluable_pairs_ = tuple(unevaluable_pairs)
+            self.unevaluable_labels_ = tuple(unevaluable_labels)
+            if self.unevaluable_labels_:
+                self._warn_unevaluable_multilabel(self.unevaluable_labels_)
+
+            excluded = self._normalized_exclude_classes()
+            non_excluded = [label for label in classes if label not in excluded]
+            evaluable = [
+                label
+                for label in non_excluded
+                if label not in set(self.unevaluable_labels_)
+            ]
+            if non_excluded and not evaluable:
+                raise ValueError(
+                    "No non-excluded multi-label source labels have evaluable "
+                    "selected competitor pairs."
+                )
             self._recompute_global_index()
 
         return self.index
@@ -1041,25 +1224,31 @@ class OverlapIndex(BaseEstimator):
         Y : np.ndarray
             Class labels aligned with X.
         reset_state : bool, default=True
-            If True, reset overlap-index bookkeeping before fitting.
+            If True, reset overlap-index bookkeeping and construct a fresh
+            backend. False is supported only for ARTMAP continuation.
 
         Returns
         -------
         float
             The current overlap index value.
         """
-        if reset_state:
-            self._reset_indices()
+        if not reset_state and self._is_offline_backend:
+            raise ValueError(
+                "reset_state=False is supported only for ARTMAP backends; "
+                "offline backends must be fit from a complete dataset."
+            )
 
         X, Y_sets = self._validate_input_data(X, Y)
+        if reset_state:
+            self._reset_indices()
+            self._model = self._build_model()
+        else:
+            self._check_feature_count(X)
         if X.shape[0] == 0:
             self._warn_empty_input()
             return self.index
 
         classes = _ordered_unique_labels(Y_sets)
-        if classes.size <= 1:
-            self._warn_single_class()
-
         X_prep = self._prep_X(X)
         is_multilabel = any(len(labels) > 1 for labels in Y_sets)
 
@@ -1074,9 +1263,19 @@ class OverlapIndex(BaseEstimator):
             X_fit = X_prep
             Y_fit = _flatten_single_label_sets(Y_sets)
 
-        # Fit backend and sync rev_map
-        self._model.fit_offline(X_fit, Y_fit)
+        # Full ARTMAP fits use a freshly built backend and must preserve the
+        # estimator's configured match-tracking behavior.
+        if self._is_artmap_backend:
+            self._model.partial_fit(
+                X_fit,
+                Y_fit,
+                match_tracking=self.match_tracking,
+            )
+        else:
+            self._model.fit_offline(X_fit, Y_fit)
+        self.n_features_in_ = int(X.shape[1])
         self.rev_map = defaultdict(set, {c: set(s) for c, s in self._model.class_to_clusters.items()})
+        self._refresh_under_prototyped_labels()
 
         # Cardinalities remain per-label positive sample counts.
         for c in classes:
