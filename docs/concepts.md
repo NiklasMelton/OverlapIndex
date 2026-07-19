@@ -60,9 +60,9 @@ This hierarchy is reflected directly in fitted attributes:
 ## Interpreting values
 
 - `1.0`: no overlap event was observed at the chosen prototype resolution.
-- Around `0.5`: complete overlap under the index convention.
-- Below `0.5`: a degenerate or pathological pattern; inspect detailed results
-  and prototype resolution before reporting it.
+- Between `0.0` and `1.0`: partial overlap or separation.
+- `0.0`: every evaluable source row produced an overlap event, indicating
+  complete overlap at the chosen prototype resolution.
 
 These are interpretation anchors, not universal quality thresholds. The score
 depends on the feature representation, scaling, backend geometry, prototype
