@@ -19,11 +19,17 @@ def _separated_regression_data(n=80):
     return X, y
 
 
-def _overlapping_pathological_data(n=80):
+def _worse_than_null_data(n=80):
     rng = np.random.default_rng(1)
     X = rng.normal(loc=0.0, scale=0.05, size=(n, 2))
     y = np.tile([-2.0, 2.0], n // 2) + rng.normal(scale=0.03, size=n)
     X = (X - X.min(axis=0)) / (X.max(axis=0) - X.min(axis=0))
+    return X, y
+
+
+def _partially_overlapping_data():
+    X, y = _separated_regression_data()
+    y = y + np.random.default_rng(12).normal(scale=1.5, size=y.shape[0])
     return X, y
 
 
@@ -53,7 +59,35 @@ def test_import_and_basic_api_returns_expected_types():
     assert pred.shape == (5,)
     assert np.issubdtype(pred.dtype, np.integer)
     assert 0.0 <= model.index <= 1.0
+    assert 0.0 <= model.macro_index_ <= 1.0
     assert 0.0 <= model.weighted_index <= 1.0
+    assert all(0.0 <= score <= 1.0 for score in model.prototype_index_.values())
+    assert not hasattr(model, "raw_index_")
+
+
+def test_removed_clip_parameter_is_not_exposed_or_accepted():
+    assert "clip" not in ContinuousOverlapIndex().get_params()
+
+    with pytest.raises(TypeError, match="unexpected keyword argument 'clip'"):
+        ContinuousOverlapIndex(clip=False)
+
+
+@pytest.mark.parametrize(
+    ("actual_loss", "null_loss", "expected"),
+    [
+        (0.0, 2.0, 1.0),
+        (2.0, 2.0, 0.0),
+        (3.0, 2.0, 0.0),
+        (0.0, 0.0, 1.0),
+        (1.0, 0.0, 0.0),
+    ],
+)
+def test_loss_calibration_has_bounded_zero_and_one_anchors(
+    actual_loss,
+    null_loss,
+    expected,
+):
+    assert ContinuousOverlapIndex._index_from_losses(actual_loss, null_loss) == expected
 
 
 def test_default_adjacency_mode_is_soft_topk():
@@ -102,26 +136,41 @@ def test_separated_regression_scores_above_null():
 
     assert model.index > 0.55
     assert model.actual_loss_ < model.null_loss_
+    assert model.index == pytest.approx(1.0 - model.loss_ratio_)
 
 
-def test_random_target_assignment_scores_near_null():
+def test_separated_targets_score_above_partially_overlapping_targets():
+    X_separated, y_separated = _separated_regression_data()
+    X_partial, y_partial = _partially_overlapping_data()
+
+    separated = _model(n_null_permutations=20).fit(X_separated, y_separated)
+    partial = _model(n_null_permutations=20).fit(X_partial, y_partial)
+
+    assert 0.0 < partial.index < separated.index < 1.0
+
+
+def test_random_target_assignment_scores_near_zero():
     X, y = _separated_regression_data()
     y_random = np.random.default_rng(2).permutation(y)
     model = _model(n_null_permutations=20)
 
     model.fit(X, y_random)
 
-    assert 0.25 <= model.index <= 0.75
+    assert 0.0 <= model.index <= 0.1
+    assert model.loss_ratio_ == pytest.approx(1.0, abs=0.1)
 
 
-def test_pathological_overlap_scores_below_null():
-    X, y = _overlapping_pathological_data()
+def test_worse_than_null_overlap_stays_at_bounded_zero():
+    X, y = _worse_than_null_data()
     model = _model(kmeans_k=2, adjacency_mode="hard_top1")
 
     model.fit(X, y)
 
-    assert model.index < 0.5
+    assert model.index == 0.0
     assert model.actual_loss_ > model.null_loss_
+    assert model.loss_ratio_ > 1.0
+    assert 0.0 <= model.macro_index_ <= 1.0
+    assert all(0.0 <= score <= 1.0 for score in model.prototype_index_.values())
 
 
 @pytest.mark.parametrize("model_type", ["KMeans", "MiniBatchKMeans", "BallCover"])

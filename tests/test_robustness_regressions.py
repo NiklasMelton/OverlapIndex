@@ -298,6 +298,42 @@ def test_hand_calculated_balanced_overlap_is_one_half():
     assert model.singleton_index[1] == 0.5
 
 
+def test_hand_calculated_complete_overlap_is_zero():
+    class Backend:
+        class_center_id_arrays = {
+            0: np.asarray([0, 1]),
+            1: np.asarray([2, 3]),
+        }
+
+        def bmu_for_class_batch(self, X, Y):
+            return np.asarray([0, 1, 2, 3])
+
+        def _scores_matrix(self, X, ids=None):
+            scores = np.asarray(
+                [
+                    [4.0, 1.0, 3.0, 2.0],
+                    [1.0, 4.0, 2.0, 3.0],
+                    [3.0, 2.0, 4.0, 1.0],
+                    [2.0, 3.0, 1.0, 4.0],
+                ]
+            )
+            rows = X[:, 0].astype(int)
+            return scores[rows][:, np.asarray(ids, dtype=int)]
+
+    X = np.arange(4, dtype=float).reshape(-1, 1)
+    y = np.asarray([0, 0, 1, 1])
+    model = OverlapIndex(model_type="KMeans", kmeans_k=2)
+    model._model = Backend()
+    model.rev_map.update({0: {0, 1}, 1: {2, 3}})
+    model.cluster_cardinality.update({0: 2, 1: 2})
+
+    score = model._fit_offline_centroid_optimized(X, y, np.asarray([0, 1]))
+
+    assert score == 0.0
+    assert model.singleton_index[0] == 0.0
+    assert model.singleton_index[1] == 0.0
+
+
 @pytest.mark.parametrize("bad", [1.5, True, "2"])
 def test_top_m_rejects_lossy_integer_coercions(bad):
     with pytest.raises(ValueError, match="top_m must be a positive integer"):

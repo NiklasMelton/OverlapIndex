@@ -39,17 +39,21 @@ continuous-target state across calls.
 6. Compare actual loss with a permutation-null loss and aggregate local
    prototype indices.
 
-The unaggregated calibration follows
+The support-weighted calibration follows
 
 $$
-\text{raw index} = 1 - \frac{1}{2}
-\frac{\text{actual loss}}{\text{null loss}}.
+\text{index} = \operatorname{clip}\left(
+1 - \frac{\text{actual loss}}{\text{null loss}},
+0,
+1
+\right).
 $$
 
-Thus `1.0` represents no observed harmful overlap, `0.5` represents loss
-comparable to shuffled targets, and values below `0.5` indicate worse-than-null
-overlap. With the default `clip=True`, reported local and aggregate values are
-clipped to `[0, 1]`; inspect `raw_index_` for the unclipped calibration.
+Thus `1.0` represents no observed harmful overlap, values between `0.0` and
+`1.0` represent partial separation, and `0.0` represents complete or
+permutation-equivalent overlap. All reported local and aggregate values are
+bounded to `[0, 1]`. A `loss_ratio_` above `1.0` identifies worse-than-null
+disagreement while the index remains at the lower endpoint.
 
 ## Target cells and distances
 
@@ -95,15 +99,15 @@ Inspect `null_mode_` after fitting to see which mode actually ran. Increase
 
 ## Aggregation and diagnostics
 
-`aggregation="support_weighted"` is the default, so `index` weights local
-prototype scores by prototype support. With `aggregation="macro"`, `index` is
-the unweighted prototype mean and `macro_index_` contains the same value. The
-`weighted_index` property is always available regardless of the selected
-aggregation.
+`aggregation="support_weighted"` is the default, so `index` calibrates the
+support-weighted prototype loss. With `aggregation="macro"`, `index` is the
+unweighted mean of the bounded prototype indices and `macro_index_` contains
+the same value. The `weighted_index` property is always available regardless
+of the selected aggregation.
 
 Useful fitted attributes include:
 
-- `actual_loss_`, `null_loss_`, `loss_ratio_`, and `raw_index_` for calibration.
+- `actual_loss_`, `null_loss_`, and `loss_ratio_` for calibration.
 - `prototype_index_`, `prototype_loss_`, and `prototype_support_` for local
   diagnosis.
 - `prototype_target_values_`, `prototype_target_mean_`, and
@@ -116,3 +120,10 @@ Useful fitted attributes include:
 Continuous and discrete scores use related interpretation anchors but different
 calibrations. Do not directly compare an OI from one estimator with a COI from
 the other.
+
+## Calibration migration
+
+The continuous calibration changed in the `0.1.3` alpha series. At the
+loss-ratio level, the new pre-bound calibration equals
+`2 * legacy_score - 1`, after which values are bounded to `[0, 1]`. Historical
+and recalibrated COI values should not be compared directly.

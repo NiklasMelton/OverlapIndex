@@ -55,11 +55,11 @@ The Overlap Index is bounded in the interval **[0, 1]** and has the following in
 - **OI = 1.0**  
   Indicates perfect class separation (no overlap).
 
-- **OI = 0.5**  
-  Indicates complete overlap between classes.
+- **0.0 < OI < 1.0**
+  Indicates partial overlap or separation at the fitted prototype resolution.
 
-- **OI < 0.5**  
-  Indicates a degenerate or pathological case in the data distribution.
+- **OI = 0.0**
+  Indicates complete overlap between classes.
 
 The index is computed incrementally by tracking shared cluster activations between pairs of classes and aggregating class-wise overlap into a global measure.
 
@@ -401,10 +401,12 @@ feature-space prototype overlap occurs between incompatible empirical target
 distributions:
 
 - **COI = 1.0** indicates no observed harmful continuous-target overlap.
-- **COI = 0.5** indicates overlap no better than a permutation/null target
-  assignment.
-- **COI < 0.5** indicates pathological overlap relative to the permutation
-  null.
+- **0.0 < COI < 1.0** indicates partial continuous-target separation.
+- **COI = 0.0** indicates complete or permutation-equivalent overlap.
+
+The reported COI is always bounded to `[0, 1]`. A `loss_ratio_` above `1.0`
+identifies worse-than-null target disagreement while the reported score remains
+at the `0.0` lower endpoint.
 
 Here the same three geometries are paired with noisy, genuinely continuous
 targets drawn from two target regimes. With the refit-permutation null, fully
@@ -478,7 +480,7 @@ refit-permutation null on smaller workloads and automatically switches to a
 faster fixed-structure permutation null when
 `n_samples * n_null_permutations >= 100_000`. The refit null rebuilds target
 cells and feature prototypes for each target shuffle so that random target
-assignments calibrate near 0.5. The fixed-structure null keeps the fitted
+assignments calibrate near 0.0. The fixed-structure null keeps the fitted
 prototype geometry and shuffles target values across that structure, which is
 substantially faster on large datasets but should be treated as an approximate
 calibration mode. Use `null_mode="refit_permutation"` for final reporting when
@@ -490,10 +492,14 @@ Key diagnostics after fitting include:
 
 - **`actual_loss_`**, **`null_loss_`**, and **`loss_ratio_`**
 - **`null_mode_`**, **`null_loss_samples_`**, and **`auto_null_work_`**
-- **`raw_index_`** before optional clipping
 - **`macro_index_`** and **`weighted_index`**
 - **`prototype_index_`**, **`prototype_loss_`**, and
   **`prototype_target_values_`**
+
+The continuous calibration changed in the `0.1.3` alpha series. At the
+loss-ratio level, the new pre-bound calibration equals
+`2 * legacy_score - 1`, after which values are bounded to `[0, 1]`. Do not
+compare historical COI values directly with scores from this calibration.
 
 ---
 

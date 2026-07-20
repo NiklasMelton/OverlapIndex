@@ -77,8 +77,8 @@ def _null_like_targets(block_ids: np.ndarray, rng: np.random.Generator) -> np.nd
     return component_means[draws] + rng.normal(scale=0.35, size=draws.shape[0])
 
 
-def _pathological_targets(X: np.ndarray, rng: np.random.Generator) -> np.ndarray:
-    """Adversarial target assignment that flips rapidly within local neighborhoods."""
+def _worse_than_null_targets(X: np.ndarray, rng: np.random.Generator) -> np.ndarray:
+    """Target assignment with worse-than-null local disagreement."""
     order = np.argsort(X[:, 1])
     alternating = np.tile(np.asarray([-2.5, 2.5], dtype=float), X.shape[0] // 2)
     if alternating.shape[0] < X.shape[0]:
@@ -97,8 +97,8 @@ def _make_examples() -> list[tuple[str, np.ndarray, np.ndarray]]:
     datasets = [
         ("Strong Separation", X, _aligned_targets(block_ids, np.random.default_rng(11))),
         ("Moderate Overlap", X, _moderate_overlap_targets(block_ids, np.random.default_rng(13))),
-        ("Null-Like Assignment", X, _null_like_targets(block_ids, np.random.default_rng(17))),
-        ("Pathological Overlap", X, _pathological_targets(X, np.random.default_rng(19))),
+        ("Null-Like Complete Overlap", X, _null_like_targets(block_ids, np.random.default_rng(17))),
+        ("Worse-Than-Null Overlap", X, _worse_than_null_targets(X, np.random.default_rng(19))),
     ]
     return datasets
 
@@ -157,7 +157,7 @@ def main() -> None:
         )
 
         print(
-            f"{name:20s} COI={coi.index:.6f}  raw={coi.raw_index_:.6f}  "
+            f"{name:26s} COI={coi.index:.6f}  ratio={coi.loss_ratio_:.6f}  "
             f"actual={coi.actual_loss_:.6f}  null={coi.null_loss_:.6f}"
         )
 
