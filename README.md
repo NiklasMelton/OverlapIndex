@@ -516,32 +516,6 @@ compare historical COI values directly with scores from this calibration.
 
 ---
 
-## Release Verification
-
-For release testing, start from a fresh Poetry environment so the package under
-test matches `pyproject.toml` and `poetry.lock`:
-
-```bash
-poetry env remove --all
-poetry sync --with dev
-poetry run python -c "from overlapindex import OverlapIndex; OverlapIndex(model_type='MiniBatchKMeans')"
-poetry run python -m pytest -q tests/test_overlap_index_regression.py
-
-poetry sync --with dev --extras art
-poetry run python -c "from overlapindex import OverlapIndex; OverlapIndex(model_type='Hypersphere')"
-poetry run python -m pytest -q tests/test_overlap_index_regression.py
-
-poetry check
-python -m build
-twine check dist/*
-```
-
-The first install verifies that offline backends work without the optional
-`artlib` dependency. The second install verifies the `art` extra and ARTMAP
-backends.
-
----
-
 ## Parameters
 
 - `rho` *(float)*  
