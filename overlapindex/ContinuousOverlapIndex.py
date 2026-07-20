@@ -48,9 +48,10 @@ class ContinuousOverlapIndex(BaseEstimator):
     The estimator builds target-space cells, fits class-owned feature
     prototypes using those cells as pseudo-labels, and scores feature-space
     prototype overlap by empirical target-distribution disagreement. The score
-    is normalized by a permutation null so that values near 0.5 indicate random
-    target assignment, values above 0.5 indicate useful separation, and values
-    below 0.5 indicate harmful overlap.
+    is normalized by a permutation null so that 1.0 indicates no observed
+    overlap, values between 0.0 and 1.0 indicate partial separation, and 0.0
+    indicates complete or permutation-equivalent overlap. Worse-than-null loss
+    remains at the 0.0 lower endpoint and is exposed through ``loss_ratio_``.
     """
 
     def __init__(
@@ -80,7 +81,6 @@ class ContinuousOverlapIndex(BaseEstimator):
         target_scaling: TargetScaling = "standard",
         n_projections: int = 64,
         random_state: Optional[int] = None,
-        clip: bool = True,
     ) -> None:
         """Initialize the continuous-target overlap estimator.
 
@@ -160,9 +160,6 @@ class ContinuousOverlapIndex(BaseEstimator):
             Seed for target-cell construction, sliced-Wasserstein projections,
             null permutations, and backend fitting when no backend-specific
             seed is provided.
-        clip : bool, default=True
-            If true, clip local and aggregate reported indices to ``[0, 1]``.
-            ``raw_index_`` retains the unclipped global calibration.
         """
         self.rho = rho
         self.r_hat = r_hat
@@ -189,14 +186,12 @@ class ContinuousOverlapIndex(BaseEstimator):
         self.target_scaling = target_scaling
         self.n_projections = n_projections
         self.random_state = random_state
-        self.clip = clip
 
         self._reset_state()
 
     def _reset_state(self) -> None:
         """Reset fitted-state attributes and score diagnostics."""
         self.index = 1.0
-        self.raw_index_ = 1.0
         self.macro_index_ = 1.0
         self.actual_loss_ = 0.0
         self.null_loss_ = 0.0
@@ -662,25 +657,28 @@ class ContinuousOverlapIndex(BaseEstimator):
         if self.null_loss_ <= eps:
             if self.actual_loss_ <= eps:
                 self.loss_ratio_ = 0.0
-                self.raw_index_ = 1.0
             else:
                 self.loss_ratio_ = np.inf
-                self.raw_index_ = -np.inf
         else:
             self.loss_ratio_ = float(self.actual_loss_ / self.null_loss_)
-            self.raw_index_ = float(1.0 - 0.5 * self.loss_ratio_)
 
         self.prototype_index_ = {}
         for pid, loss in self.prototype_loss_.items():
             null = self.prototype_null_loss_.get(pid, self.null_loss_)
-            if null <= eps:
-                local = 1.0 if loss <= eps else -np.inf
-            else:
-                local = 1.0 - 0.5 * (float(loss) / float(null))
-            self.prototype_index_[pid] = self._clip_index(local)
+            self.prototype_index_[pid] = self._index_from_losses(loss, null)
 
         self.macro_index_ = float(self._aggregate_index("macro"))
         self.index = float(self._aggregate_index(self.aggregation))
+
+    @staticmethod
+    def _index_from_losses(actual_loss: float, null_loss: float) -> float:
+        """Return the bounded continuous index for actual and null losses."""
+        actual = float(actual_loss)
+        null = float(null_loss)
+        eps = np.finfo(float).eps
+        if null <= eps:
+            return 1.0 if actual <= eps else 0.0
+        return float(np.clip(1.0 - (actual / null), 0.0, 1.0))
 
     def _resolve_null_mode(self, n_samples: int) -> str:
         """Resolve the null estimation mode for the current fit."""
@@ -814,31 +812,17 @@ class ContinuousOverlapIndex(BaseEstimator):
         raise ValueError(f"Unsupported resolved target distance: {self.target_distance_}")
 
     def _aggregate_index(self, mode: str) -> float:
-        """Aggregate prototype-local indices."""
-        if not self.prototype_index_:
-            return self._clip_index(self.raw_index_)
+        """Return the requested bounded aggregate index."""
         if mode == "macro":
-            value = float(np.mean(list(self.prototype_index_.values())))
-        elif mode == "support_weighted":
-            total_support = float(sum(self.prototype_support_.values()))
-            if total_support <= 0:
-                value = self.raw_index_
+            if not self.prototype_index_:
+                value = self._index_from_losses(self.actual_loss_, self.null_loss_)
             else:
-                value = sum(
-                    self.prototype_index_.get(pid, 1.0)
-                    * float(self.prototype_support_.get(pid, 0))
-                    for pid in self.prototype_support_
-                ) / total_support
+                value = float(np.mean(list(self.prototype_index_.values())))
+        elif mode == "support_weighted":
+            value = self._index_from_losses(self.actual_loss_, self.null_loss_)
         else:
             raise ValueError("aggregation must be one of {'support_weighted', 'macro'}.")
-        return self._clip_index(value)
-
-    def _clip_index(self, value: float) -> float:
-        """Clip an index value when configured to do so."""
-        value = float(value)
-        if self.clip:
-            return float(np.clip(value, 0.0, 1.0))
-        return value
+        return float(np.clip(value, 0.0, 1.0))
 
     @staticmethod
     def _warn_empty_input() -> None:
