@@ -86,8 +86,7 @@ The examples below sweep two synthetic populations from fully interleaved to
 well separated. Gaussian clouds and vertical bars vary the distance between
 their centers; concentric rings vary the difference between their radii. Each
 response curve is the mean across repeated deterministic draws, and the shaded
-band shows one standard deviation. The dashed line marks the `0.5`
-interpretation anchor.
+band shows one standard deviation.
 
 ![Discrete OverlapIndex separation sweeps](img/discrete_overlap_sweeps.png)
 
@@ -410,7 +409,7 @@ at the `0.0` lower endpoint.
 
 Here the same three geometries are paired with noisy, genuinely continuous
 targets drawn from two target regimes. With the refit-permutation null, fully
-mixed feature populations calibrate near `0.5`; the score rises toward `1.0`
+mixed feature populations calibrate near `0.0`; the score rises toward `1.0`
 as incompatible target regimes become separated in feature space.
 
 ![ContinuousOverlapIndex separation sweeps](img/continuous_overlap_sweeps.png)
