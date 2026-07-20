@@ -80,6 +80,27 @@ The index is computed incrementally by tracking shared cluster activations betwe
 
 ---
 
+## Visual Behavior
+
+The examples below sweep two synthetic populations from fully interleaved to
+well separated. Gaussian clouds and vertical bars vary the distance between
+their centers; concentric rings vary the difference between their radii. Each
+response curve is the mean across repeated deterministic draws, and the shaded
+band shows one standard deviation.
+
+![Discrete OverlapIndex separation sweeps](img/discrete_overlap_sweeps.png)
+
+Regenerate the discrete figure from the repository root with:
+
+```bash
+poetry run python examples/visualize_discrete_overlap_sweeps.py
+```
+
+The script writes `img/discrete_overlap_sweeps.png` by default and accepts
+`--output PATH` for a different destination.
+
+---
+
 ## Typical Use Cases
 
 The Overlap Index can be used in several settings:
@@ -385,6 +406,37 @@ distributions:
 The reported COI is always bounded to `[0, 1]`. A `loss_ratio_` above `1.0`
 identifies worse-than-null target disagreement while the reported score remains
 at the `0.0` lower endpoint.
+
+The main visual example uses three genuinely continuous regression problems:
+a smooth latent signal with increasing observation fidelity, a folded latent
+trajectory that is progressively unfolded in feature space, and a continuous
+covariate that is gradually recovered. The example uses eight target cells so
+the estimator evaluates fine-grained target structure rather than reducing
+each problem to a high-versus-low split. It uses strict nearest-competitor
+adjacency so each ideal target-ordered endpoint approaches the `1.0` upper
+anchor.
+
+![ContinuousOverlapIndex separation sweeps](img/continuous_overlap_sweeps.png)
+
+Regenerate the continuous figure with:
+
+```bash
+poetry run python examples/visualize_continuous_overlap_sweeps.py
+```
+
+An additional gallery demonstrates a heteroscedastic target field becoming
+progressively clean and a multivariate oscillator target observed with
+increasing fidelity:
+
+![Additional ContinuousOverlapIndex sweeps](img/continuous_overlap_additional_sweeps.png)
+
+```bash
+poetry run python examples/visualize_continuous_overlap_additional_sweeps.py
+```
+
+These examples use six refit permutations per score to keep the complete
+sweeps practical to reproduce. Increase `n_null_permutations` in the scripts
+when adapting them for final quantitative reporting.
 
 Version 1 is offline-first and supports `model_type="MiniBatchKMeans"`,
 `model_type="KMeans"`, and `model_type="BallCover"`. ARTMAP online support is
