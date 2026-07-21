@@ -79,6 +79,38 @@ depends on the feature representation, scaling, backend geometry, prototype
 count, and evaluated data. It is meaningful to compare runs only when those
 choices are controlled.
 
+(discrete-visual-examples)=
+## Discrete visual examples
+
+The figure below contains the three discrete examples from the project README,
+each swept from fully interleaved to well separated:
+
+- **Gaussian clouds** vary the distance between two class centers.
+- **Vertical bars** vary horizontal separation while retaining elongated class
+  geometry.
+- **Concentric rings** vary the difference between class radii, demonstrating
+  behavior on non-convex supports that cannot be summarized by center distance
+  alone.
+
+Each row shows representative low-, intermediate-, and high-separation
+datasets followed by the complete score-response curve. Curves are means over
+repeated deterministic draws; the shaded band is one standard deviation.
+
+```{image} ../img/discrete_overlap_sweeps.png
+:alt: Gaussian clouds, vertical bars, and concentric rings with their discrete OverlapIndex response curves
+:width: 100%
+:align: center
+```
+
+Regenerate all three examples from the repository root with:
+
+```bash
+poetry run python examples/visualize_discrete_overlap_sweeps.py
+```
+
+The script writes `img/discrete_overlap_sweeps.png` by default and accepts
+`--output PATH` to select another destination.
+
 ## Prototype resolution
 
 Top-two scoring is best resolved with at least two prototypes per label. When

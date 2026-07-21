@@ -51,7 +51,10 @@ traced back to the labels that produced it.
 ## Where to begin
 
 - {doc}`getting_started` — install the package and compute a first score.
-- {doc}`concepts` — understand prototypes, pairwise overlap, and aggregation.
+- {doc}`concepts` — understand prototypes, pairwise overlap, aggregation, and
+  the discrete clouds, bars, and rings examples.
+- {ref}`discrete-visual-examples` — jump directly to the discrete visual
+  examples and their score-response curves.
 - {doc}`data_and_targets` — check accepted feature and target formats.
 - {doc}`backends/index` — select MiniBatchKMeans, KMeans, BallCover, or an
   incremental ARTMAP backend.

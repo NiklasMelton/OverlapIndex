@@ -37,25 +37,6 @@ Use the fitted diagnostics to understand a summary score:
 - For multi-label targets, `unevaluable_pairs_` and `unevaluable_labels_`
   identify comparisons that lacked suitable positive/negative rows.
 
-## Synthetic separation behavior
-
-The following experiment sweeps two synthetic populations from fully
-interleaved to well separated. Gaussian clouds and vertical bars vary their
-center distance; concentric rings vary the difference between their radii.
-Each response curve is the mean across repeated deterministic draws, and the
-shaded band is one standard deviation.
-
-![Discrete OverlapIndex separation sweeps](../img/discrete_overlap_sweeps.png)
-
-Regenerate the figure from the repository root with:
-
-```bash
-poetry run python examples/visualize_discrete_overlap_sweeps.py
-```
-
-The script writes `img/discrete_overlap_sweeps.png` by default and accepts
-`--output PATH` to select another destination.
-
 ## Common use cases
 
 ### Evolving clustering validation
