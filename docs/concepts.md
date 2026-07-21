@@ -14,6 +14,12 @@ copied once for every positive label during prototype fitting.
 For an ARTMAP backend, supervised incremental learning creates and updates the
 label-owned prototypes directly.
 
+The scoring layer is not tied to a single prototype geometry: centroid,
+landmark-ball, Fuzzy ART, and hypersphere representations all expose the same
+class-owned best-matching-unit interface. Geometry still matters to the
+measured value, so comparisons should keep the backend and its resolution
+fixed.
+
 `predict(X)` returns these global prototype IDs. It is therefore useful for
 inspecting the fitted representation, but it does **not** return predicted
 class labels.
@@ -34,6 +40,10 @@ The direction matters: $I_{a,b}$ and $I_{b,a}$ can differ because their source
 rows and denominators differ. On ordinary single-label data,
 $N_{a,b}$ is the support of $a$. On multi-label data, it contains only rows
 where $a$ is present and $b$ is absent.
+
+In an incremental ARTMAP run these activation counts are updated as labeled
+samples arrive. Offline backends compute the same bookkeeping after fitting
+their class-owned prototypes to the supplied batch.
 
 ## Per-label and global aggregation
 

@@ -21,6 +21,13 @@ python -m pip install "overlapindex[art]"
 OverlapIndex supports Python 3.9 through 3.14. The ART extra is not imported by
 the default offline backends.
 
+To install the latest development source directly from GitHub:
+
+```bash
+python -m pip install \
+  "git+https://github.com/NiklasMelton/OverlapIndex.git@develop"
+```
+
 ## A first classification score
 
 The normal workflow is: prepare features, construct the estimator, fit, then
@@ -49,6 +56,35 @@ print("per label:", dict(oi.singleton_index))
 `fit` returns the estimator, following scikit-learn conventions. The same
 calculation can be written as `score = oi.add_batch(X, y)` when a direct float
 return is more convenient.
+
+## Iris walkthrough
+
+This compact example performs the complete normalization and fitting sequence
+on the Iris dataset:
+
+```python
+import numpy as np
+from sklearn.datasets import load_iris
+from overlapindex import OverlapIndex
+
+iris = load_iris()
+X = iris.data.astype(np.float64)
+y = iris.target.astype(np.int64)
+
+x_min = X.min(axis=0)
+x_max = X.max(axis=0)
+X = (X - x_min) / (x_max - x_min)
+
+oi = OverlapIndex(
+    kmeans_kwargs={"random_state": 0},
+).fit(X, y)
+print(oi.index)
+```
+
+The exact fitted score depends on backend settings and library versions. Set a
+random seed, as above, whenever a result must be repeatable; interpret the
+value using the anchors in {doc}`concepts` rather than as a fixed expected
+constant.
 
 ## Preprocessing
 
@@ -99,3 +135,14 @@ When comparing embeddings, layers, or preprocessing choices:
 
 Continue with {doc}`concepts` for the scoring mechanics or
 {doc}`backends/index` for backend selection.
+
+## Build the documentation locally
+
+The published guide uses the same warning-strict Sphinx command that can be
+run from the repository root:
+
+```bash
+python -m pip install -r docs/requirements.txt
+python -m pip install -e .
+sphinx-build --fail-on-warning --keep-going -b html docs docs/_build/html
+```
