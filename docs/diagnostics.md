@@ -83,11 +83,29 @@ This is expected. KMeans, MiniBatchKMeans, and BallCover refit on only the
 provided batch. Combine the desired training rows and call `fit`, or select an
 ARTMAP backend when true incremental state is required.
 
+### State reset and explicit continuation
+
+Full `fit(X, y)` and `score(X, y)` calls always construct a fresh backend.
+The lower-level `fit_offline(..., reset_state=False)` form is accepted only
+when explicitly continuing an ARTMAP backend. KMeans, MiniBatchKMeans, and
+BallCover reject it because global prototype IDs cannot be safely accumulated
+across independent offline refits. `ContinuousOverlapIndex` is offline-first
+and always resets its fitted state.
+
 ### Indicator labels are not the expected names
 
 Indicator columns become integer labels `0..n_labels-1`. Maintain an external
 column-to-name mapping when original names are needed, or pass collections of
 named labels instead.
+
+## Parameter validation
+
+Count, neighborhood, projection, permutation, threshold, and chunk-size
+parameters require genuine integers where documented; booleans, strings, and
+fractional values are not silently coerced. Radii and temperatures must be
+finite and positive. Class-specific dictionaries such as `kmeans_k`,
+`ballcover_k`, and `ballcover_radius` must provide a valid entry for every
+observed label.
 
 ## Performance checks
 

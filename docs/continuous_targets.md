@@ -28,6 +28,15 @@ The estimator is offline-first. MiniBatchKMeans, KMeans, and BallCover are
 supported; `partial_fit` refits on the supplied batch and does not retain
 continuous-target state across calls.
 
+KMeans and MiniBatchKMeans also accept SciPy sparse feature matrices. Sparse
+inputs remain in CSR form through prototype fitting, adjacency scoring, and
+permutation-null refits; continuous targets remain dense numeric arrays.
+
+`random_state` seeds target-cell construction, projection directions,
+permutation sampling, and the selected feature backend. An explicit
+`random_state` inside `kmeans_kwargs` or `ballcover_kwargs` takes precedence
+for that backend.
+
 ## The fitting pipeline
 
 1. Scale the continuous target columns according to `target_scaling`.
@@ -39,17 +48,21 @@ continuous-target state across calls.
 6. Compare actual loss with a permutation-null loss and aggregate local
    prototype indices.
 
-The unaggregated calibration follows
+The support-weighted calibration follows
 
 $$
-\text{raw index} = 1 - \frac{1}{2}
-\frac{\text{actual loss}}{\text{null loss}}.
+\text{index} = \operatorname{clip}\left(
+1 - \frac{\text{actual loss}}{\text{null loss}},
+0,
+1
+\right).
 $$
 
-Thus `1.0` represents no observed harmful overlap, `0.5` represents loss
-comparable to shuffled targets, and values below `0.5` indicate worse-than-null
-overlap. With the default `clip=True`, reported local and aggregate values are
-clipped to `[0, 1]`; inspect `raw_index_` for the unclipped calibration.
+Thus `1.0` represents no observed harmful overlap, values between `0.0` and
+`1.0` represent partial separation, and `0.0` represents complete or
+permutation-equivalent overlap. All reported local and aggregate values are
+bounded to `[0, 1]`. A `loss_ratio_` above `1.0` identifies worse-than-null
+disagreement while the index remains at the lower endpoint.
 
 ## Target cells and distances
 
@@ -78,6 +91,37 @@ Use `adjacency_mode="hard_top1"` for strict single-competitor scoring or
 backwards comparisons. Keep adjacency settings constant when comparing
 representations.
 
+## Continuous behavior gallery
+
+The main synthetic gallery follows three genuinely continuous regression
+problems: a smooth latent signal with increasing observation fidelity, a
+folded latent trajectory that is progressively unfolded in feature space, and
+a continuous covariate that is gradually recovered. It uses eight target
+cells, rather than reducing each problem to a high-versus-low split, and
+strict nearest-competitor adjacency so the ideal target-ordered endpoints
+approach the `1.0` anchor.
+
+![ContinuousOverlapIndex separation sweeps](../img/continuous_overlap_sweeps.png)
+
+Regenerate it from the repository root with:
+
+```bash
+poetry run python examples/visualize_continuous_overlap_sweeps.py
+```
+
+An additional gallery shows a heteroscedastic target field becoming cleaner
+and a multivariate oscillator target observed with increasing fidelity:
+
+![Additional ContinuousOverlapIndex sweeps](../img/continuous_overlap_additional_sweeps.png)
+
+```bash
+poetry run python examples/visualize_continuous_overlap_additional_sweeps.py
+```
+
+The example scripts use six refit permutations per score to keep the complete
+sweeps practical to reproduce. Increase `n_null_permutations` when adapting
+them for final quantitative reporting.
+
 ## Permutation nulls
 
 - `null_mode="refit_permutation"` rebuilds target cells and feature prototypes
@@ -95,15 +139,15 @@ Inspect `null_mode_` after fitting to see which mode actually ran. Increase
 
 ## Aggregation and diagnostics
 
-`aggregation="support_weighted"` is the default, so `index` weights local
-prototype scores by prototype support. With `aggregation="macro"`, `index` is
-the unweighted prototype mean and `macro_index_` contains the same value. The
-`weighted_index` property is always available regardless of the selected
-aggregation.
+`aggregation="support_weighted"` is the default, so `index` calibrates the
+support-weighted prototype loss. With `aggregation="macro"`, `index` is the
+unweighted mean of the bounded prototype indices and `macro_index_` contains
+the same value. The `weighted_index` property is always available regardless
+of the selected aggregation.
 
 Useful fitted attributes include:
 
-- `actual_loss_`, `null_loss_`, `loss_ratio_`, and `raw_index_` for calibration.
+- `actual_loss_`, `null_loss_`, and `loss_ratio_` for calibration.
 - `prototype_index_`, `prototype_loss_`, and `prototype_support_` for local
   diagnosis.
 - `prototype_target_values_`, `prototype_target_mean_`, and
@@ -113,6 +157,17 @@ Useful fitted attributes include:
 - `target_cell_ids_`, `target_cover_`, and `target_distance_` for resolved
   target-space choices.
 
+The prototype target attributes retain empirical target measures rather than
+reducing every prototype to only a mean or variance. This is what allows the
+configured Wasserstein distance to compare richer local target distributions.
+
 Continuous and discrete scores use related interpretation anchors but different
 calibrations. Do not directly compare an OI from one estimator with a COI from
 the other.
+
+## Calibration migration
+
+The continuous calibration changed in the `0.1.3` alpha series. At the
+loss-ratio level, the new pre-bound calibration equals
+`2 * legacy_score - 1`, after which values are bounded to `[0, 1]`. Historical
+and recalibrated COI values should not be compared directly.

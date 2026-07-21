@@ -14,6 +14,12 @@ copied once for every positive label during prototype fitting.
 For an ARTMAP backend, supervised incremental learning creates and updates the
 label-owned prototypes directly.
 
+The scoring layer is not tied to a single prototype geometry: centroid,
+landmark-ball, Fuzzy ART, and hypersphere representations all expose the same
+class-owned best-matching-unit interface. Geometry still matters to the
+measured value, so comparisons should keep the backend and its resolution
+fixed.
+
 `predict(X)` returns these global prototype IDs. It is therefore useful for
 inspecting the fitted representation, but it does **not** return predicted
 class labels.
@@ -34,6 +40,10 @@ The direction matters: $I_{a,b}$ and $I_{b,a}$ can differ because their source
 rows and denominators differ. On ordinary single-label data,
 $N_{a,b}$ is the support of $a$. On multi-label data, it contains only rows
 where $a$ is present and $b$ is absent.
+
+In an incremental ARTMAP run these activation counts are updated as labeled
+samples arrive. Offline backends compute the same bookkeeping after fitting
+their class-owned prototypes to the supplied batch.
 
 ## Per-label and global aggregation
 
@@ -60,14 +70,46 @@ This hierarchy is reflected directly in fitted attributes:
 ## Interpreting values
 
 - `1.0`: no overlap event was observed at the chosen prototype resolution.
-- Around `0.5`: complete overlap under the index convention.
-- Below `0.5`: a degenerate or pathological pattern; inspect detailed results
-  and prototype resolution before reporting it.
+- Between `0.0` and `1.0`: partial overlap or separation.
+- `0.0`: every evaluable source row produced an overlap event, indicating
+  complete overlap at the chosen prototype resolution.
 
 These are interpretation anchors, not universal quality thresholds. The score
 depends on the feature representation, scaling, backend geometry, prototype
 count, and evaluated data. It is meaningful to compare runs only when those
 choices are controlled.
+
+(discrete-visual-examples)=
+## Discrete visual examples
+
+The figure below contains the three discrete examples from the project README,
+each swept from fully interleaved to well separated:
+
+- **Gaussian clouds** vary the distance between two class centers.
+- **Vertical bars** vary horizontal separation while retaining elongated class
+  geometry.
+- **Concentric rings** vary the difference between class radii, demonstrating
+  behavior on non-convex supports that cannot be summarized by center distance
+  alone.
+
+Each row shows representative low-, intermediate-, and high-separation
+datasets followed by the complete score-response curve. Curves are means over
+repeated deterministic draws; the shaded band is one standard deviation.
+
+```{image} ../img/discrete_overlap_sweeps.png
+:alt: Gaussian clouds, vertical bars, and concentric rings with their discrete OverlapIndex response curves
+:width: 100%
+:align: center
+```
+
+Regenerate all three examples from the repository root with:
+
+```bash
+poetry run python examples/visualize_discrete_overlap_sweeps.py
+```
+
+The script writes `img/discrete_overlap_sweeps.png` by default and accepts
+`--output PATH` to select another destination.
 
 ## Prototype resolution
 

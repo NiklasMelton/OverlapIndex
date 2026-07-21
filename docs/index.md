@@ -38,10 +38,10 @@ print(dict(oi.singleton_index))
 ## What the score means
 
 Higher is better. A score of `1.0` means no overlap was observed in the fitted
-prototype representation, a score around `0.5` represents complete overlap,
-and a score below `0.5` signals a degenerate or pathological pattern worth
-investigating. The score is a representation diagnostic, not classifier
-accuracy, a probability, or a significance test.
+prototype representation, values between `0.0` and `1.0` represent partial
+overlap or separation, and `0.0` represents complete overlap. The score is a
+representation diagnostic, not classifier accuracy, a probability, or a
+significance test.
 
 The default `index` gives every evaluable label equal weight. The
 `weighted_index` property follows the observed label support. Per-label and
@@ -51,7 +51,10 @@ traced back to the labels that produced it.
 ## Where to begin
 
 - {doc}`getting_started` — install the package and compute a first score.
-- {doc}`concepts` — understand prototypes, pairwise overlap, and aggregation.
+- {doc}`concepts` — understand prototypes, pairwise overlap, aggregation, and
+  the discrete clouds, bars, and rings examples.
+- {ref}`discrete-visual-examples` — jump directly to the discrete visual
+  examples and their score-response curves.
 - {doc}`data_and_targets` — check accepted feature and target formats.
 - {doc}`backends/index` — select MiniBatchKMeans, KMeans, BallCover, or an
   incremental ARTMAP backend.

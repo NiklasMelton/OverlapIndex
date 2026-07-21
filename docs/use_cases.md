@@ -12,8 +12,8 @@ For the discrete-label estimator, larger values indicate better separation:
 | Score | Interpretation |
 | --- | --- |
 | `1.0` | No observed class overlap in the fitted prototype representation. |
-| Around `0.5` | The classes are completely overlapping. |
-| Below `0.5` | A degenerate or pathological overlap pattern. Inspect the detailed diagnostics before reporting it. |
+| Between `0.0` and `1.0` | Partial overlap or separation at the fitted prototype resolution. |
+| `0.0` | Complete class overlap at the fitted prototype resolution. |
 
 The score describes the supplied representation and labels; it is not a
 classifier accuracy, probability, or statistical significance test. Compare
@@ -39,6 +39,14 @@ Use the fitted diagnostics to understand a summary score:
 
 ## Common use cases
 
+### Evolving clustering validation
+
+OI can serve as an incremental cluster-validity measure when labels or cluster
+assignments identify the groups whose overlap should be monitored. ARTMAP
+backends update the prototype representation online; offline backends evaluate
+a complete supplied partition. In either case, report prototype growth and
+resolution alongside the score because they influence the measured overlap.
+
 ### Representation and embedding comparison
 
 Compute OI on embeddings from multiple feature extractors, model layers, or
@@ -59,6 +67,12 @@ def separation_score(embeddings, labels):
 
 Normalize every representation consistently and keep `kmeans_k` fixed when
 comparing results.
+
+The same procedure applies to backbone evaluation for transfer learning: fit
+OI on embeddings from candidate feature extractors using identical downstream
+samples, labels, preprocessing, and OI settings. A higher score indicates
+better label separation in that representation; it does not by itself measure
+downstream task accuracy.
 
 ### Dataset diagnostics
 
@@ -116,9 +130,11 @@ oi.fit(X, y)
 Use `ContinuousOverlapIndex` for regression targets. It asks whether nearby
 feature prototypes contain compatible empirical target distributions and
 calibrates the result against a permutation null. Its anchor points are
-similar—`1.0` indicates no observed harmful overlap and `0.5` indicates
-performance comparable to shuffled targets—but the calibration is different
-from discrete OI. Do not directly compare scores from the two estimators.
+similar—`1.0` indicates no observed harmful overlap and `0.0` indicates
+complete or permutation-equivalent overlap—but the calibration is different
+from discrete OI. Worse-than-null disagreement also remains at `0.0` and is
+identified by `loss_ratio_ > 1`. Do not directly compare scores from the two
+estimators.
 
 ## A practical reporting checklist
 
@@ -133,3 +149,13 @@ When publishing or tracking a result, record:
 
 See {doc}`backends/index` to choose and configure a backend, and {doc}`api` for
 the complete estimator interface.
+
+## Intended users and licensing
+
+The package is intended for researchers and practitioners working in
+incremental or continual learning, clustering validation, representation
+learning, and transfer learning.
+
+OverlapIndex is licensed under the GNU Affero General Public License v3.0 or
+later (AGPL-3.0-or-later). Commercial licenses are available; contact the
+maintainer through the [project's GitHub page](https://github.com/NiklasMelton/OverlapIndex).

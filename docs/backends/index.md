@@ -31,6 +31,9 @@ using the same backend and settings.
 - Only Fuzzy and Hypersphere ARTMAP preserve learned state across
   `partial_fit` calls.
 - Set backend random seeds when results need to be reproducible.
+- For very large ARTMAP runs, a lower `rho` in roughly the `0.5` to `0.7`
+  range can reduce prototype growth and improve runtime. Treat that range as a
+  starting point and validate the resulting resolution on representative data.
 
 ```{toctree}
 :hidden:

@@ -4,6 +4,7 @@ OverlapIndex (OI)
 
 This package provides an implementation of the **Overlap Index (OI)**, a cluster-validity measure designed to quantify the degree of overlap between data classes or clusters. The OI can be updated online with ARTMAP-based backends, or computed in batch with offline clustering backends, making it useful for streaming, continual learning, large-scale representation analysis, and embedding-space diagnostics.
 
+
 The implementation supports multiple swappable clustering backends:
 
 - **Fuzzy ARTMAP** and **Hypersphere ARTMAP** for incremental / online updates.
@@ -55,11 +56,11 @@ The Overlap Index is bounded in the interval **[0, 1]** and has the following in
 - **OI = 1.0**  
   Indicates perfect class separation (no overlap).
 
-- **OI = 0.5**  
-  Indicates complete overlap between classes.
+- **0.0 < OI < 1.0**
+  Indicates partial overlap or separation at the fitted prototype resolution.
 
-- **OI < 0.5**  
-  Indicates a degenerate or pathological case in the data distribution.
+- **OI = 0.0**
+  Indicates complete overlap between classes.
 
 The index is computed incrementally by tracking shared cluster activations between pairs of classes and aggregating class-wise overlap into a global measure.
 
@@ -77,6 +78,27 @@ The index is computed incrementally by tracking shared cluster activations betwe
 - **Geometry-Agnostic**  
   Works well on arbitrary geometric structures of data. No geometric constraints are 
   assumed.
+
+---
+
+## Visual Behavior
+
+The examples below sweep two synthetic populations from fully interleaved to
+well separated. Gaussian clouds and vertical bars vary the distance between
+their centers; concentric rings vary the difference between their radii. Each
+response curve is the mean across repeated deterministic draws, and the shaded
+band shows one standard deviation.
+
+![Discrete OverlapIndex separation sweeps](img/discrete_overlap_sweeps.png)
+
+Regenerate the discrete figure from the repository root with:
+
+```bash
+poetry run python examples/visualize_discrete_overlap_sweeps.py
+```
+
+The script writes `img/discrete_overlap_sweeps.png` by default and accepts
+`--output PATH` for a different destination.
 
 ---
 
@@ -356,16 +378,16 @@ x_max = X.max(axis=0)
 x_min = X.min(axis=0)
 X = (X - x_min) / (x_max - x_min)
 
-# Instantiate the OI object
-OI = OverlapIndex()
+# Instantiate the OI object with a reproducible centroid fit
+OI = OverlapIndex(kmeans_kwargs={"random_state": 0})
 
 # Calculate the Overlap Index
 OI.fit(X, y)
 print(OI.index)
-
-# Output:
-# 0.9266666666666666
 ```
+
+The exact fitted score depends on backend settings and library versions. Set a
+random seed, as above, whenever a result must be repeatable.
 
 Additional runnable examples are available in the `examples/` directory.
 
@@ -379,10 +401,43 @@ feature-space prototype overlap occurs between incompatible empirical target
 distributions:
 
 - **COI = 1.0** indicates no observed harmful continuous-target overlap.
-- **COI = 0.5** indicates overlap no better than a permutation/null target
-  assignment.
-- **COI < 0.5** indicates pathological overlap relative to the permutation
-  null.
+- **0.0 < COI < 1.0** indicates partial continuous-target separation.
+- **COI = 0.0** indicates complete or permutation-equivalent overlap.
+
+The reported COI is always bounded to `[0, 1]`. A `loss_ratio_` above `1.0`
+identifies worse-than-null target disagreement while the reported score remains
+at the `0.0` lower endpoint.
+
+The main visual example uses three genuinely continuous regression problems:
+a smooth latent signal with increasing observation fidelity, a folded latent
+trajectory that is progressively unfolded in feature space, and a continuous
+covariate that is gradually recovered. The example uses eight target cells so
+the estimator evaluates fine-grained target structure rather than reducing
+each problem to a high-versus-low split. It uses strict nearest-competitor
+adjacency so each ideal target-ordered endpoint approaches the `1.0` upper
+anchor.
+
+![ContinuousOverlapIndex separation sweeps](img/continuous_overlap_sweeps.png)
+
+Regenerate the continuous figure with:
+
+```bash
+poetry run python examples/visualize_continuous_overlap_sweeps.py
+```
+
+An additional gallery demonstrates a heteroscedastic target field becoming
+progressively clean and a multivariate oscillator target observed with
+increasing fidelity:
+
+![Additional ContinuousOverlapIndex sweeps](img/continuous_overlap_additional_sweeps.png)
+
+```bash
+poetry run python examples/visualize_continuous_overlap_additional_sweeps.py
+```
+
+These examples use six refit permutations per score to keep the complete
+sweeps practical to reproduce. Increase `n_null_permutations` in the scripts
+when adapting them for final quantitative reporting.
 
 Version 1 is offline-first and supports `model_type="MiniBatchKMeans"`,
 `model_type="KMeans"`, and `model_type="BallCover"`. ARTMAP online support is
@@ -439,7 +494,7 @@ refit-permutation null on smaller workloads and automatically switches to a
 faster fixed-structure permutation null when
 `n_samples * n_null_permutations >= 100_000`. The refit null rebuilds target
 cells and feature prototypes for each target shuffle so that random target
-assignments calibrate near 0.5. The fixed-structure null keeps the fitted
+assignments calibrate near 0.0. The fixed-structure null keeps the fitted
 prototype geometry and shuffles target values across that structure, which is
 substantially faster on large datasets but should be treated as an approximate
 calibration mode. Use `null_mode="refit_permutation"` for final reporting when
@@ -451,36 +506,14 @@ Key diagnostics after fitting include:
 
 - **`actual_loss_`**, **`null_loss_`**, and **`loss_ratio_`**
 - **`null_mode_`**, **`null_loss_samples_`**, and **`auto_null_work_`**
-- **`raw_index_`** before optional clipping
 - **`macro_index_`** and **`weighted_index`**
 - **`prototype_index_`**, **`prototype_loss_`**, and
   **`prototype_target_values_`**
 
----
-
-## Release Verification
-
-For release testing, start from a fresh Poetry environment so the package under
-test matches `pyproject.toml` and `poetry.lock`:
-
-```bash
-poetry env remove --all
-poetry sync --with dev
-poetry run python -c "from overlapindex import OverlapIndex; OverlapIndex(model_type='MiniBatchKMeans')"
-poetry run python -m pytest -q tests/test_overlap_index_regression.py
-
-poetry sync --with dev --extras art
-poetry run python -c "from overlapindex import OverlapIndex; OverlapIndex(model_type='Hypersphere')"
-poetry run python -m pytest -q tests/test_overlap_index_regression.py
-
-poetry check
-python -m build
-twine check dist/*
-```
-
-The first install verifies that offline backends work without the optional
-`artlib` dependency. The second install verifies the `art` extra and ARTMAP
-backends.
+The continuous calibration changed in the `0.1.3` alpha series. At the
+loss-ratio level, the new pre-bound calibration equals
+`2 * legacy_score - 1`, after which values are bounded to `[0, 1]`. Do not
+compare historical COI values directly with scores from this calibration.
 
 ---
 
@@ -567,3 +600,9 @@ This package is intended for researchers and practitioners working on:
 - clustering validation,
 - representation learning,
 - transfer learning
+
+## License
+
+The source code is licensed under the GNU Affero General Public License
+v3.0 or later (AGPLv3-or-later). Commercial licenses are available; please
+contact the maintainer through GitHub.
