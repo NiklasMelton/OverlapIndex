@@ -28,6 +28,15 @@ The estimator is offline-first. MiniBatchKMeans, KMeans, and BallCover are
 supported; `partial_fit` refits on the supplied batch and does not retain
 continuous-target state across calls.
 
+KMeans and MiniBatchKMeans also accept SciPy sparse feature matrices. Sparse
+inputs remain in CSR form through prototype fitting, adjacency scoring, and
+permutation-null refits; continuous targets remain dense numeric arrays.
+
+`random_state` seeds target-cell construction, projection directions,
+permutation sampling, and the selected feature backend. An explicit
+`random_state` inside `kmeans_kwargs` or `ballcover_kwargs` takes precedence
+for that backend.
+
 ## The fitting pipeline
 
 1. Scale the continuous target columns according to `target_scaling`.
@@ -82,6 +91,37 @@ Use `adjacency_mode="hard_top1"` for strict single-competitor scoring or
 backwards comparisons. Keep adjacency settings constant when comparing
 representations.
 
+## Continuous behavior gallery
+
+The main synthetic gallery follows three genuinely continuous regression
+problems: a smooth latent signal with increasing observation fidelity, a
+folded latent trajectory that is progressively unfolded in feature space, and
+a continuous covariate that is gradually recovered. It uses eight target
+cells, rather than reducing each problem to a high-versus-low split, and
+strict nearest-competitor adjacency so the ideal target-ordered endpoints
+approach the `1.0` anchor.
+
+![ContinuousOverlapIndex separation sweeps](../img/continuous_overlap_sweeps.png)
+
+Regenerate it from the repository root with:
+
+```bash
+poetry run python examples/visualize_continuous_overlap_sweeps.py
+```
+
+An additional gallery shows a heteroscedastic target field becoming cleaner
+and a multivariate oscillator target observed with increasing fidelity:
+
+![Additional ContinuousOverlapIndex sweeps](../img/continuous_overlap_additional_sweeps.png)
+
+```bash
+poetry run python examples/visualize_continuous_overlap_additional_sweeps.py
+```
+
+The example scripts use six refit permutations per score to keep the complete
+sweeps practical to reproduce. Increase `n_null_permutations` when adapting
+them for final quantitative reporting.
+
 ## Permutation nulls
 
 - `null_mode="refit_permutation"` rebuilds target cells and feature prototypes
@@ -116,6 +156,10 @@ Useful fitted attributes include:
   neighborhood graph.
 - `target_cell_ids_`, `target_cover_`, and `target_distance_` for resolved
   target-space choices.
+
+The prototype target attributes retain empirical target measures rather than
+reducing every prototype to only a mean or variance. This is what allows the
+configured Wasserstein distance to compare richer local target distributions.
 
 Continuous and discrete scores use related interpretation anchors but different
 calibrations. Do not directly compare an OI from one estimator with a COI from

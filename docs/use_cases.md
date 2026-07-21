@@ -37,7 +37,34 @@ Use the fitted diagnostics to understand a summary score:
 - For multi-label targets, `unevaluable_pairs_` and `unevaluable_labels_`
   identify comparisons that lacked suitable positive/negative rows.
 
+## Synthetic separation behavior
+
+The following experiment sweeps two synthetic populations from fully
+interleaved to well separated. Gaussian clouds and vertical bars vary their
+center distance; concentric rings vary the difference between their radii.
+Each response curve is the mean across repeated deterministic draws, and the
+shaded band is one standard deviation.
+
+![Discrete OverlapIndex separation sweeps](../img/discrete_overlap_sweeps.png)
+
+Regenerate the figure from the repository root with:
+
+```bash
+poetry run python examples/visualize_discrete_overlap_sweeps.py
+```
+
+The script writes `img/discrete_overlap_sweeps.png` by default and accepts
+`--output PATH` to select another destination.
+
 ## Common use cases
+
+### Evolving clustering validation
+
+OI can serve as an incremental cluster-validity measure when labels or cluster
+assignments identify the groups whose overlap should be monitored. ARTMAP
+backends update the prototype representation online; offline backends evaluate
+a complete supplied partition. In either case, report prototype growth and
+resolution alongside the score because they influence the measured overlap.
 
 ### Representation and embedding comparison
 
@@ -59,6 +86,12 @@ def separation_score(embeddings, labels):
 
 Normalize every representation consistently and keep `kmeans_k` fixed when
 comparing results.
+
+The same procedure applies to backbone evaluation for transfer learning: fit
+OI on embeddings from candidate feature extractors using identical downstream
+samples, labels, preprocessing, and OI settings. A higher score indicates
+better label separation in that representation; it does not by itself measure
+downstream task accuracy.
 
 ### Dataset diagnostics
 
@@ -135,3 +168,13 @@ When publishing or tracking a result, record:
 
 See {doc}`backends/index` to choose and configure a backend, and {doc}`api` for
 the complete estimator interface.
+
+## Intended users and licensing
+
+The package is intended for researchers and practitioners working in
+incremental or continual learning, clustering validation, representation
+learning, and transfer learning.
+
+OverlapIndex is licensed under the GNU Affero General Public License v3.0 or
+later (AGPL-3.0-or-later). Commercial licenses are available; contact the
+maintainer through the [project's GitHub page](https://github.com/NiklasMelton/OverlapIndex).

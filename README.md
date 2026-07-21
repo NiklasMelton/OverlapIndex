@@ -378,16 +378,16 @@ x_max = X.max(axis=0)
 x_min = X.min(axis=0)
 X = (X - x_min) / (x_max - x_min)
 
-# Instantiate the OI object
-OI = OverlapIndex()
+# Instantiate the OI object with a reproducible centroid fit
+OI = OverlapIndex(kmeans_kwargs={"random_state": 0})
 
 # Calculate the Overlap Index
 OI.fit(X, y)
 print(OI.index)
-
-# Output:
-# 0.9266666666666666
 ```
+
+The exact fitted score depends on backend settings and library versions. Set a
+random seed, as above, whenever a result must be repeatable.
 
 Additional runnable examples are available in the `examples/` directory.
 

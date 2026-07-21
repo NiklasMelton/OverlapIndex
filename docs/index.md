@@ -62,8 +62,6 @@ traced back to the labels that produced it.
 - {doc}`use_cases` — apply OI to representation comparison, streaming, and
   dataset analysis.
 - {doc}`api` — browse the complete source-generated API.
-- {doc}`readme` — read the repository README in full without leaving the
-  documentation site.
 
 ```{note}
 `MiniBatchKMeans` is the default and the recommended starting point for batch
@@ -84,5 +82,4 @@ continuous_targets
 diagnostics
 use_cases
 api
-readme
 ```
