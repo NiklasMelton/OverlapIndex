@@ -4,6 +4,12 @@ OverlapIndex (OI)
 
 This package provides an implementation of the **Overlap Index (OI)**, a cluster-validity measure designed to quantify the degree of overlap between data classes or clusters. The OI can be updated online with ARTMAP-based backends, or computed in batch with offline clustering backends, making it useful for streaming, continual learning, large-scale representation analysis, and embedding-space diagnostics.
 
+## License
+
+The current source code is licensed under the GNU Affero General Public License
+v3.0 or later (AGPLv3-or-later). Commercial licenses are available; please
+contact the maintainer through GitHub.
+
 The implementation supports multiple swappable clustering backends:
 
 - **Fuzzy ARTMAP** and **Hypersphere ARTMAP** for incremental / online updates.
