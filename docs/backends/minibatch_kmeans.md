@@ -27,7 +27,9 @@ oi = OverlapIndex(
     kmeans_k=10,
     kmeans_kwargs={
         "random_state": 0,
-        "batch_size": 8192,
+        "batch_size": 256,
+        "max_no_improvement": 5,
+        "compute_labels": False,
         "n_init": 1,
     },
 )
@@ -35,9 +37,12 @@ oi.fit(X, y)
 print(oi.index)
 ```
 
-The adapter defaults to `batch_size=8192`, `n_init=1`, and `init="random"`.
-Entries in `kmeans_kwargs` override those defaults and are forwarded to
-scikit-learn. `kmeans_k` may be one positive integer for every label or a
+The adapter defaults to `batch_size=256`, `max_no_improvement=5`,
+`compute_labels=False`, `n_init=1`, and `init="random"`. Entries in
+`kmeans_kwargs` override those defaults and are forwarded to scikit-learn.
+`compute_labels=False` avoids a final full-data label-assignment pass because
+OverlapIndex uses the fitted centers rather than the estimator's `labels_` or
+exact inertia. `kmeans_k` may be one positive integer for every label or a
 dictionary of label-specific counts.
 
 ## Tuning guidance
@@ -51,6 +56,8 @@ dictionary of label-specific counts.
 - Use a fixed `random_state` for comparisons.
 - Adjust `batch_size` for memory and throughput; it does not control
   `OverlapIndex.partial_fit` semantics.
+- Adjust `max_no_improvement` or `max_iter` when trading convergence work for
+  runtime; validate that the resulting overlap scores remain stable.
 - Use `offline_chunk_size` to bound the number of rows scored at once when the
   fitted centroid set is large.
 

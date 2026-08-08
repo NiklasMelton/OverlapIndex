@@ -8,3 +8,5 @@ __pycache__/
 build/
 dist/
 docs/_build/
+AGENTS.md
+artifacts/

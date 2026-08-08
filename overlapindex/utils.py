@@ -38,6 +38,20 @@ def _ordered_unique_1d(values):
     return np.asarray(result, dtype=object)
 
 
+def _group_indices_by_label(values):
+    """Return first-observed label order with row indices grouped once."""
+    groups = {}
+    for row_idx, value in enumerate(np.asarray(values, dtype=object).reshape(-1)):
+        try:
+            groups.setdefault(value, []).append(row_idx)
+        except TypeError as exc:
+            raise TypeError("Labels must be hashable.") from exc
+    return {
+        label: np.asarray(row_indices, dtype=int)
+        for label, row_indices in groups.items()
+    }
+
+
 def _validate_class_dictionary_coverage(value, labels, name):
     """Reject class-specific dictionaries that omit observed labels."""
     if not isinstance(value, dict):
