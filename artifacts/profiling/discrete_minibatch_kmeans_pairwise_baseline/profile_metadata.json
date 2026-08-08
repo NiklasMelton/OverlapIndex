@@ -1,0 +1,65 @@
+{
+  "benchmark": "discrete_overlapindex_minibatch_kmeans_pairwise_baseline",
+  "components": {
+    "clustering_seconds": "MiniBatchKMeans backend fit and center assembly",
+    "other_seconds": "fit_offline total minus the two timed components",
+    "overlap_scoring_seconds": "committed HEAD prior pairwise single-label scorer"
+  },
+  "dataset": {
+    "dtype": "float32",
+    "features": "Gaussian N(0, 1), with a class-dependent shift in feature 0",
+    "generator": "numpy.random.default_rng(seed)",
+    "labels": "balanced single-label classes; labels shuffled with the same cell seed",
+    "purpose": "runtime measurement only; geometry is not intended as a quality benchmark",
+    "representation": "dense numpy.ndarray"
+  },
+  "dimensions": [
+    500
+  ],
+  "effective_minibatch_kmeans": {
+    "batch_size": 256,
+    "compute_labels": false,
+    "init": "random",
+    "max_no_improvement": 5,
+    "n_clusters_per_class": 8,
+    "n_init": 1,
+    "random_state": "cell seed (metadata seed plus cell/repetition offset)"
+  },
+  "k": 8,
+  "n_classes": 5,
+  "offline_chunk_size": 10000,
+  "offline_memory_budget_applied": false,
+  "offline_memory_budget_mb": 256,
+  "package_commit": "ab529429e2ba82b238074b167f350f0b1bdc11fd",
+  "package_source": "git archive HEAD (temporary isolated checkout)",
+  "repetitions": 5,
+  "reproducibility": {
+    "machine": "arm64",
+    "numpy_version": "2.4.6",
+    "platform": "macOS-26.0-arm64-arm-64bit",
+    "python_executable": "/Users/niklasmelton/code/OverlapIndex/.venv/bin/python",
+    "python_implementation": "CPython",
+    "python_version": "3.12.2",
+    "scikit_learn_version": "1.9.0",
+    "thread_environment": {
+      "BLIS_NUM_THREADS": null,
+      "LOKY_MAX_CPU_COUNT": "1",
+      "MKL_DYNAMIC": null,
+      "MKL_NUM_THREADS": "1",
+      "NUMEXPR_NUM_THREADS": "1",
+      "OMP_DYNAMIC": null,
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "VECLIB_MAXIMUM_THREADS": "1"
+    }
+  },
+  "samples": [
+    5000
+  ],
+  "schema_version": 1,
+  "seed": 20260807,
+  "warmup": true,
+  "warmup_dimensions": 10,
+  "warmup_samples": 250,
+  "warmup_seed": 20260806
+}

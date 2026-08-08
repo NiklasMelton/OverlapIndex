@@ -7,8 +7,8 @@ non-overlapping phases of one ``OverlapIndex.fit_offline`` call:
     The per-class MiniBatchKMeans fits and center bookkeeping performed by the
     clustering adapter.
 ``overlap_scoring``
-    The optimized class-pair scorer, including distance matrices and top-two
-    prototype selection.
+    The backend-neutral universal offline scorer, including bounded score
+    tiles and top-two prototype selection.
 ``other``
     The residual of the end-to-end ``fit_offline`` time after the two timed
     phases.  This includes validation, preprocessing, label bookkeeping, and
@@ -22,7 +22,8 @@ The defaults are intentionally bounded (at most 5,000 samples and 500
 features), but all grids and run parameters can be overridden from the CLI.
 One small, untimed representative fit is run first by default to warm BLAS and
 scikit-learn initialization; pass ``--no-warmup`` to disable it.  This module
-does not execute the sweep on import.
+does not execute the sweep on import.  Offline score tiles use the
+``offline_memory_budget_mb=256`` scratch-memory budget by default.
 """
 
 from __future__ import annotations
@@ -45,11 +46,23 @@ from overlapindex import OverlapIndex
 
 
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_OUTPUT_DIR = ROOT / "artifacts" / "profiling" / "discrete_minibatch_kmeans"
+DEFAULT_OUTPUT_DIR = ROOT / "artifacts" / "profiling" / "discrete_minibatch_kmeans_universal_scorer"
 DEFAULT_SAMPLES = (250, 500, 1_000, 2_000, 3_500, 5_000)
 DEFAULT_DIMENSIONS = (10, 25, 50, 100, 250, 500)
 MAX_SAMPLES = 5_000
 MAX_DIMENSIONS = 500
+DEFAULT_OFFLINE_MEMORY_BUDGET_MB = 256
+
+# These values mirror the adapter's effective MiniBatchKMeans defaults.  Keep
+# them explicit in the profile so a run remains tied to the documented
+# backend configuration even when scikit-learn changes its own defaults.
+DEFAULT_MINIBATCH_KMEANS_KWARGS = {
+    "batch_size": 256,
+    "max_no_improvement": 5,
+    "compute_labels": False,
+    "n_init": 1,
+    "init": "random",
+}
 
 
 @dataclass
@@ -64,9 +77,10 @@ class _TimedMiniBatchOverlapIndex(OverlapIndex):
     """OverlapIndex subclass that times the two expensive internal phases.
 
     The backend is wrapped after each reset so that the timer follows the
-    actual model used by ``fit_offline``.  ``_fit_offline_centroid_optimized``
-    is the single-label optimized scorer used by this benchmark's generated
-    data.  The public package implementation remains untouched by profiling.
+    actual model used by ``fit_offline``.  The scorer hook covers the
+    backend-neutral universal offline path used by this benchmark's generated
+    single-label data.  The public package implementation remains untouched by
+    profiling.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -120,6 +134,23 @@ def _validate_grid(values: Iterable[int], name: str, cap: int) -> tuple[int, ...
     return tuple(sorted(result))
 
 
+def _effective_kmeans_kwargs(
+    seed: int,
+    overrides: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return one cell's effective MiniBatchKMeans kwargs.
+
+    The adapter supplies these defaults internally, but spelling them out here
+    keeps profile runs reproducible and makes any caller overrides explicit.
+    """
+
+    kwargs = dict(DEFAULT_MINIBATCH_KMEANS_KWARGS)
+    kwargs["random_state"] = int(seed)
+    if overrides:
+        kwargs.update(overrides)
+    return kwargs
+
+
 def make_dataset(
     n_samples: int,
     n_dimensions: int,
@@ -160,6 +191,7 @@ def profile_one(
     n_classes: int = 5,
     k: int = 8,
     chunk_size: int | None = 10_000,
+    offline_memory_budget_mb: int = DEFAULT_OFFLINE_MEMORY_BUDGET_MB,
     kmeans_kwargs: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run one timed fit and return a tidy raw-result row.
@@ -175,15 +207,14 @@ def profile_one(
         n_classes=n_classes,
         seed=seed,
     )
-    kwargs = {"random_state": seed, "n_init": 1}
-    if kmeans_kwargs:
-        kwargs.update(kmeans_kwargs)
+    kwargs = _effective_kmeans_kwargs(seed, kmeans_kwargs)
 
     estimator = _TimedMiniBatchOverlapIndex(
         model_type="MiniBatchKMeans",
         kmeans_k=k,
         kmeans_kwargs=kwargs,
         offline_chunk_size=chunk_size,
+        offline_memory_budget_mb=offline_memory_budget_mb,
     )
     timer = _PhaseTimer()
     estimator._profile_timer = timer
@@ -203,6 +234,7 @@ def profile_one(
         "n_classes": int(n_classes),
         "k": int(k),
         "offline_chunk_size": "None" if chunk_size is None else int(chunk_size),
+        "offline_memory_budget_mb": int(offline_memory_budget_mb),
         "total_seconds": float(total_seconds),
         "clustering_seconds": float(timer.clustering_seconds),
         "overlap_scoring_seconds": float(timer.overlap_scoring_seconds),
@@ -219,6 +251,7 @@ def warmup_fit(
     n_classes: int,
     k: int,
     chunk_size: int | None,
+    offline_memory_budget_mb: int = DEFAULT_OFFLINE_MEMORY_BUDGET_MB,
     kmeans_kwargs: dict[str, Any] | None = None,
 ) -> None:
     """Run one small untimed fit to remove first-cell initialization noise."""
@@ -229,14 +262,13 @@ def warmup_fit(
         n_classes=n_classes,
         seed=seed,
     )
-    kwargs = {"random_state": seed, "n_init": 1}
-    if kmeans_kwargs:
-        kwargs.update(kmeans_kwargs)
+    kwargs = _effective_kmeans_kwargs(seed, kmeans_kwargs)
     OverlapIndex(
         model_type="MiniBatchKMeans",
         kmeans_k=k,
         kmeans_kwargs=kwargs,
         offline_chunk_size=chunk_size,
+        offline_memory_budget_mb=offline_memory_budget_mb,
     ).fit_offline(X, y, reset_state=True)
 
 
@@ -249,6 +281,7 @@ def run_sweep(
     n_classes: int = 5,
     k: int = 8,
     chunk_size: int | None = 10_000,
+    offline_memory_budget_mb: int = DEFAULT_OFFLINE_MEMORY_BUDGET_MB,
     kmeans_kwargs: dict[str, Any] | None = None,
     warmup: bool = True,
     warmup_samples: int = 250,
@@ -285,6 +318,7 @@ def run_sweep(
             n_classes=n_classes,
             k=k,
             chunk_size=chunk_size,
+            offline_memory_budget_mb=offline_memory_budget_mb,
             kmeans_kwargs=kmeans_kwargs,
         )
     cell_number = 0
@@ -300,6 +334,7 @@ def run_sweep(
                     n_classes=n_classes,
                     k=k,
                     chunk_size=chunk_size,
+                    offline_memory_budget_mb=offline_memory_budget_mb,
                     kmeans_kwargs=kmeans_kwargs,
                 )
                 rows.append(row)
@@ -330,6 +365,7 @@ RAW_FIELDS = (
     "n_classes",
     "k",
     "offline_chunk_size",
+    "offline_memory_budget_mb",
     *TIME_COLUMNS,
     "index",
 )
@@ -396,7 +432,9 @@ def save_results(
         "benchmark": "discrete_overlapindex_minibatch_kmeans",
         "components": {
             "clustering_seconds": "MiniBatchKMeans backend fit and center assembly",
-            "overlap_scoring_seconds": "optimized single-label class-pair scorer",
+            "overlap_scoring_seconds": (
+                "backend-neutral universal offline scorer with bounded row/prototype tiles"
+            ),
             "other_seconds": "fit_offline total minus the two timed components",
         },
         "dataset": {
@@ -408,12 +446,13 @@ def save_results(
             "purpose": "runtime measurement only; geometry is not intended as a quality benchmark",
         },
         "effective_minibatch_kmeans": {
-            "batch_size": 8192,
-            "init": "random",
-            "n_init": 1,
+            **DEFAULT_MINIBATCH_KMEANS_KWARGS,
             "n_clusters_per_class": config.get("k"),
             "random_state": "cell seed (metadata seed plus cell/repetition offset)",
         },
+        "offline_memory_budget_mb": config.get(
+            "offline_memory_budget_mb", DEFAULT_OFFLINE_MEMORY_BUDGET_MB
+        ),
         "warmup": {
             "enabled": bool(config.get("warmup", True)),
             "timed": False,
@@ -460,7 +499,7 @@ def refresh_metadata(metadata_path: Path) -> Path:
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     config = {
         key: metadata[key]
-        for key in ("k",)
+        for key in ("k", "offline_memory_budget_mb")
         if key in metadata
     }
     metadata.setdefault("dataset", {
@@ -471,13 +510,27 @@ def refresh_metadata(metadata_path: Path) -> Path:
         "labels": "balanced single-label classes; labels shuffled with the same cell seed",
         "purpose": "runtime measurement only; geometry is not intended as a quality benchmark",
     })
-    metadata.setdefault("effective_minibatch_kmeans", {
-        "batch_size": 8192,
-        "init": "random",
-        "n_init": 1,
-        "n_clusters_per_class": config.get("k"),
-        "random_state": "cell seed (metadata seed plus cell/repetition offset)",
-    })
+    effective_kmeans = dict(metadata.get("effective_minibatch_kmeans", {}))
+    effective_kmeans.update(DEFAULT_MINIBATCH_KMEANS_KWARGS)
+    effective_kmeans.update(
+        {
+            "n_clusters_per_class": config.get("k", effective_kmeans.get("n_clusters_per_class")),
+            "random_state": "cell seed (metadata seed plus cell/repetition offset)",
+        }
+    )
+    metadata["effective_minibatch_kmeans"] = effective_kmeans
+    metadata["components"] = {
+        **metadata.get("components", {}),
+        "clustering_seconds": "MiniBatchKMeans backend fit and center assembly",
+        "overlap_scoring_seconds": (
+            "backend-neutral universal offline scorer with bounded row/prototype tiles"
+        ),
+        "other_seconds": "fit_offline total minus the two timed components",
+    }
+    metadata["offline_memory_budget_mb"] = metadata.get(
+        "offline_memory_budget_mb",
+        DEFAULT_OFFLINE_MEMORY_BUDGET_MB,
+    )
     metadata.setdefault("warmup", {
         "enabled": False,
         "timed": False,
@@ -501,6 +554,15 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--k", type=int, default=8)
     parser.add_argument("--chunk-size", type=int, default=10_000)
     parser.add_argument(
+        "--offline-memory-budget-mb",
+        type=int,
+        default=DEFAULT_OFFLINE_MEMORY_BUDGET_MB,
+        help=(
+            "Scratch-memory budget for backend-neutral offline score tiles "
+            "(default: 256 MiB)."
+        ),
+    )
+    parser.add_argument(
         "--warmup",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -513,28 +575,32 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
-    samples = _validate_grid(args.samples, "samples", MAX_SAMPLES)
-    dimensions = _validate_grid(args.dimensions, "dimensions", MAX_DIMENSIONS)
     rows = run_sweep(
-        samples,
-        dimensions,
+        args.samples,
+        args.dimensions,
         repetitions=args.repetitions,
         seed=args.seed,
         n_classes=args.n_classes,
         k=args.k,
         chunk_size=args.chunk_size,
+        offline_memory_budget_mb=args.offline_memory_budget_mb,
         warmup=args.warmup,
         warmup_samples=args.warmup_samples,
         warmup_dimensions=args.warmup_dimensions,
     )
+    # ``run_sweep`` owns grid validation and normalization.  Derive the
+    # effective axes from its rows instead of validating the same inputs twice.
+    samples = sorted({int(row["n_samples"]) for row in rows})
+    dimensions = sorted({int(row["n_dimensions"]) for row in rows})
     config = {
-        "samples": list(samples),
-        "dimensions": list(dimensions),
+        "samples": samples,
+        "dimensions": dimensions,
         "repetitions": int(args.repetitions),
         "seed": int(args.seed),
         "n_classes": int(args.n_classes),
         "k": int(args.k),
         "offline_chunk_size": int(args.chunk_size),
+        "offline_memory_budget_mb": int(args.offline_memory_budget_mb),
         "warmup": bool(args.warmup),
         "warmup_samples": int(args.warmup_samples),
         "warmup_dimensions": int(args.warmup_dimensions),

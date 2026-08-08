@@ -67,13 +67,22 @@ The selected competitors are fitted-data dependent. Hold the backend,
 preprocessing, prototype settings, and random seed constant when comparing
 runs.
 
+In `all` mode, the competitor view and pairwise mappings remain lazy: default
+zero-overlap pairs are not inserted merely because they are possible. The
+offline scorer packs target classes into bounded score tiles when the scratch
+budget permits, so high class counts do not require retaining a dense class-by-
+class score matrix.
+
 ## Unevaluable comparisons
 
 A pair is unevaluable when there is no row where its source label is present
 and its competitor is absent. The fitted estimator records:
 
-- `unevaluable_pairs_`: directional pairs with a zero denominator and a `NaN`
-  pairwise score.
+- `unevaluable_pairs_`: a lazy set-like view of selected directional pairs with
+  a zero denominator and a `NaN` pairwise score. Iterate it or use `pair in
+  oi.unevaluable_pairs_` to inspect exact pairs without retaining a quadratic
+  all-mode list; `set(oi.unevaluable_pairs_)` materializes the result when
+  desired.
 - `unevaluable_labels_`: source labels with no evaluable selected competitor;
   their `singleton_index` is `NaN`.
 
@@ -81,6 +90,11 @@ Unevaluable labels are omitted from `index` and `weighted_index`. Fitting
 raises `ValueError` if no non-excluded source label has any evaluable selected
 pair. Do not replace these `NaN` values with a perfect score; they mean that
 the requested comparison was not identified by the data.
+
+The diagnostic view is populated only for multi-label offline fits. Before a
+fit, after reset, and for single-label fits, `unevaluable_pairs_` remains the
+historical empty tuple. In `top_m` mode, only selected competitors are eligible
+for the view; unselected zero-denominator pairs are intentionally omitted.
 
 ## Current limitations
 
@@ -91,4 +105,7 @@ the requested comparison was not identified by the data.
 
 For high-cardinality problems, use sparse indicator targets, centroid backends
 with sparse `X` where appropriate, `top_m`, and `offline_chunk_size` to control
-the scored row block size.
+the scored row block size. The default `offline_memory_budget_mb=256` MiB is
+temporary scratch space only; it does not cap fitted data or the estimator's
+model. Pair iteration materializes only non-default directional scores, while
+direct lookup still resolves default and unevaluable pairs.

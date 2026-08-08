@@ -90,6 +90,31 @@ class _BaseManyToOneClusteringModel:
         """
         raise NotImplementedError
 
+    def prepare_score_input(self, X: np.ndarray) -> np.ndarray:
+        """Prepare a query block for vectorized prototype scoring.
+
+        Offline backends can use this hook to perform any one-time query
+        preparation (for example, converting a sparse matrix to CSR).  The
+        returned object is consumed by :meth:`score_block_prepared` and must
+        retain its row structure.  Incremental backends do not participate in
+        the universal offline scorer and may leave this unimplemented.
+        """
+        raise NotImplementedError
+
+    def score_block_prepared(
+        self,
+        X_prepared: np.ndarray,
+        ids: Optional[Union[Sequence[int], slice]] = None,
+    ) -> np.ndarray:
+        """Score a prepared query block against selected global prototypes.
+
+        Scores use a higher-is-better convention.  ``ids`` may be omitted to
+        select all prototypes, supplied as a sequence of global ids, or
+        supplied as a contiguous :class:`slice`.  Implementations should
+        avoid repeating input preparation in this method.
+        """
+        raise NotImplementedError
+
     def topk(
         self,
         x: np.ndarray,
@@ -364,6 +389,74 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
         cross = np.asarray(X @ centers.T)
         d2 = X_norms[:, None] + center_norms[None, :] - 2.0 * cross
         return -d2
+
+    def prepare_score_input(self, X: np.ndarray) -> np.ndarray:
+        """Prepare one query block without materializing sparse features.
+
+        Centroid backends use raw feature geometry, so preparation only
+        canonicalizes dtype and sparse format.  In particular, no row norm is
+        retained: the universal scorer uses a ranking-equivalent kernel whose
+        row-wise ``-||x||^2`` term cancels when prototypes are compared.
+        """
+        self._check_fit()
+        if sparse.issparse(X):
+            if X.ndim != 2:
+                raise ValueError(f"X must be a 2D array; got shape {X.shape}.")
+            return sparse.csr_matrix(X, dtype=self._centers.dtype, copy=False)
+        X_arr = np.asarray(X, dtype=self._centers.dtype)
+        if X_arr.ndim != 2:
+            raise ValueError(f"X must be a 2D array; got shape {X_arr.shape}.")
+        return X_arr
+
+    def score_block_prepared(
+        self,
+        X_prepared: np.ndarray,
+        ids: Optional[Union[Sequence[int], slice]] = None,
+    ) -> np.ndarray:
+        """Return ranking-only squared-Euclidean scores for a prepared block.
+
+        The returned score is ``X @ C.T - 0.5 * ||C||²``.  It is equivalent to
+        negative squared Euclidean distance for ranking prototypes within each
+        row, while omitting the row-only ``-0.5 * ||X||²`` term.  The kernel
+        works for both dense arrays and CSR/other SciPy sparse matrices.
+        """
+        self._check_fit()
+        if sparse.issparse(X_prepared):
+            if X_prepared.ndim != 2:
+                raise ValueError(
+                    f"X_prepared must be a 2D array; got shape {X_prepared.shape}."
+                )
+            X_block = sparse.csr_matrix(
+                X_prepared, dtype=self._centers.dtype, copy=False
+            )
+        else:
+            X_block = np.asarray(X_prepared, dtype=self._centers.dtype)
+            if X_block.ndim != 2:
+                raise ValueError(
+                    f"X_prepared must be a 2D array; got shape {X_block.shape}."
+                )
+
+        if ids is None:
+            centers = self._centers
+            center_norms = self._center_norms
+        elif isinstance(ids, slice):
+            centers = self._centers[ids]
+            center_norms = self._center_norms[ids]
+        else:
+            id_array = np.atleast_1d(np.asarray(ids, dtype=int))
+            centers = self._centers[id_array]
+            center_norms = self._center_norms[id_array]
+
+        if centers.shape[0] == 0:
+            return np.zeros((X_block.shape[0], 0), dtype=self._centers.dtype)
+
+        # Keep the R x P matrix as the sole tile-sized allocation.  The
+        # prototype norm vector is only length P, and the subtraction is
+        # performed in place so an outer scratch-budget planner can account for
+        # this tile directly.
+        scores = np.asarray(X_block @ centers.T)
+        scores -= np.asarray(center_norms, dtype=self._centers.dtype)[None, :] * 0.5
+        return scores.astype(self._centers.dtype, copy=False)
 
     def scores_all(self, x: np.ndarray) -> np.ndarray:
         """Return negative squared-distance scores for all global centroids."""

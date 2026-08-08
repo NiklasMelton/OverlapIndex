@@ -134,6 +134,9 @@ The Overlap Index can be used in several settings:
 - Sparse feature matrices remain sparse during fitting, slicing, prediction,
   multi-label expansion, and overlap scoring. KMeans centroids and the bounded
   prototype-distance score blocks are still dense.
+- Offline scoring uses a backend-neutral scratch planner. The default
+  `offline_memory_budget_mb=256` is a scratch-memory budget only; it does not
+  cap the fitted model or retain a full sample-by-prototype score matrix.
 - Normalize input features before fitting. Examples in this repository use `MinMaxScaler` for convenience.
 - ART backends complement-code inputs internally and therefore require features in the `[0, 1]` interval.
 - Offline backends (`KMeans`, `MiniBatchKMeans`, and `BallCover`) consume normalized features directly and do not apply complement coding.
@@ -150,6 +153,10 @@ The Overlap Index can be used in several settings:
   `unevaluable_pairs_`; source labels with no evaluable selected pairs are
   exposed in `unevaluable_labels_`, assigned `NaN`, and omitted from global
   summaries. Fitting raises if no non-excluded label remains evaluable.
+- Pairwise diagnostics are sparse: only non-default pair scores are
+  materialized during iteration. Direct lookup still resolves an evaluable
+  zero-overlap pair to `1.0` (and an unevaluable pair to its documented
+  `NaN`/zero-cardinality values).
 - Labels that own fewer than two prototypes are exposed in
   `under_prototyped_labels_` and emit a warning because top-two scoring is
   degenerate in that case. Their scores are still computed.
@@ -554,6 +561,10 @@ compare historical COI values directly with scores from this calibration.
 
 - `offline_chunk_size` *(positive int or None)*
   Maximum row block used for vectorized offline prototype scoring.
+
+- `offline_memory_budget_mb` *(positive int, default=256)*
+  Scratch-memory budget for backend-neutral offline score blocks. This budget
+  controls temporary tiles only; it does not limit fitted data or model size.
 
 - `multilabel_pair_mode` *("all" or "top_m")*
   Directional competitor selection strategy for multi-label offline scoring.

@@ -258,6 +258,72 @@ class BallCoverManyToOne:
         ids = np.arange(self._centers.shape[0], dtype=int)
         return self._scores_for_ids(x, ids)
 
+    def prepare_score_input(self, X: np.ndarray) -> np.ndarray:
+        """Prepare one dense query block for vectorized ball scoring.
+
+        BallCover uses the same geometry at query time as during fitting.  In
+        cosine mode this performs the L2 normalization once; callers can then
+        reuse the returned block for several prototype-id slices without
+        repeating normalization.
+        """
+        self._check_fit()
+        return self._prepare_X(self._as_2d_float_array(X))
+
+    def score_block_prepared(
+        self,
+        X_prepared: np.ndarray,
+        ids: Optional[Union[Sequence[int], slice]] = None,
+    ) -> np.ndarray:
+        """Return radius-normalized activation scores for a prepared block.
+
+        Scores retain BallCover's activation convention ``1 - d²/r²``.  The
+        prepared block must already have undergone cosine normalization when
+        that metric was selected during fitting.
+        """
+        self._check_fit()
+        X_arr = np.asarray(X_prepared, dtype=self.dtype)
+        if X_arr.ndim != 2:
+            raise ValueError(
+                f"X_prepared must be a 2D array; got shape {X_arr.shape}."
+            )
+        if X_arr.shape[1] != self._centers.shape[1]:
+            raise ValueError(
+                f"X_prepared has {X_arr.shape[1]} features, "
+                f"expected {self._centers.shape[1]}."
+            )
+        if ids is None:
+            centers = self._centers
+            center_norms = self._center_norms
+            radius2 = self._radius2
+        elif isinstance(ids, slice):
+            centers = self._centers[ids]
+            center_norms = self._center_norms[ids]
+            radius2 = self._radius2[ids]
+        else:
+            id_array = np.atleast_1d(np.asarray(ids, dtype=int))
+            centers = self._centers[id_array]
+            center_norms = self._center_norms[id_array]
+            radius2 = self._radius2[id_array]
+
+        if centers.shape[0] == 0:
+            return np.zeros((X_arr.shape[0], 0), dtype=self.dtype)
+
+        # Keep the R x P matrix as the sole tile-sized allocation.  Transform
+        # the matrix in place through the radius-normalized activation formula;
+        # only the row-wise norm vector is allocated in addition to the result.
+        scores = np.asarray(X_arr @ centers.T, dtype=self.dtype)
+        row_norms = np.einsum("ij,ij->i", X_arr, X_arr).astype(
+            self.dtype, copy=False
+        )
+        scores *= -2.0
+        scores += row_norms[:, None]
+        scores += center_norms[None, :]
+        np.maximum(scores, 0.0, out=scores)
+        scores *= -1.0
+        scores /= radius2[None, :]
+        scores += 1.0
+        return scores
+
     def topk(
         self,
         x: np.ndarray,
@@ -486,12 +552,20 @@ class BallCoverManyToOne:
         d2 = np.maximum(d2, 0.0)
         return (1.0 - d2 / self._radius2[ids]).astype(float, copy=False)
 
-    def _scores_matrix_prepared(self, X: np.ndarray, ids: Optional[Sequence[int]] = None) -> np.ndarray:
+    def _scores_matrix_prepared(
+        self,
+        X: np.ndarray,
+        ids: Optional[Union[Sequence[int], slice]] = None,
+    ) -> np.ndarray:
         self._check_fit()
         if ids is None:
             centers = self._centers
             center_norms = self._center_norms
             radius2 = self._radius2
+        elif isinstance(ids, slice):
+            centers = self._centers[ids]
+            center_norms = self._center_norms[ids]
+            radius2 = self._radius2[ids]
         else:
             ids = np.asarray(ids, dtype=int)
             centers = self._centers[ids]
