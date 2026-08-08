@@ -322,7 +322,9 @@ OI = OverlapIndex(
     kmeans_k=10,
     kmeans_kwargs={
         "random_state": 0,
-        "batch_size": 8192,
+        "batch_size": 256,
+        "max_no_improvement": 5,
+        "compute_labels": False,
         "n_init": 1,
     },
 )

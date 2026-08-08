@@ -5,7 +5,7 @@ from scipy import sparse
 from sklearn.cluster import KMeans, MiniBatchKMeans
 from overlapindex.BallCover import BallCoverManyToOne
 from overlapindex.utils import (
-    _ordered_unique_1d,
+    _group_indices_by_label,
     _validate_class_dictionary_coverage,
     _validate_positive_integer,
 )
@@ -241,7 +241,8 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
             Class labels aligned with X.
         """
         Y = np.asarray(Y)
-        classes = _ordered_unique_1d(Y)
+        rows_by_class = _group_indices_by_label(Y)
+        classes = np.asarray(list(rows_by_class), dtype=object)
         _validate_class_dictionary_coverage(self._k, classes, "k")
 
         centers_list = []
@@ -253,7 +254,7 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
 
         gid = 0
         for c in classes:
-            idx = np.where(Y == c)[0]
+            idx = rows_by_class[c]
             Xc = X[idx]
             nc = Xc.shape[0]
             if nc == 0:
@@ -329,9 +330,9 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
         else:
             X = np.asarray(X, dtype=self._centers.dtype)
         Y = np.asarray(Y)
+        rows_by_class = _group_indices_by_label(Y)
         result = np.empty(X.shape[0], dtype=int)
-        for c in _ordered_unique_1d(Y):
-            row_idx = np.where(Y == c)[0]
+        for c, row_idx in rows_by_class.items():
             ids = self._class_center_id_arrays.get(c)
             if ids is None or ids.size == 0:
                 raise ValueError(f"No clusters found for class {c}. Did you fit_offline?")
@@ -479,7 +480,9 @@ class _MiniBatchKMeansManyToOne(_BaseCentroidManyToOne):
     def _make_model(self, n_clusters: int) -> MiniBatchKMeans:
         """Create a scikit-learn MiniBatchKMeans estimator."""
         kwargs = {
-            "batch_size": 8192,
+            "batch_size": 256,
+            "max_no_improvement": 5,
+            "compute_labels": False,
             "n_init": 1,
             "init": "random",
         }

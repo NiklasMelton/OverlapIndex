@@ -15,6 +15,7 @@ except ImportError:  # pragma: no cover - sklearn is a required dependency for o
         pass
 
 from overlapindex.utils import (
+    _group_indices_by_label,
     _ordered_unique_1d,
     _validate_feature_matrix,
     _validate_positive_integer,
@@ -1113,9 +1114,10 @@ class OverlapIndex(BaseEstimator):
         """
         BMU1 = self._model.bmu_for_class_batch(X_prep, Y)
         class_to_cluster_arrays = self._model.class_center_id_arrays
+        rows_by_class = _group_indices_by_label(Y)
 
         for y in classes:
-            row_idx = np.where(Y == y)[0]
+            row_idx = rows_by_class.get(y, np.asarray([], dtype=int))
             if row_idx.size == 0:
                 continue
 
