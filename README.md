@@ -260,6 +260,7 @@ For single-sample streams, ARTMAP backends also support `add_sample(x, y)`, whic
 | `fit(X, y)` | `self` | Full offline fitting on a labeled dataset.                    |
 | `partial_fit(X, y)` | `self` | Incremental batch updates for ARTMAP backends; offline backends refit on the provided batch. |
 | `score()` / `score(X, y)` | `float` | Read the current index, or refit on labeled data and return the new score. |
+| `score_fixed(X, y)` | `float` | Score a complete labeled holdout against already fitted offline prototypes without refitting. |
 | `predict(X)` | `np.ndarray` | Return the highest-scoring global prototype id for each sample. |
 | `fit_predict(X, y)` | `np.ndarray` | Fit and return per-sample prototype ids. |
 | `add_batch(X, y)` | `float` | Batch update when the current OI score is needed immediately. |
