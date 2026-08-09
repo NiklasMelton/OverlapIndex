@@ -450,6 +450,52 @@ def test_score_with_data_refits_and_matches_index():
     assert np.isclose(returned, model.index, atol=0.0, rtol=0.0)
 
 
+def test_score_fixed_reuses_fitted_prototypes_and_recomputes_holdout_support():
+    X, y = _iris_data()
+    train_indices = np.concatenate(
+        [np.arange(start, start + 40) for start in (0, 50, 100)]
+    )
+    holdout_indices = np.concatenate(
+        [np.arange(start + 40, start + 50) for start in (0, 50, 100)]
+    )
+    model = _make_model("MiniBatchKMeans", kmeans_k=5).fit(
+        X[train_indices],
+        y[train_indices],
+    )
+    centers_before = model._model.centers.copy()
+    predictions_before = model.predict(X[holdout_indices])
+
+    score = model.score_fixed(X[holdout_indices], y[holdout_indices])
+
+    assert 0.0 <= score <= 1.0
+    assert np.array_equal(model._model.centers, centers_before)
+    assert np.array_equal(model.predict(X[holdout_indices]), predictions_before)
+    assert dict(model.cluster_cardinality) == {0: 10, 1: 10, 2: 10}
+    assert score == pytest.approx(model.index)
+
+
+def test_score_fixed_on_training_rows_reproduces_fitted_score():
+    X, y = _iris_data()
+    model = _make_model("MiniBatchKMeans", kmeans_k=5).fit(X, y)
+    fitted_score = model.score()
+
+    fixed_score = model.score_fixed(X, y)
+
+    assert fixed_score == pytest.approx(fitted_score)
+
+
+def test_score_fixed_requires_fit_and_complete_fitted_class_coverage():
+    X, y = _iris_data()
+    model = _make_model("MiniBatchKMeans", kmeans_k=5)
+
+    with pytest.raises(ValueError, match="not fit yet"):
+        model.score_fixed(X, y)
+
+    model.fit(X, y)
+    with pytest.raises(ValueError, match="match the fitted class set"):
+        model.score_fixed(X[y != 2], y[y != 2])
+
+
 def test_get_params_and_set_params_follow_sklearn_conventions():
     model = OverlapIndex(model_type="MiniBatchKMeans", kmeans_k=6)
 
@@ -560,6 +606,30 @@ def test_multilabel_sequence_of_same_length_label_lists_is_supported():
     assert model.pairwise_cardinality[("A", "B")] == 1
     assert model.pairwise_cardinality[("A", "C")] == 2
     assert model.cluster_cardinality["A"] == 3
+
+
+def test_score_fixed_supports_complete_multilabel_holdout_labels():
+    X = np.array(
+        [
+            [0.0, 0.0],
+            [0.2, 0.0],
+            [1.0, 0.0],
+            [1.2, 0.0],
+        ],
+        dtype=float,
+    )
+    y = [["A", "B"], ["A", "C"], ["B", "C"], ["A", "B"]]
+    model = OverlapIndex(
+        model_type="KMeans",
+        kmeans_k=1,
+        kmeans_kwargs={"random_state": 0, "n_init": 10},
+    ).fit(X, y)
+    fitted_score = model.score()
+
+    fixed_score = model.score_fixed(X, y)
+
+    assert fixed_score == pytest.approx(fitted_score)
+    assert model.cluster_cardinality == {"A": 3, "B": 3, "C": 2}
 
 
 def test_multilabel_binary_indicator_matrix_uses_column_labels():

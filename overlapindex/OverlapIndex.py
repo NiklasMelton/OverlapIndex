@@ -1033,6 +1033,102 @@ class OverlapIndex(BaseEstimator):
             raise ValueError("score expects both X and Y, or neither.")
         return float(self.fit_offline(X, Y, reset_state=True))
 
+    def score_fixed(self, X: np.ndarray, Y: Any) -> float:
+        """Score labeled evaluation rows against already fitted prototypes.
+
+        Unlike :meth:`score`, this method does not refit or otherwise update the
+        clustering backend.  It recomputes overlap events and aggregate
+        diagnostics from ``X`` and ``Y`` while holding the fitted class-owned
+        prototypes fixed.  This is intended for honest holdout and cross-fitted
+        evaluation of offline prototype backends.
+
+        The evaluation labels must contain the same class set observed during
+        fitting.  Requiring complete class coverage keeps the macro score and
+        each class's worst-competitor comparison comparable across folds.
+
+        Parameters
+        ----------
+        X : np.ndarray
+            Evaluation samples with the same feature count as the fitted data.
+        Y : np.ndarray
+            Labels aligned with ``X`` and covering every fitted class.
+
+        Returns
+        -------
+        float
+            The overlap index computed on the evaluation rows with fixed
+            prototypes.
+        """
+        if not self._is_offline_backend:
+            raise NotImplementedError(
+                "score_fixed is supported only for offline prototype backends."
+            )
+        if not hasattr(self, "n_features_in_") or not self.rev_map:
+            raise ValueError("This OverlapIndex instance is not fit yet.")
+
+        X_eval, Y_sets = self._validate_input_data(X, Y)
+        self._check_feature_count(X_eval)
+        if X_eval.shape[0] == 0:
+            self._warn_empty_input()
+            return float(self.index)
+
+        evaluation_classes = _ordered_unique_labels(Y_sets)
+        fitted_classes = list(self._model.class_to_clusters)
+        evaluation_class_list = evaluation_classes.tolist()
+        missing = [
+            label for label in fitted_classes if label not in evaluation_class_list
+        ]
+        unexpected = [
+            label for label in evaluation_class_list if label not in fitted_classes
+        ]
+        if missing or unexpected:
+            raise ValueError(
+                "score_fixed requires evaluation labels to match the fitted class set; "
+                f"missing={missing!r}, unexpected={unexpected!r}."
+            )
+
+        feature_count = int(self.n_features_in_)
+        self._reset_indices()
+        self.n_features_in_ = feature_count
+        self.rev_map = defaultdict(
+            set,
+            {label: set(ids) for label, ids in self._model.class_to_clusters.items()},
+        )
+        self._refresh_under_prototyped_labels()
+
+        for label in evaluation_classes:
+            self.cluster_cardinality[label] += sum(
+                label in row_labels for row_labels in Y_sets
+            )
+            self.singleton_index[label] = 1.0
+
+        if len(evaluation_classes) <= 1:
+            if self._included_singleton_labels():
+                self._warn_single_class()
+            else:
+                self._warn_all_observed_classes_excluded()
+            return float(self.index)
+
+        X_prepared = self._prep_X(X_eval)
+        is_multilabel = any(len(labels) > 1 for labels in Y_sets)
+        if is_multilabel:
+            return float(
+                self._fit_offline_centroid_optimized_multilabel(
+                    X_prepared,
+                    Y_sets,
+                    evaluation_classes,
+                )
+            )
+
+        Y_single = _flatten_single_label_sets(Y_sets)
+        return float(
+            self._fit_offline_centroid_optimized(
+                X_prepared,
+                Y_single,
+                evaluation_classes,
+            )
+        )
+
     def predict(self, X: np.ndarray) -> np.ndarray:
         """
         Return the highest-scoring global prototype id for each sample.
