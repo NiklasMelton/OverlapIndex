@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "overlapindex"
-version = "0.1.4a"
+version = "0.1.4"
 description = "OverlapIndex (OI), an Incremental Cluster Validity index for identifying the degree of overlap of data classes."
 authors = ["Niklas M. Melton <niklasmelton@gmail.com>"]
 license = "AGPL-3.0-or-later"
