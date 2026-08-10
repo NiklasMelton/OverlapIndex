@@ -134,6 +134,9 @@ The Overlap Index can be used in several settings:
 - Sparse feature matrices remain sparse during fitting, slicing, prediction,
   multi-label expansion, and overlap scoring. KMeans centroids and the bounded
   prototype-distance score blocks are still dense.
+- Offline scoring uses a backend-neutral scratch planner. The default
+  `offline_memory_budget_mb=256` is a scratch-memory budget only; it does not
+  cap the fitted model or retain a full sample-by-prototype score matrix.
 - Normalize input features before fitting. Examples in this repository use `MinMaxScaler` for convenience.
 - ART backends complement-code inputs internally and therefore require features in the `[0, 1]` interval.
 - Offline backends (`KMeans`, `MiniBatchKMeans`, and `BallCover`) consume normalized features directly and do not apply complement coding.
@@ -150,6 +153,10 @@ The Overlap Index can be used in several settings:
   `unevaluable_pairs_`; source labels with no evaluable selected pairs are
   exposed in `unevaluable_labels_`, assigned `NaN`, and omitted from global
   summaries. Fitting raises if no non-excluded label remains evaluable.
+- Pairwise diagnostics are sparse: only non-default pair scores are
+  materialized during iteration. Direct lookup still resolves an evaluable
+  zero-overlap pair to `1.0` (and an unevaluable pair to its documented
+  `NaN`/zero-cardinality values).
 - Labels that own fewer than two prototypes are exposed in
   `under_prototyped_labels_` and emit a warning because top-two scoring is
   degenerate in that case. Their scores are still computed.
@@ -253,6 +260,7 @@ For single-sample streams, ARTMAP backends also support `add_sample(x, y)`, whic
 | `fit(X, y)` | `self` | Full offline fitting on a labeled dataset.                    |
 | `partial_fit(X, y)` | `self` | Incremental batch updates for ARTMAP backends; offline backends refit on the provided batch. |
 | `score()` / `score(X, y)` | `float` | Read the current index, or refit on labeled data and return the new score. |
+| `score_fixed(X, y)` | `float` | Score a complete labeled holdout against already fitted offline prototypes without refitting. |
 | `predict(X)` | `np.ndarray` | Return the highest-scoring global prototype id for each sample. |
 | `fit_predict(X, y)` | `np.ndarray` | Fit and return per-sample prototype ids. |
 | `add_batch(X, y)` | `float` | Batch update when the current OI score is needed immediately. |
@@ -322,7 +330,9 @@ OI = OverlapIndex(
     kmeans_k=10,
     kmeans_kwargs={
         "random_state": 0,
-        "batch_size": 8192,
+        "batch_size": 256,
+        "max_no_improvement": 5,
+        "compute_labels": False,
         "n_init": 1,
     },
 )
@@ -552,6 +562,10 @@ compare historical COI values directly with scores from this calibration.
 
 - `offline_chunk_size` *(positive int or None)*
   Maximum row block used for vectorized offline prototype scoring.
+
+- `offline_memory_budget_mb` *(positive int, default=256)*
+  Scratch-memory budget for backend-neutral offline score blocks. This budget
+  controls temporary tiles only; it does not limit fitted data or model size.
 
 - `multilabel_pair_mode` *("all" or "top_m")*
   Directional competitor selection strategy for multi-label offline scoring.

@@ -11,7 +11,10 @@ from overlapindex import OverlapIndex
 
 
 EXPECTED_REAL_WORLD_INDEX = {
-    "yeast": 0.45851927198966064,
+    # MiniBatchKMeans now defaults to max_no_improvement=5.  The explicit
+    # batch_size/max_iter settings below retain the fixture's original tuning,
+    # while the changed convergence patience produces this deterministic score.
+    "yeast": 0.47786025442651947,
 }
 YEAST_DATA_URL = "https://archive.ics.uci.edu/ml/machine-learning-databases/yeast/yeast.data"
 YEAST_DATA_SHA256 = "7cf61776fc04f527f93bf57a327b863893a1225d82df02d457e8950173218258"

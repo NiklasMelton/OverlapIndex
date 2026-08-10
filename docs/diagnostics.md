@@ -16,13 +16,15 @@ maps fitted attributes and common warnings back to useful checks.
 | `rev_map[label]` | Global prototype IDs owned by the label. |
 | `competitors_[label]` | Selected multi-label competitors after fitting. |
 | `under_prototyped_labels_` | Labels owning fewer than two prototypes. |
-| `unevaluable_pairs_` | Multi-label pairs with no suitable rows. |
+| `unevaluable_pairs_` | Lazy set-like view of selected multi-label pairs with no suitable rows. |
 | `unevaluable_labels_` | Labels with no evaluable selected pair. |
 | `n_features_in_` | Feature count recorded at fit time. |
 
-The mappings are `defaultdict` instances for historical API compatibility.
-Convert them with `dict(...)` when serializing or displaying only materialized
-entries.
+The mappings preserve the historical mapping API. Pairwise mappings are sparse:
+iteration and `dict(...)` expose only materialized non-default entries. Direct
+lookup remains useful for diagnostics: an evaluable pair with no observed
+overlap resolves to `1.0`, while an unevaluable pair resolves to its
+zero-cardinality/`NaN` representation.
 
 ```python
 worst_pairs = sorted(
@@ -36,6 +38,14 @@ for (source, competitor), score in worst_pairs:
 
 For multi-label data, filter non-finite scores before sorting because
 unevaluable pairs are represented by `NaN`.
+
+`unevaluable_pairs_` is a lazy set-like diagnostic view on multi-label fits:
+iterate it or use membership testing to enumerate/check every selected
+directional pair whose `pairwise_cardinality` is zero. It retains only class
+and competitor metadata during fitting, so all-mode diagnostics do not store a
+quadratic pair list. `set(oi.unevaluable_pairs_)` remains a convenient way to
+materialize the result for small datasets. Before fitting, after reset, and for
+single-label fits the attribute remains the historical empty tuple.
 
 ## Common warnings
 
@@ -112,8 +122,10 @@ observed label.
 - Use MiniBatchKMeans as the first choice for large offline datasets.
 - Use sparse feature matrices with a centroid backend when the source data is
   sparse; avoid unnecessary densification.
-- Lower `offline_chunk_size` to reduce peak score-block memory. This does not
-  change the result.
+- Lower `offline_chunk_size` to cap scored rows per tile. Set
+  `offline_memory_budget_mb` to bound the temporary prototype-score scratch
+  tile as well; the default 256 MiB is scratch only and does not cap fitted
+  data or model size. Neither setting changes the result.
 - Use multi-label `top_m` to avoid evaluating every directional label pair.
 - For continuous targets, inspect `null_mode_`; refit permutations can dominate
   runtime. The fixed-structure null is faster but approximate.

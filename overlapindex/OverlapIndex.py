@@ -1,6 +1,6 @@
 import warnings
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Set as AbstractSet
 from typing import Literal, Optional, Union, Dict, Any, Tuple
 
 import numpy as np
@@ -15,6 +15,7 @@ except ImportError:  # pragma: no cover - sklearn is a required dependency for o
         pass
 
 from overlapindex.utils import (
+    _group_indices_by_label,
     _ordered_unique_1d,
     _validate_feature_matrix,
     _validate_positive_integer,
@@ -27,6 +28,10 @@ from overlapindex.clustering import (
     _KMeansManyToOne,
     _MiniBatchKMeansManyToOne,
     _BallCoverManyToOne,
+)
+from overlapindex._universal_scorer import (
+    compute_second_best_source_scores,
+    iter_target_class_blocks,
 )
 
 
@@ -236,6 +241,170 @@ def _deduplicated_labels(labels: Iterable[Any]) -> list[Any]:
             deduplicated.append(label)
     return deduplicated
 
+
+class _LazyPairwiseMapping(dict):
+    """Sparse pairwise diagnostics with resolver-backed direct lookups.
+
+    Only explicitly materialized, non-default values are stored in the dict
+    payload.  ``mapping[(a, b)]`` still resolves the logical default (or the
+    exact directional denominator) through the owning estimator without
+    inserting a key, keeping iteration sparse for high-cardinality targets.
+    """
+
+    def __init__(self, owner: Any, kind: str) -> None:
+        super().__init__()
+        self._owner = owner
+        self._kind = str(kind)
+
+    def __missing__(self, key: Any) -> Any:
+        return self._owner._resolve_lazy_pairwise_value(self._kind, key)
+
+    def get(self, key: Any, default: Any = None) -> Any:
+        try:
+            return self[key]
+        except (KeyError, TypeError, ValueError):
+            return default
+
+
+class _LazyAllCompetitors(Mapping):
+    """Lazy view of all competing labels for multi-label ``all`` mode."""
+
+    def __init__(self, classes: Iterable[Any]) -> None:
+        self._classes = tuple(classes)
+        self._class_set = set(self._classes)
+
+    def __getitem__(self, source: Any) -> np.ndarray:
+        if source not in self._class_set:
+            raise KeyError(source)
+        return np.asarray(
+            [label for label in self._classes if label != source],
+            dtype=object,
+        )
+
+    def __iter__(self):
+        return iter(self._classes)
+
+    def __len__(self) -> int:
+        return len(self._classes)
+
+
+class _LazyUnevaluablePairs(AbstractSet):
+    """Set-like view of selected multi-label pairs with zero denominator.
+
+    Multi-label scoring can have a quadratic number of directional pairs whose
+    source-positive rows always contain the target label.  The diagnostics
+    need to expose those pairs exactly, but storing them during ``fit`` would
+    recreate the quadratic state that the scorer avoids.  This view retains
+    the observed class order and, for ``top_m`` mode, the selected competitor
+    order; iteration and membership resolve each candidate's denominator on
+    demand through the fitted estimator.
+    """
+
+    def __init__(
+        self,
+        owner: Any,
+        classes: Iterable[Any],
+    ) -> None:
+        self._owner = owner
+        self._classes = tuple(classes)
+        self._class_set = set(self._classes)
+        self._top_m = owner.multilabel_pair_mode == "top_m"
+
+        # ``all`` mode deliberately stores no target list per source: deriving
+        # all competitors from the O(C) class tuple is what keeps this view
+        # non-materializing for high-cardinality targets.  ``top_m`` mode is
+        # already bounded by the configured number of selected competitors.
+        if self._top_m:
+            selected = []
+            competitors = owner.competitors_
+            for source in self._classes:
+                targets = competitors.get(source, ())
+                if isinstance(targets, np.ndarray):
+                    targets = targets.tolist()
+                selected.append((source, tuple(targets)))
+            self._selected_by_source = tuple(selected)
+            self._selected_lookup = {
+                source: targets for source, targets in self._selected_by_source
+            }
+        else:
+            self._selected_by_source = None
+            self._selected_lookup = None
+
+    def _targets_for(self, source: Any) -> Iterable[Any]:
+        if self._selected_by_source is None:
+            return (target for target in self._classes if target != source)
+        return self._selected_lookup.get(source, ())
+
+    def _selected_pair(self, source: Any, target: Any) -> bool:
+        try:
+            source_observed = source in self._class_set
+        except TypeError:
+            source_observed = False
+        if not source_observed or source == target:
+            return False
+        return any(target == candidate for candidate in self._targets_for(source))
+
+    def _is_zero_denominator(self, source: Any, target: Any) -> bool:
+        if not self._selected_pair(source, target):
+            return False
+        try:
+            return self._owner._resolve_lazy_pairwise_cardinality(
+                (source, target)
+            ) <= 0
+        except (KeyError, TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _unpack_pair(pair: Any) -> Optional[tuple[Any, Any]]:
+        if isinstance(pair, (str, bytes)):
+            return None
+        try:
+            source, target = pair
+        except (TypeError, ValueError):
+            return None
+        return source, target
+
+    def __contains__(self, pair: Any) -> bool:
+        unpacked = self._unpack_pair(pair)
+        if unpacked is None:
+            return False
+        source, target = unpacked
+        try:
+            return self._is_zero_denominator(source, target)
+        except (TypeError, ValueError):
+            return False
+
+    def __iter__(self):
+        for source in self._classes:
+            for target in self._targets_for(source):
+                if self._is_zero_denominator(source, target):
+                    yield source, target
+
+    def __len__(self) -> int:
+        # Counting is intentionally a lazy scan: it reports the exact size
+        # without retaining the yielded C² candidate pairs.
+        return sum(1 for _ in self)
+
+    def __eq__(self, other: Any) -> bool:
+        """Compare like a set without eagerly materializing this view."""
+        if isinstance(other, (set, frozenset, AbstractSet, _LazyUnevaluablePairs)):
+            try:
+                return len(self) == len(other) and all(pair in other for pair in self)
+            except (TypeError, ValueError):
+                return False
+
+        if isinstance(other, (tuple, list)):
+            # Historical fits exposed a tuple.  Keep deterministic sequence
+            # equality useful for small-data callers while still streaming the
+            # lazy side rather than constructing a second collection.
+            if len(self) != len(other):
+                return False
+            return all(
+                pair == expected
+                for pair, expected in zip(self, other)
+            )
+        return NotImplemented
+
 # ----------------------------
 # OverlapIndex with model_type
 # ----------------------------
@@ -267,6 +436,7 @@ class OverlapIndex(BaseEstimator):
         multilabel_pair_mode: Literal["all", "top_m"] = "all",
         top_m: Optional[int] = None,
         exclude_classes: Optional[Any] = None,
+        offline_memory_budget_mb: int = 256,
     ) -> None:
         """
         Initialize the overlap index and its clustering backend.
@@ -311,6 +481,12 @@ class OverlapIndex(BaseEstimator):
             ``weighted_index`` aggregation. Excluded labels remain fully
             involved in fitting, singleton scoring, pairwise scoring, and all
             bookkeeping outputs.
+        offline_memory_budget_mb : int, default=256
+            Approximate scratch-memory budget, in mebibytes, used by the
+            backend-neutral offline scorer.  The scorer tiles rows and
+            prototypes so score blocks stay within this budget.  This
+            parameter is appended after the historical positional arguments
+            to preserve their calling convention.
         """
         self.rho = rho
         self.r_hat = r_hat
@@ -322,6 +498,7 @@ class OverlapIndex(BaseEstimator):
         self.ballcover_radius = ballcover_radius
         self.ballcover_kwargs = ballcover_kwargs
         self.offline_chunk_size = offline_chunk_size
+        self.offline_memory_budget_mb = offline_memory_budget_mb
         self.multilabel_pair_mode = multilabel_pair_mode
         self.top_m = top_m
         self.exclude_classes = exclude_classes
@@ -331,9 +508,11 @@ class OverlapIndex(BaseEstimator):
         self.sparse_adj = defaultdict(int)
         self.cluster_cardinality = defaultdict(int)
         self.rev_map = defaultdict(set)
-        self.pairwise_index = defaultdict(_default_one)
+        self._pairwise_hits = defaultdict(int)
+        self._pairwise_multilabel = False
+        self.pairwise_index = _LazyPairwiseMapping(self, "index")
         self.singleton_index = defaultdict(_default_one)
-        self.pairwise_cardinality = defaultdict(int)
+        self.pairwise_cardinality = _LazyPairwiseMapping(self, "cardinality")
         self.competitors_ = {}
         self.under_prototyped_labels_ = ()
         self.unevaluable_pairs_ = ()
@@ -343,6 +522,7 @@ class OverlapIndex(BaseEstimator):
         self._label_indicator_csr_ = None
         self._label_indicator_csc_ = None
         self._positive_rows_by_label_index_ = {}
+        self._score_classes = ()
         self.index = 1.0
 
         self._model: _BaseManyToOneClusteringModel = self._build_model()
@@ -364,6 +544,10 @@ class OverlapIndex(BaseEstimator):
                 ) from exc
         if self.offline_chunk_size is not None:
             _validate_positive_integer(self.offline_chunk_size, "offline_chunk_size")
+        _validate_positive_integer(
+            self.offline_memory_budget_mb,
+            "offline_memory_budget_mb",
+        )
 
     def _build_model(self) -> _BaseManyToOneClusteringModel:
         """Construct the backend adapter from the current estimator parameters."""
@@ -511,9 +695,11 @@ class OverlapIndex(BaseEstimator):
         self.sparse_adj = defaultdict(int)
         self.cluster_cardinality = defaultdict(int)
         self.rev_map = defaultdict(set)
-        self.pairwise_index = defaultdict(_default_one)
+        self._pairwise_hits = defaultdict(int)
+        self._pairwise_multilabel = False
+        self.pairwise_index = _LazyPairwiseMapping(self, "index")
         self.singleton_index = defaultdict(_default_one)
-        self.pairwise_cardinality = defaultdict(int)
+        self.pairwise_cardinality = _LazyPairwiseMapping(self, "cardinality")
         self.competitors_ = {}
         self.under_prototyped_labels_ = ()
         self.unevaluable_pairs_ = ()
@@ -523,6 +709,7 @@ class OverlapIndex(BaseEstimator):
         self._label_indicator_csr_ = None
         self._label_indicator_csc_ = None
         self._positive_rows_by_label_index_ = {}
+        self._score_classes = ()
         self.index = 1.0
         if hasattr(self, "n_features_in_"):
             del self.n_features_in_
@@ -846,6 +1033,102 @@ class OverlapIndex(BaseEstimator):
             raise ValueError("score expects both X and Y, or neither.")
         return float(self.fit_offline(X, Y, reset_state=True))
 
+    def score_fixed(self, X: np.ndarray, Y: Any) -> float:
+        """Score labeled evaluation rows against already fitted prototypes.
+
+        Unlike :meth:`score`, this method does not refit or otherwise update the
+        clustering backend.  It recomputes overlap events and aggregate
+        diagnostics from ``X`` and ``Y`` while holding the fitted class-owned
+        prototypes fixed.  This is intended for honest holdout and cross-fitted
+        evaluation of offline prototype backends.
+
+        The evaluation labels must contain the same class set observed during
+        fitting.  Requiring complete class coverage keeps the macro score and
+        each class's worst-competitor comparison comparable across folds.
+
+        Parameters
+        ----------
+        X : np.ndarray
+            Evaluation samples with the same feature count as the fitted data.
+        Y : np.ndarray
+            Labels aligned with ``X`` and covering every fitted class.
+
+        Returns
+        -------
+        float
+            The overlap index computed on the evaluation rows with fixed
+            prototypes.
+        """
+        if not self._is_offline_backend:
+            raise NotImplementedError(
+                "score_fixed is supported only for offline prototype backends."
+            )
+        if not hasattr(self, "n_features_in_") or not self.rev_map:
+            raise ValueError("This OverlapIndex instance is not fit yet.")
+
+        X_eval, Y_sets = self._validate_input_data(X, Y)
+        self._check_feature_count(X_eval)
+        if X_eval.shape[0] == 0:
+            self._warn_empty_input()
+            return float(self.index)
+
+        evaluation_classes = _ordered_unique_labels(Y_sets)
+        fitted_classes = list(self._model.class_to_clusters)
+        evaluation_class_list = evaluation_classes.tolist()
+        missing = [
+            label for label in fitted_classes if label not in evaluation_class_list
+        ]
+        unexpected = [
+            label for label in evaluation_class_list if label not in fitted_classes
+        ]
+        if missing or unexpected:
+            raise ValueError(
+                "score_fixed requires evaluation labels to match the fitted class set; "
+                f"missing={missing!r}, unexpected={unexpected!r}."
+            )
+
+        feature_count = int(self.n_features_in_)
+        self._reset_indices()
+        self.n_features_in_ = feature_count
+        self.rev_map = defaultdict(
+            set,
+            {label: set(ids) for label, ids in self._model.class_to_clusters.items()},
+        )
+        self._refresh_under_prototyped_labels()
+
+        for label in evaluation_classes:
+            self.cluster_cardinality[label] += sum(
+                label in row_labels for row_labels in Y_sets
+            )
+            self.singleton_index[label] = 1.0
+
+        if len(evaluation_classes) <= 1:
+            if self._included_singleton_labels():
+                self._warn_single_class()
+            else:
+                self._warn_all_observed_classes_excluded()
+            return float(self.index)
+
+        X_prepared = self._prep_X(X_eval)
+        is_multilabel = any(len(labels) > 1 for labels in Y_sets)
+        if is_multilabel:
+            return float(
+                self._fit_offline_centroid_optimized_multilabel(
+                    X_prepared,
+                    Y_sets,
+                    evaluation_classes,
+                )
+            )
+
+        Y_single = _flatten_single_label_sets(Y_sets)
+        return float(
+            self._fit_offline_centroid_optimized(
+                X_prepared,
+                Y_single,
+                evaluation_classes,
+            )
+        )
+
     def predict(self, X: np.ndarray) -> np.ndarray:
         """
         Return the highest-scoring global prototype id for each sample.
@@ -921,6 +1204,44 @@ class OverlapIndex(BaseEstimator):
             return a_rows
         return np.setdiff1d(a_rows, b_rows, assume_unique=True)
 
+    def _resolve_lazy_pairwise_cardinality(self, pair: Any) -> int:
+        """Resolve one directional denominator without materializing a key."""
+        try:
+            a, b = pair
+        except (TypeError, ValueError):
+            return 0
+        if a == b:
+            return 0
+        if self._pairwise_multilabel:
+            try:
+                if a not in self.label_to_index_ or b not in self.label_to_index_:
+                    return 0
+                return int(self._valid_rows_for_pair(a, b).size)
+            except (KeyError, TypeError, ValueError):
+                return 0
+        # Single-label rows are all valid evidence for every other observed
+        # class.  Unknown labels retain the mapping's zero default.
+        if a not in self.cluster_cardinality or b not in self.cluster_cardinality:
+            return 0
+        return int(self.cluster_cardinality.get(a, 0))
+
+    def _resolve_lazy_pairwise_value(self, kind: str, pair: Any) -> Any:
+        """Resolve direct lookup values for sparse pairwise mappings."""
+        if kind == "cardinality":
+            explicit = dict.get(self.pairwise_cardinality, pair, None)
+            if explicit is not None:
+                return explicit
+            return self._resolve_lazy_pairwise_cardinality(pair)
+
+        explicit = dict.get(self.pairwise_index, pair, None)
+        if explicit is not None:
+            return explicit
+        denominator = self._resolve_lazy_pairwise_cardinality(pair)
+        if denominator <= 0:
+            return np.nan if self._pairwise_multilabel else 1.0
+        hits = int(self._pairwise_hits.get(pair, 0))
+        return 1.0 - (float(hits) / float(denominator))
+
     def _build_top_m_competitors_from_prototypes(
         self,
         classes: np.ndarray,
@@ -929,6 +1250,13 @@ class OverlapIndex(BaseEstimator):
         """
         Select each label's nearest prototype-owning competitors by minimum
         prototype-to-prototype distance.
+
+        Distances are evaluated against global prototype tiles rather than by
+        constructing one ``own x target`` matrix for every class pair.  The
+        running minimum for each target class is only ``O(C)`` state per source
+        label, and the prototype tile is bounded by the configured scratch
+        budget.  This retains the exact minimum-distance semantics and stable
+        class-order tie breaking of the historical pairwise implementation.
         """
         top_m = _validate_positive_integer(top_m, "top_m")
 
@@ -940,29 +1268,83 @@ class OverlapIndex(BaseEstimator):
             ) from exc
 
         class_to_ids = self._model.class_center_id_arrays
-        competitors = {}
+        classes_list = classes.tolist()
+        n_classes = len(classes_list)
+        competitors: Dict[Any, np.ndarray] = {}
 
-        for a in classes:
-            own_ids = class_to_ids.get(a)
-            if own_ids is None or own_ids.size == 0:
-                competitors[a] = np.asarray([], dtype=object)
+        # Resolve global prototype ownership once.  The adapters assign global
+        # ids into ``centers``; unowned ids are ignored defensively.
+        n_prototypes = int(np.asarray(centers).shape[0])
+        owner_positions = np.full(n_prototypes, -1, dtype=int)
+        normalized_ids: list[np.ndarray] = []
+        for position, label in enumerate(classes_list):
+            ids = np.asarray(
+                class_to_ids.get(label, np.asarray([], dtype=int)),
+                dtype=int,
+            ).reshape(-1)
+            normalized_ids.append(ids)
+            valid_ids = ids[(ids >= 0) & (ids < n_prototypes)]
+            owner_positions[valid_ids] = int(position)
+
+        # ``pairwise_distances`` materializes a float distance tile.  Reserve a
+        # conservative multiplier for the distance output and advanced-indexed
+        # center tile, then keep at least one target prototype per iteration.
+        try:
+            budget_bytes = int(self.offline_memory_budget_mb) * 1024 * 1024
+        except (TypeError, ValueError):  # pragma: no cover - constructor validates
+            budget_bytes = 1
+        center_dtype = np.asarray(centers).dtype
+        center_bytes = int(center_dtype.itemsize)
+        distance_bytes = int(np.dtype(np.float64).itemsize)
+
+        for source_position, source_label in enumerate(classes_list):
+            own_ids = normalized_ids[source_position]
+            if own_ids.size == 0 or n_prototypes == 0:
+                competitors[source_label] = np.asarray([], dtype=object)
                 continue
 
-            distances = []
-            for b in classes:
-                if b == a:
-                    continue
+            # Per-target-class minima are the only cross-tile state.  Sorting
+            # this C-length vector below preserves deterministic class-order
+            # ties without storing all source/target distances.
+            class_best = np.full(n_classes, np.inf, dtype=float)
+            own_centers = np.asarray(centers[own_ids])
+            n_own = max(1, int(own_centers.shape[0]))
+            per_target_bytes = (
+                n_own * distance_bytes
+                + center_bytes * max(1, int(own_centers.shape[1]))
+                + distance_bytes
+            )
+            tile_size = max(1, int(budget_bytes // max(1, 4 * per_target_bytes)))
+            tile_size = min(n_prototypes, tile_size)
 
-                other_ids = class_to_ids.get(b)
-                if other_ids is None or other_ids.size == 0:
-                    continue
+            for start in range(0, n_prototypes, tile_size):
+                stop = min(start + tile_size, n_prototypes)
+                target_ids = np.arange(start, stop, dtype=int)
+                target_centers = np.asarray(centers[target_ids])
+                # Distances are Euclidean, matching the existing
+                # ``pairwise_distances`` call (and cosine BallCover centers,
+                # which are normalized at fit time).
+                distances = pairwise_distances(own_centers, target_centers)
+                target_best = np.min(distances, axis=0)
+                target_owners = owner_positions[target_ids]
+                valid = target_owners >= 0
+                if np.any(valid):
+                    np.minimum.at(
+                        class_best,
+                        target_owners[valid],
+                        target_best[valid],
+                    )
 
-                d_ab = pairwise_distances(centers[own_ids], centers[other_ids]).min()
-                distances.append((float(d_ab), b))
-
-            distances.sort(key=lambda t: t[0])
-            competitors[a] = np.asarray(
-                [b for _, b in distances[:top_m]],
+            # Never select the source label itself.  ``lexsort`` uses class
+            # order as the secondary key, exactly matching stable sorting of
+            # ``(distance, class)`` records in the former implementation.
+            class_best[source_position] = np.inf
+            class_order = np.arange(n_classes, dtype=int)
+            order = np.lexsort((class_order, class_best))
+            order = order[np.isfinite(class_best[order])]
+            selected = order[:top_m]
+            competitors[source_label] = np.asarray(
+                [classes_list[int(position)] for position in selected],
                 dtype=object,
             )
 
@@ -974,16 +1356,529 @@ class OverlapIndex(BaseEstimator):
     ) -> Dict[Any, np.ndarray]:
         """Build source-label competitor arrays for multi-label scoring."""
         if self.multilabel_pair_mode == "all":
-            return {
-                y: np.asarray([b for b in classes if b != y], dtype=object)
-                for y in classes
-            }
+            return _LazyAllCompetitors(classes)
         if self.multilabel_pair_mode == "top_m":
             return self._build_top_m_competitors_from_prototypes(
                 classes,
                 int(self.top_m),
             )
         raise ValueError("multilabel_pair_mode must be one of {'all', 'top_m'}.")
+
+    # ---- backend-neutral offline score helpers -------------------------
+
+    def _prepare_offline_score_input(self, X: Any) -> Any:
+        """Prepare one offline query block through the backend contract.
+
+        New offline adapters expose ``prepare_score_input`` and
+        ``score_block_prepared``.  The fallback keeps compatibility with
+        third-party/test adapters that still expose only ``_scores_matrix``.
+        """
+        prepare = getattr(self._model, "prepare_score_input", None)
+        if prepare is None:
+            return X
+        try:
+            return prepare(X)
+        except NotImplementedError:
+            return X
+
+    def _score_offline_block(self, X_prepared: Any, ids: Any = None) -> np.ndarray:
+        """Score one prepared row block against selected global prototypes."""
+        score_block = getattr(self._model, "score_block_prepared", None)
+        if score_block is not None:
+            try:
+                scores = score_block(X_prepared, ids=ids)
+            except NotImplementedError:
+                scores = self._model._scores_matrix(X_prepared, ids)
+        else:
+            # ``_scores_matrix`` is the historical private adapter hook.
+            scores = self._model._scores_matrix(X_prepared, ids)
+        scores = np.asarray(scores)
+        if scores.ndim == 1:
+            scores = scores.reshape(1, -1)
+        if scores.ndim != 2:
+            raise ValueError(
+                "Offline backend score_block_prepared must return a 2D score matrix."
+            )
+        return scores
+
+    def _offline_tile_limits(self, n_rows: int, n_prototypes: int) -> Tuple[int, int]:
+        """Return row/prototype tile sizes bounded by estimator controls.
+
+        A score matrix is the dominant temporary in all supported offline
+        adapters.  Reserve a conservative multiplier for reductions and
+        indexing temporaries; this keeps the actual allocation below the
+        public budget while retaining at least one row and one prototype.
+        """
+        n_rows = max(1, int(n_rows))
+        n_prototypes = max(1, int(n_prototypes))
+        centers = getattr(self._model, "centers", None)
+        try:
+            itemsize = int(np.asarray(centers).dtype.itemsize)
+        except Exception:
+            itemsize = int(np.dtype(np.float32).itemsize)
+        # Eight score-sized temporaries is deliberately conservative.  The
+        # budget is a planning bound rather than a hard allocator guarantee.
+        cells = max(
+            1,
+            int(self.offline_memory_budget_mb) * 1024 * 1024
+            // max(1, itemsize * 8),
+        )
+        proto_tile = min(n_prototypes, max(1, int(np.sqrt(cells))))
+        row_tile = max(1, min(n_rows, cells // max(1, proto_tile)))
+        if self.offline_chunk_size is not None:
+            row_tile = min(row_tile, int(self.offline_chunk_size))
+        return int(row_tile), int(proto_tile)
+
+    def _iter_id_tiles(self, ids: np.ndarray, max_prototypes: int):
+        """Yield contiguous slices of a prototype-id array."""
+        ids = np.asarray(ids, dtype=int).reshape(-1)
+        step = max(1, int(max_prototypes))
+        for start in range(0, ids.size, step):
+            yield ids[start : start + step]
+
+    def _source_threshold_block(
+        self,
+        X_prepared: Any,
+        own_ids: np.ndarray,
+        row_tile: int,
+        proto_tile: int,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Return each source row's second-best source score threshold.
+
+        With one source prototype there is no second source score.  We retain
+        the historical top-two degeneracy by using ``-inf`` as the missing
+        threshold, so every finite target activation counts as overlap.
+        """
+        own_ids = np.asarray(own_ids, dtype=int).reshape(-1)
+        n_rows = int(X_prepared.shape[0])
+        threshold = np.full(n_rows, -np.inf, dtype=float)
+        best_all = np.full(n_rows, -np.inf, dtype=float)
+        if own_ids.size <= 1:
+            # There is no second source prototype.  Preserve the historical
+            # degenerate top-two behavior: every finite target score beats
+            # the missing threshold, yielding a zero overlap score.
+            return threshold, best_all
+
+        for row_start in range(0, n_rows, row_tile):
+            row_stop = min(row_start + row_tile, n_rows)
+            X_block = X_prepared[row_start:row_stop]
+            best = np.full(row_stop - row_start, -np.inf, dtype=float)
+            second = np.full(row_stop - row_start, -np.inf, dtype=float)
+            for id_tile in self._iter_id_tiles(own_ids, proto_tile):
+                scores = self._score_offline_block(X_block, id_tile)
+                if scores.shape[1] == 0:
+                    continue
+                tile_best = np.max(scores, axis=1)
+                if scores.shape[1] > 1:
+                    tile_second = np.partition(scores, -2, axis=1)[:, -2]
+                else:
+                    tile_second = np.full(tile_best.shape, -np.inf, dtype=float)
+                # Merge two sorted (best, second) pairs from the existing and
+                # current prototype tiles without materializing all scores.
+                merged = np.stack((best, second, tile_best, tile_second), axis=1)
+                merged = np.partition(merged, -2, axis=1)[:, -2:]
+                best = np.max(merged, axis=1)
+                second = np.min(merged, axis=1)
+            threshold[row_start:row_stop] = second
+            best_all[row_start:row_stop] = best
+        return threshold, best_all
+
+    def _best_target_scores_block(
+        self,
+        X_prepared: Any,
+        target_ids: np.ndarray,
+        row_tile: int,
+        proto_tile: int,
+    ) -> np.ndarray:
+        """Return each row's best score among one target class's prototypes."""
+        target_ids = np.asarray(target_ids, dtype=int).reshape(-1)
+        n_rows = int(X_prepared.shape[0])
+        result = np.full(n_rows, -np.inf, dtype=float)
+        if target_ids.size == 0:
+            return result
+        # Keep both row and prototype tiling here.  The source caller may pass
+        # an already row-tiled block, while this loop remains correct for
+        # arbitrarily large target prototype sets.
+        for row_start in range(0, n_rows, row_tile):
+            row_stop = min(row_start + row_tile, n_rows)
+            X_block = X_prepared[row_start:row_stop]
+            best = np.full(row_stop - row_start, -np.inf, dtype=float)
+            for id_tile in self._iter_id_tiles(target_ids, proto_tile):
+                scores = self._score_offline_block(X_block, id_tile)
+                if scores.shape[1]:
+                    best = np.maximum(best, np.max(scores, axis=1))
+            result[row_start:row_stop] = best
+        return result
+
+    def _score_source_target_pair(
+        self,
+        X_input: Any,
+        source_ids: np.ndarray,
+        target_ids: np.ndarray,
+    ) -> int:
+        """Count rows where target score strictly beats source threshold."""
+        n_rows = int(X_input.shape[0])
+        if n_rows == 0 or source_ids.size == 0 or target_ids.size == 0:
+            return 0
+        row_tile, proto_tile = self._offline_tile_limits(
+            n_rows,
+            max(int(source_ids.size), int(target_ids.size)),
+        )
+        overlap_count = 0
+        for row_start in range(0, n_rows, row_tile):
+            row_stop = min(row_start + row_tile, n_rows)
+            # Preparation is deliberately scoped to this row tile.  This is
+            # essential for BallCover cosine mode, whose preparation may
+            # allocate a dense R x D normalization temporary.
+            X_block = self._prepare_offline_score_input(
+                X_input[row_start:row_stop]
+            )
+            block_rows = int(row_stop - row_start)
+            threshold, _source_best = self._source_threshold_block(
+                X_block,
+                source_ids,
+                block_rows,
+                proto_tile,
+            )
+            target_best = self._best_target_scores_block(
+                X_block,
+                target_ids,
+                block_rows,
+                proto_tile,
+            )
+            # Strict ``>`` is intentional: exact score ties remain
+            # source-owned at the second-own threshold.
+            overlap_count += int(np.count_nonzero(target_best > threshold))
+        return overlap_count
+
+    def _fit_offline_multilabel_event_scored(
+        self,
+        X_prep: Any,
+        Y_sets: list[tuple],
+        classes: np.ndarray,
+    ) -> float:
+        """Score all multi-label source events in row/prototype tiles.
+
+        Source thresholds are computed once per positive-label event.  Target
+        classes are scored in packed prototype tiles over the same prepared
+        row block, so this path does not loop over every directional class
+        pair or allocate a dense C-by-C diagnostic matrix.
+        """
+        classes_list = classes.tolist()
+        label_to_position = {label: i for i, label in enumerate(classes_list)}
+        class_to_ids = self._model.class_center_id_arrays
+        integer_prototypes = {
+            i: np.asarray(class_to_ids.get(label, np.asarray([], dtype=int)), dtype=int)
+            for i, label in enumerate(classes_list)
+        }
+
+        event_rows: list[int] = []
+        event_sources: list[int] = []
+        for row, labels in enumerate(Y_sets):
+            for label in labels:
+                event_rows.append(int(row))
+                event_sources.append(int(label_to_position[label]))
+
+        self._build_label_indicator_matrices(Y_sets, classes)
+        self.competitors_ = self._build_multilabel_competitors(classes)
+        self._pairwise_multilabel = True
+        self._score_classes = tuple(classes_list)
+
+        # Determine which source labels have any valid directional evidence
+        # without enumerating all class pairs.  A competitor is valid iff it
+        # is absent from at least one source-positive row.
+        source_rows: dict[Any, list[int]] = {label: [] for label in classes_list}
+        for row, labels in enumerate(Y_sets):
+            for label in labels:
+                source_rows[label].append(int(row))
+        source_evaluable_all: dict[Any, bool] = {}
+        for source in classes_list:
+            rows = source_rows[source]
+            source_evaluable_all[source] = any(
+                len(Y_sets[row]) < len(classes_list)
+                for row in rows
+            )
+
+        selected_targets: dict[Any, set[Any]] = {}
+        if self.multilabel_pair_mode == "top_m":
+            selected_targets = {
+                source: set(self.competitors_.get(source, []))
+                for source in classes_list
+            }
+
+        source_result = compute_second_best_source_scores(
+            X_prep,
+            event_rows,
+            event_sources,
+            integer_prototypes,
+            self._model,
+            memory_budget_mb=self.offline_memory_budget_mb,
+            row_cap=self.offline_chunk_size,
+        )
+
+        # Encode indicator positives once for vectorized target-absence masks
+        # across all packed target row blocks.
+        n_classes = len(classes_list)
+        positive_rows = np.repeat(
+            np.arange(self._label_indicator_csr_.shape[0], dtype=np.int64),
+            np.diff(self._label_indicator_csr_.indptr),
+        )
+        positive_cols = self._label_indicator_csr_.indices.astype(
+            np.int64,
+            copy=False,
+        )
+        positive_keys = positive_rows * n_classes + positive_cols
+        allowed_codes = None
+        if self.multilabel_pair_mode == "top_m":
+            allowed_codes = np.asarray(
+                [
+                    label_to_position[source] * n_classes
+                    + label_to_position[target]
+                    for source, targets in selected_targets.items()
+                    for target in targets
+                ],
+                dtype=np.int64,
+            )
+
+        # The target iterator yields the same event rows in contiguous blocks;
+        # retain an event cursor rather than relying on original row numbers,
+        # which can repeat for multi-label observations.
+        event_offset = 0
+        for target_block in iter_target_class_blocks(
+            X_prep,
+            integer_prototypes,
+            self._model,
+            memory_budget_mb=self.offline_memory_budget_mb,
+            row_cap=self.offline_chunk_size,
+            sample_rows=event_rows,
+        ):
+            n_block = int(target_block.row_indices.size)
+            if n_block == 0:
+                continue
+            thresholds = source_result.second_best_scores[
+                event_offset : event_offset + n_block
+            ]
+            block_sources = source_result.source_class_ids[
+                event_offset : event_offset + n_block
+            ]
+            block_scores = np.asarray(target_block.best_scores)
+            # Extract hits one target column at a time.  ``np.nonzero`` on the
+            # full R x C comparison can allocate two coordinate arrays as
+            # large as the entire dense target block; column-wise masks keep
+            # transient storage O(R) while preserving the same strict
+            # comparator and pair-count results.
+            original_rows = np.asarray(target_block.row_indices, dtype=int)
+            for target_position in range(n_classes):
+                hit_rows = np.flatnonzero(
+                    block_scores[:, target_position] > thresholds
+                )
+                if hit_rows.size == 0:
+                    continue
+                source_positions = block_sources[hit_rows].astype(int, copy=False)
+                keep = source_positions != target_position
+
+                # A hit is valid only when its target label is absent from the
+                # original multi-label row.  Encode indicator positives once
+                # and use vectorized key membership for this O(R) column.
+                hit_keys = (
+                    original_rows[hit_rows].astype(np.int64) * n_classes
+                    + np.int64(target_position)
+                )
+                keep &= ~np.isin(hit_keys, positive_keys)
+
+                if self.multilabel_pair_mode == "top_m":
+                    pair_codes = (
+                        source_positions.astype(np.int64) * n_classes
+                        + np.int64(target_position)
+                    )
+                    if allowed_codes is not None and allowed_codes.size:
+                        keep &= np.isin(pair_codes, allowed_codes)
+                    else:
+                        keep[:] = False
+
+                pair_codes = (
+                    source_positions[keep].astype(np.int64) * n_classes
+                    + np.int64(target_position)
+                )
+                if pair_codes.size:
+                    unique_codes, counts = np.unique(pair_codes, return_counts=True)
+                    for code, count in zip(unique_codes.tolist(), counts.tolist()):
+                        source_position, target_position_ = divmod(
+                            int(code),
+                            n_classes,
+                        )
+                        pair = (
+                            classes_list[source_position],
+                            classes_list[target_position_],
+                        )
+                        self._pairwise_hits[pair] += int(count)
+                        self.sparse_adj[pair] += int(count)
+            event_offset += n_block
+
+        # Resolve per-source minima from sparse hit pairs.  Any valid pair
+        # with zero hits has the default score one, so it need not be stored.
+        # Zero-denominator diagnostics are exposed through a lazy set-like
+        # view below; no C² pair list is built during fitting.
+        unevaluable_labels: list[Any] = []
+        hits_by_source: dict[Any, list[tuple[Any, int]]] = defaultdict(list)
+        for (source, target), hits in self._pairwise_hits.items():
+            hits_by_source[source].append((target, int(hits)))
+        for source in classes_list:
+            if self.multilabel_pair_mode == "top_m":
+                selected = selected_targets[source]
+                valid_cardinality = {
+                    target: int(self._valid_rows_for_pair(source, target).size)
+                    for target in selected
+                    if target != source
+                }
+                valid = {
+                    target
+                    for target, denominator in valid_cardinality.items()
+                    if denominator > 0
+                }
+            else:
+                selected = None
+                valid = None
+                valid_cardinality = {}
+
+            source_evaluable = (
+                bool(valid)
+                if valid is not None
+                else source_evaluable_all[source]
+            )
+            if not source_evaluable:
+                unevaluable_labels.append(source)
+                self.singleton_index[source] = np.nan
+                continue
+
+            scores = []
+            for target, hits in hits_by_source.get(source, ()):
+                if valid is not None and target not in valid:
+                    continue
+                if valid is None:
+                    denominator = int(
+                        self._valid_rows_for_pair(source, target).size
+                    )
+                else:
+                    denominator = valid_cardinality[target]
+                if denominator > 0:
+                    scores.append(1.0 - float(hits) / float(denominator))
+            self.singleton_index[source] = min(scores) if scores else 1.0
+
+        self.unevaluable_pairs_ = _LazyUnevaluablePairs(self, classes_list)
+        self.unevaluable_labels_ = tuple(unevaluable_labels)
+        if self.unevaluable_labels_:
+            self._warn_unevaluable_multilabel(self.unevaluable_labels_)
+
+        excluded = self._normalized_exclude_classes()
+        non_excluded = [label for label in classes_list if label not in excluded]
+        evaluable = [
+            label for label in non_excluded if label not in set(unevaluable_labels)
+        ]
+        if non_excluded and not evaluable:
+            raise ValueError(
+                "No non-excluded multi-label source labels have evaluable "
+                "selected competitor pairs."
+            )
+        self._recompute_global_index()
+        return self.index
+
+    def _fit_offline_single_event_scored(
+        self,
+        X_prep: Any,
+        Y: np.ndarray,
+        classes: np.ndarray,
+    ) -> float:
+        """Score single-label events with the packed universal target pass."""
+        classes_list = classes.tolist()
+        label_to_position = {label: i for i, label in enumerate(classes_list)}
+        class_to_ids = self._model.class_center_id_arrays
+        integer_prototypes = {
+            i: np.asarray(class_to_ids.get(label, np.asarray([], dtype=int)), dtype=int)
+            for i, label in enumerate(classes_list)
+        }
+        rows = np.arange(int(np.asarray(Y).size), dtype=int)
+        sources = np.asarray(
+            [label_to_position[label] for label in np.asarray(Y, dtype=object)],
+            dtype=int,
+        )
+        source_result = compute_second_best_source_scores(
+            X_prep,
+            rows,
+            sources,
+            integer_prototypes,
+            self._model,
+            memory_budget_mb=self.offline_memory_budget_mb,
+            row_cap=self.offline_chunk_size,
+        )
+
+        event_offset = 0
+        for target_block in iter_target_class_blocks(
+            X_prep,
+            integer_prototypes,
+            self._model,
+            memory_budget_mb=self.offline_memory_budget_mb,
+            row_cap=self.offline_chunk_size,
+            sample_rows=rows,
+        ):
+            n_block = int(target_block.row_indices.size)
+            if n_block == 0:
+                continue
+            thresholds = source_result.second_best_scores[
+                event_offset : event_offset + n_block
+            ]
+            block_sources = source_result.source_class_ids[
+                event_offset : event_offset + n_block
+            ]
+            block_scores = np.asarray(target_block.best_scores)
+            n_classes = len(classes_list)
+            # As in the multi-label path, avoid materializing a full R x C
+            # hit-coordinate list.  Each target column contributes only an
+            # O(R) mask and pair-code vector.
+            for target_position in range(n_classes):
+                hit_rows = np.flatnonzero(
+                    block_scores[:, target_position] > thresholds
+                )
+                if hit_rows.size == 0:
+                    continue
+                source_positions = block_sources[hit_rows].astype(int, copy=False)
+                keep = source_positions != target_position
+                pair_codes = (
+                    source_positions[keep].astype(np.int64) * n_classes
+                    + np.int64(target_position)
+                )
+                if pair_codes.size:
+                    unique_codes, counts = np.unique(pair_codes, return_counts=True)
+                    for code, count in zip(unique_codes.tolist(), counts.tolist()):
+                        source_position, target_position_ = divmod(
+                            int(code),
+                            n_classes,
+                        )
+                        pair = (
+                            classes_list[source_position],
+                            classes_list[target_position_],
+                        )
+                        self._pairwise_hits[pair] += int(count)
+                        self.sparse_adj[pair] += int(count)
+            event_offset += n_block
+
+        hit_scores: dict[Any, list[float]] = defaultdict(list)
+        for (source, _target), hits_value in self._pairwise_hits.items():
+            support = int(self.cluster_cardinality.get(source, 0))
+            if support > 0 and hits_value:
+                hit_scores[source].append(
+                    1.0 - float(hits_value) / float(support)
+                )
+        for source in classes_list:
+            # Every single-label source has a positive denominator for every
+            # observed competitor.  Thus unmaterialized pairs contribute the
+            # default score one and need not be enumerated.
+            scores = hit_scores.get(source, [])
+            self.singleton_index[source] = min(scores) if scores else 1.0
+        self._pairwise_multilabel = False
+        self._score_classes = tuple(classes_list)
+        self._recompute_global_index()
+        return self.index
 
     def _fit_offline_centroid_optimized_multilabel(
         self,
@@ -994,109 +1889,11 @@ class OverlapIndex(BaseEstimator):
         """
         Compute offline overlap for multi-label data with pairwise denominators.
         """
-        class_to_cluster_arrays = self._model.class_center_id_arrays
-
-        self._build_label_indicator_matrices(Y_sets, classes)
-        self.competitors_ = self._build_multilabel_competitors(classes)
-        unevaluable_pairs = []
-
-        for y in classes:
-            own_ids = class_to_cluster_arrays.get(y)
-            if own_ids is None or own_ids.size == 0:
-                continue
-
-            for b in self.competitors_.get(y, []):
-                if b == y:
-                    continue
-
-                other_ids = class_to_cluster_arrays.get(b)
-                if other_ids is None or other_ids.size == 0:
-                    continue
-
-                valid_rows = self._valid_rows_for_pair(y, b)
-                n_valid = int(valid_rows.size)
-                if n_valid == 0:
-                    pair = (y, b)
-                    self.pairwise_cardinality[pair] = 0
-                    self.pairwise_index[pair] = np.nan
-                    unevaluable_pairs.append(pair)
-                    continue
-
-                self.pairwise_cardinality[(y, b)] += n_valid
-                X_valid = X_prep[valid_rows]
-                candidate_ids = np.concatenate((own_ids, other_ids))
-                chunk_size = (
-                    n_valid
-                    if self.offline_chunk_size is None
-                    else int(self.offline_chunk_size)
-                )
-                if chunk_size <= 0:
-                    raise ValueError("offline_chunk_size must be a positive integer or None.")
-
-                overlap_count = 0
-                for start in range(0, n_valid, chunk_size):
-                    stop = min(start + chunk_size, n_valid)
-                    X_chunk = X_valid[start:stop]
-                    scores = self._model._scores_matrix(X_chunk, candidate_ids)
-
-                    if scores.shape[1] == 0:
-                        continue
-                    if scores.shape[1] == 1:
-                        selected = np.full(stop - start, int(candidate_ids[0]), dtype=int)
-                    else:
-                        top2_rel = np.argpartition(scores, -2, axis=1)[:, -2:]
-                        top2_scores = np.take_along_axis(scores, top2_rel, axis=1)
-                        order = np.argsort(top2_scores, axis=1)[:, ::-1]
-                        top2_rel_sorted = np.take_along_axis(top2_rel, order, axis=1)
-                        top2_ids = candidate_ids[top2_rel_sorted]
-                        selected = np.where(
-                            np.isin(top2_ids[:, 0], own_ids),
-                            top2_ids[:, 1],
-                            top2_ids[:, 0],
-                        )
-
-                    overlap_count += int(np.isin(selected, other_ids).sum())
-
-                self.sparse_adj[(y, b)] += overlap_count
-                self.pairwise_index[(y, b)] = 1.0 - (
-                    float(self.sparse_adj[(y, b)])
-                    / float(self.pairwise_cardinality[(y, b)])
-                )
-
-        if len(classes) > 1:
-            unevaluable_labels = []
-            for y in classes:
-                valid_scores = [
-                    self.pairwise_index[(y, b)]
-                    for b in self.competitors_.get(y, [])
-                    if self.pairwise_cardinality[(y, b)] > 0
-                ]
-                if valid_scores:
-                    self.singleton_index[y] = min(valid_scores)
-                else:
-                    self.singleton_index[y] = np.nan
-                    unevaluable_labels.append(y)
-
-            self.unevaluable_pairs_ = tuple(unevaluable_pairs)
-            self.unevaluable_labels_ = tuple(unevaluable_labels)
-            if self.unevaluable_labels_:
-                self._warn_unevaluable_multilabel(self.unevaluable_labels_)
-
-            excluded = self._normalized_exclude_classes()
-            non_excluded = [label for label in classes if label not in excluded]
-            evaluable = [
-                label
-                for label in non_excluded
-                if label not in set(self.unevaluable_labels_)
-            ]
-            if non_excluded and not evaluable:
-                raise ValueError(
-                    "No non-excluded multi-label source labels have evaluable "
-                    "selected competitor pairs."
-                )
-            self._recompute_global_index()
-
-        return self.index
+        return self._fit_offline_multilabel_event_scored(
+            X_prep,
+            Y_sets,
+            classes,
+        )
 
     def _fit_offline_centroid_optimized(
         self,
@@ -1111,61 +1908,50 @@ class OverlapIndex(BaseEstimator):
         for each class pair (y, b), it scores only clusters owned by y or b in one
         vectorized block and updates the overlap counts from the resulting top-2 BMUs.
         """
-        BMU1 = self._model.bmu_for_class_batch(X_prep, Y)
+        if hasattr(self._model, "prepare_score_input") and hasattr(
+            self._model, "score_block_prepared"
+        ):
+            return self._fit_offline_single_event_scored(X_prep, Y, classes)
+
         class_to_cluster_arrays = self._model.class_center_id_arrays
+        rows_by_class = _group_indices_by_label(Y)
+        self._pairwise_multilabel = False
+        self._score_classes = tuple(classes.tolist())
 
         for y in classes:
-            row_idx = np.where(Y == y)[0]
-            if row_idx.size == 0:
+            row_idx = rows_by_class.get(y, np.asarray([], dtype=int))
+            own_ids = np.asarray(
+                class_to_cluster_arrays.get(y, np.asarray([], dtype=int)),
+                dtype=int,
+            )
+            if row_idx.size == 0 or own_ids.size == 0:
                 continue
 
             X_y = X_prep[row_idx]
-            bmu1_y = BMU1[row_idx]
-            n_y = row_idx.size
-            chunk_size = n_y if self.offline_chunk_size is None else int(self.offline_chunk_size)
-            if chunk_size <= 0:
-                raise ValueError("offline_chunk_size must be a positive integer or None.")
-            own_ids = class_to_cluster_arrays.get(y)
-            if own_ids is None or own_ids.size == 0:
-                continue
-
-            for b in self.rev_map.keys():
+            n_y = int(row_idx.size)
+            for b in classes:
                 if b == y:
                     continue
-
-                other_ids = class_to_cluster_arrays.get(b)
-                if other_ids is None or other_ids.size == 0:
-                    continue
-
-                candidate_ids = np.concatenate((own_ids, other_ids))
-                if candidate_ids.size == 0:
-                    continue
-
-                overlap_count = 0
-                for start in range(0, n_y, chunk_size):
-                    stop = min(start + chunk_size, n_y)
-                    X_chunk = X_y[start:stop]
-                    bmu1_chunk = bmu1_y[start:stop]
-
-                    scores = self._model._scores_matrix(X_chunk, candidate_ids)
-                    if scores.shape[1] == 0:
-                        continue
-
-                    if scores.shape[1] == 1:
-                        selected = np.full(stop - start, int(candidate_ids[0]), dtype=int)
-                    else:
-                        top2_rel = np.argpartition(scores, -2, axis=1)[:, -2:]
-                        top2_scores = np.take_along_axis(scores, top2_rel, axis=1)
-                        order = np.argsort(top2_scores, axis=1)[:, ::-1]
-                        top2_rel_sorted = np.take_along_axis(top2_rel, order, axis=1)
-                        top2_ids = candidate_ids[top2_rel_sorted]
-                        selected = np.where(top2_ids[:, 0] == bmu1_chunk, top2_ids[:, 1], top2_ids[:, 0])
-
-                    overlap_count += int(np.isin(selected, other_ids).sum())
-                self.sparse_adj[(y, b)] += overlap_count
-                self.pairwise_index[(y, b)] = 1.0 - (
-                    float(self.sparse_adj[(y, b)]) / float(self.cluster_cardinality[y])
+                other_ids = np.asarray(
+                    class_to_cluster_arrays.get(b, np.asarray([], dtype=int)),
+                    dtype=int,
                 )
+                if other_ids.size == 0:
+                    continue
+
+                pair = (y, b)
+                self.pairwise_cardinality[pair] = n_y
+                overlap_count = self._score_source_target_pair(
+                    X_y,
+                    own_ids,
+                    other_ids,
+                )
+                if overlap_count:
+                    self.sparse_adj[pair] += overlap_count
+                    self._pairwise_hits[pair] = int(overlap_count)
+                    self.pairwise_index[pair] = 1.0 - (
+                        float(overlap_count) / float(n_y)
+                    )
 
         if len(self.rev_map) > 1:
             for y in classes:
@@ -1253,7 +2039,13 @@ class OverlapIndex(BaseEstimator):
         is_multilabel = any(len(labels) > 1 for labels in Y_sets)
 
         if is_multilabel:
-            if not (self._is_offline_backend and hasattr(self._model, "_scores_matrix")):
+            if not (
+                self._is_offline_backend
+                and (
+                    hasattr(self._model, "score_block_prepared")
+                    or hasattr(self._model, "_scores_matrix")
+                )
+            ):
                 raise NotImplementedError(
                     "Multi-label scoring is currently implemented only for offline "
                     "backends with vectorized prototype scoring."
@@ -1299,7 +2091,10 @@ class OverlapIndex(BaseEstimator):
 
         Y_single = _flatten_single_label_sets(Y_sets)
 
-        if self._is_offline_backend and hasattr(self._model, "_scores_matrix"):
+        if self._is_offline_backend and (
+            hasattr(self._model, "score_block_prepared")
+            or hasattr(self._model, "_scores_matrix")
+        ):
             return self._fit_offline_centroid_optimized(X_prep, Y_single, classes)
 
         return self._fit_offline_replay(X_prep, Y_single, classes)

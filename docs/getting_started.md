@@ -110,6 +110,7 @@ split before transforming an evaluation split.
 | `fit(X, y)` | `self` | Fresh fit on a complete labeled dataset. |
 | `score()` | `float` | Return the stored score without refitting. |
 | `score(X, y)` | `float` | Fresh fit on `X, y`, then return the score. |
+| `score_fixed(X, y)` | `float` | Score a complete labeled holdout against fitted offline prototypes without refitting. |
 | `add_batch(X, y)` | `float` | Update/refit and immediately return the score. |
 | `partial_fit(X, y)` | `self` | Incremental only for ARTMAP; offline backends refit on this batch. |
 | `add_sample(x, y)` | `float` | Single-sample update for ARTMAP only. |
