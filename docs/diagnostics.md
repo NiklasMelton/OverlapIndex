@@ -19,6 +19,7 @@ maps fitted attributes and common warnings back to useful checks.
 | `unevaluable_pairs_` | Lazy set-like view of selected multi-label pairs with no suitable rows. |
 | `unevaluable_labels_` | Labels with no evaluable selected pair. |
 | `n_features_in_` | Feature count recorded at fit time. |
+| `prototype_refinement_` | Fit-time summary of optional centroid refinement decisions. |
 
 The mappings preserve the historical mapping API. Pairwise mappings are sparse:
 iteration and `dict(...)` expose only materialized non-default entries. Direct
@@ -38,6 +39,40 @@ for (source, competitor), score in worst_pairs:
 
 For multi-label data, filter non-finite scores before sorting because
 unevaluable pairs are represented by `NaN`.
+
+## Prototype refinement diagnostics
+
+For `KMeans` and `MiniBatchKMeans`, `prototype_refinement=False` (the default)
+leaves the fitted centers unchanged. The opt-in `prototype_refinement=True`
+mode is supported for scalar single-label fits only. It performs one
+deterministic pass over the original fit: a parent is eligible when its
+best-match support is at least two and its outgoing own-runner-up count is
+zero. Eligible rows are split along a farthest-pair projection, and each child
+is an actual observation nearest its half's coordinate-wise median. Children
+are not reconsidered in that pass; there is no child scikit-learn fit, gate, or
+rescue step. `score_fixed` uses the resulting fitted centers and does not
+refit or refine them. The public switch is a strict boolean; when enabled on
+an unsupported backend it raises an error, while `False` is accepted without
+refinement. Diagnostics retain the resolved mode names described below.
+
+The fitted `prototype_refinement_` value is a read-mostly mapping with this
+stable top-level schema:
+
+| Key | Meaning |
+| --- | --- |
+| `method`, `mode`, `splitter`, `split_method` | Resolved mode name (`"none"` or `"balanced_median"`). |
+| `prototype_count_before`, `prototype_count_after` | Prototype count before and after the pass. |
+| `eligible_count`, `attempted_count`, `applied_count`, `skipped_count` | Counts for the frozen eligibility and split decisions. |
+| `eligible_parent_ids`, `applied_parent_ids`, `skipped_parent_ids` | Stable tuples of global parent IDs by outcome. |
+| `records` | Tuple of per-parent dictionaries containing `parent`/`parent_id`/`original_id`, class, support, status, reason, child IDs/supports, and selected observation indices (`selected_observation_indices`, plus the `selected_sample_indices` alias when applied). Applied records also include `new_id`. |
+
+When refinement is enabled, the isolation scan is tiled using the offline
+memory and row settings. Sparse input remains supported, but a candidate's
+local support block may be densified to construct its observation
+representatives. Refinement can add prototype-resolution where a broad
+isolated parent hides structure, at the cost of one extra fit-time scan,
+additional centers, and more subsequent scoring work. Keep the default off
+unless that trade-off is useful for the analysis.
 
 `unevaluable_pairs_` is a lazy set-like diagnostic view on multi-label fits:
 iterate it or use membership testing to enumerate/check every selected

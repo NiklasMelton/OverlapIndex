@@ -9,6 +9,11 @@ from overlapindex.utils import (
     _validate_class_dictionary_coverage,
     _validate_positive_integer,
 )
+from overlapindex._prototype_refinement import (
+    apply_balanced_median_refinement,
+    empty_refinement_summary,
+    refinement_method,
+)
 from typing import Literal, Optional, Union, Dict, Any, Sequence, Tuple, Type
 
 
@@ -220,6 +225,9 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
         k: Union[int, Dict[Any, int]] = 8,
         model_kwargs: Optional[dict] = None,
         dtype: Type[np.floating] = np.float32,
+        prototype_refinement: bool = False,
+        refinement_memory_budget_mb: int = 256,
+        refinement_row_cap: Optional[int] = None,
     ) -> None:
         """
         Initialize shared centroid-backend state.
@@ -232,6 +240,14 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
             Keyword arguments forwarded to the concrete clustering estimator.
         dtype : numpy floating dtype, default=np.float32
             Floating-point dtype used to store centroid arrays.
+        prototype_refinement : bool, default=False
+            Whether to apply one-pass observation-median refinement after the
+            initial centroid fit. ``True`` selects the internal
+            ``"balanced_median"`` method.
+        refinement_memory_budget_mb : int, default=256
+            Scratch-memory budget used by the tiled fit-isolation pass.
+        refinement_row_cap : int or None, optional
+            Optional row cap for the tiled fit-isolation pass.
         """
         self._k = k
         if isinstance(k, dict):
@@ -241,6 +257,11 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
             _validate_positive_integer(k, "k")
         self._model_kwargs = model_kwargs or {}
         self._dtype = dtype
+        # Keep a descriptive resolved method name in fitted diagnostics while
+        # accepting the estimator's strict boolean switch at its boundary.
+        self._prototype_refinement = refinement_method(prototype_refinement)
+        self._refinement_memory_budget_mb = int(refinement_memory_budget_mb)
+        self._refinement_row_cap = refinement_row_cap
 
         self._models: Dict[Any, Any] = {}
         self._centers: Optional[np.ndarray] = None
@@ -249,6 +270,9 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
         self._class_center_id_arrays: Dict[Any, np.ndarray] = {}
         self._class_to_clusters: Dict[Any, set] = defaultdict(set)
         self._cluster_to_class: Optional[np.ndarray] = None
+        self._prototype_refinement_summary: dict[str, Any] = empty_refinement_summary(
+            self._prototype_refinement
+        )
 
     def _make_model(self, n_clusters: int) -> Any:
         """Create a concrete centroid estimator with the requested cluster count."""
@@ -313,6 +337,22 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
         )
         self._center_norms = np.einsum("ij,ij->i", self._centers, self._centers)
         self._cluster_to_class = np.asarray(cluster_classes, dtype=object)
+        self._prototype_refinement_summary = empty_refinement_summary(
+            self._prototype_refinement,
+            prototype_count=int(self._centers.shape[0]),
+        )
+        if (
+            self._prototype_refinement == "balanced_median"
+            and len(classes) >= 2
+            and self._centers.shape[0] > 0
+        ):
+            self._prototype_refinement_summary = apply_balanced_median_refinement(
+                self,
+                X,
+                Y,
+                memory_budget_mb=self._refinement_memory_budget_mb,
+                row_cap=self._refinement_row_cap,
+            )
 
     def partial_fit(self, X: np.ndarray, Y: np.ndarray, **kwargs: Any) -> None:
         """Raise because centroid backends in this adapter are offline-only."""
@@ -528,6 +568,11 @@ class _BaseCentroidManyToOne(_BaseManyToOneClusteringModel):
         """Return the number of global centroids."""
         return 0 if self._centers is None else int(self._centers.shape[0])
 
+    @property
+    def prototype_refinement_summary(self) -> dict[str, Any]:
+        """Return fitted diagnostics for the optional refinement pass."""
+        return self._prototype_refinement_summary
+
 
 class _KMeansManyToOne(_BaseCentroidManyToOne):
     """
@@ -539,11 +584,21 @@ class _KMeansManyToOne(_BaseCentroidManyToOne):
         self,
         k: Union[int, Dict[Any, int]] = 8,
         kmeans_kwargs: Optional[dict] = None,
+        prototype_refinement: bool = False,
+        refinement_memory_budget_mb: int = 256,
+        refinement_row_cap: Optional[int] = None,
     ) -> None:
         """Initialize a per-class scikit-learn KMeans backend."""
         if KMeans is None:
             raise ImportError("scikit-learn is required for model_type='KMeans'.")
-        super().__init__(k=k, model_kwargs=kmeans_kwargs, dtype=np.float32)
+        super().__init__(
+            k=k,
+            model_kwargs=kmeans_kwargs,
+            dtype=np.float32,
+            prototype_refinement=prototype_refinement,
+            refinement_memory_budget_mb=refinement_memory_budget_mb,
+            refinement_row_cap=refinement_row_cap,
+        )
 
     def _make_model(self, n_clusters: int) -> KMeans:
         """Create a scikit-learn KMeans estimator."""
@@ -563,11 +618,21 @@ class _MiniBatchKMeansManyToOne(_BaseCentroidManyToOne):
         self,
         k: Union[int, Dict[Any, int]] = 8,
         kmeans_kwargs: Optional[dict] = None,
+        prototype_refinement: bool = False,
+        refinement_memory_budget_mb: int = 256,
+        refinement_row_cap: Optional[int] = None,
     ) -> None:
         """Initialize a per-class scikit-learn MiniBatchKMeans backend."""
         if MiniBatchKMeans is None:
             raise ImportError("scikit-learn is required for model_type='MiniBatchKMeans'.")
-        super().__init__(k=k, model_kwargs=kmeans_kwargs, dtype=np.float32)
+        super().__init__(
+            k=k,
+            model_kwargs=kmeans_kwargs,
+            dtype=np.float32,
+            prototype_refinement=prototype_refinement,
+            refinement_memory_budget_mb=refinement_memory_budget_mb,
+            refinement_row_cap=refinement_row_cap,
+        )
 
 
     def _make_model(self, n_clusters: int) -> MiniBatchKMeans:
