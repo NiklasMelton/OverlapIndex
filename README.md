@@ -133,10 +133,20 @@ The Overlap Index can be used in several settings:
   require dense feature arrays.
 - Sparse feature matrices remain sparse during fitting, slicing, prediction,
   multi-label expansion, and overlap scoring. KMeans centroids and the bounded
-  prototype-distance score blocks are still dense.
+  prototype-distance score blocks are still dense. When balanced-median
+  refinement is enabled, only an eligible parent's local support block is
+  densified while its observation representatives are selected.
 - Offline scoring uses a backend-neutral scratch planner. The default
   `offline_memory_budget_mb=256` is a scratch-memory budget only; it does not
   cap the fitted model or retain a full sample-by-prototype score matrix.
+- KMeans and MiniBatchKMeans optionally support the deterministic one-pass
+  prototype refinement enabled by `prototype_refinement=True`. It is
+  single-label only and replaces eligible (support >= 2, zero outgoing
+  own-runner-up count) parents with balanced, observation-based median
+  representatives; the default `False` leaves fitted centers unchanged.
+  See the backend guides for the runtime/prototype-resolution trade-off and
+  fitted diagnostics. The fitted `prototype_refinement_` summary reports the
+  resolved mode as the strings `"none"` or `"balanced_median"`.
 - Normalize input features before fitting. Examples in this repository use `MinMaxScaler` for convenience.
 - ART backends complement-code inputs internally and therefore require features in the `[0, 1]` interval.
 - Offline backends (`KMeans`, `MiniBatchKMeans`, and `BallCover`) consume normalized features directly and do not apply complement coding.
@@ -566,6 +576,19 @@ compare historical COI values directly with scores from this calibration.
 - `offline_memory_budget_mb` *(positive int, default=256)*
   Scratch-memory budget for backend-neutral offline score blocks. This budget
   controls temporary tiles only; it does not limit fitted data or model size.
+
+- `prototype_refinement` *(bool, default=False)*
+  Optional deterministic one-pass refinement for `KMeans` and
+  `MiniBatchKMeans`. Set it to `True` for scalar single-label fits; it uses
+  the fit-time eligibility rule (support >= 2 and zero outgoing own-runner-up
+  count), projects each selected parent into balanced halves, and chooses an
+  actual observation nearest each coordinate-wise median. `False` preserves
+  the ordinary fitted centers and is accepted for every backend; enabling the
+  option on an unsupported backend raises an error. The option does not fit
+  child estimators or run gates/rescue logic. Sparse inputs remain accepted,
+  although a local support block may be densified. Inspect the fitted
+  `prototype_refinement_` summary (whose resolved mode is `"none"` or
+  `"balanced_median"`); `score_fixed` uses the resulting centers.
 
 - `multilabel_pair_mode` *("all" or "top_m")*
   Directional competitor selection strategy for multi-label offline scoring.

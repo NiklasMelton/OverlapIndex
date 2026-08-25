@@ -33,6 +33,10 @@ from overlapindex._universal_scorer import (
     compute_second_best_source_scores,
     iter_target_class_blocks,
 )
+from overlapindex._prototype_refinement import (
+    empty_refinement_summary,
+    refinement_method,
+)
 
 
 def _default_one() -> float:
@@ -437,6 +441,7 @@ class OverlapIndex(BaseEstimator):
         top_m: Optional[int] = None,
         exclude_classes: Optional[Any] = None,
         offline_memory_budget_mb: int = 256,
+        prototype_refinement: bool = False,
     ) -> None:
         """
         Initialize the overlap index and its clustering backend.
@@ -487,6 +492,12 @@ class OverlapIndex(BaseEstimator):
             prototypes so score blocks stay within this budget.  This
             parameter is appended after the historical positional arguments
             to preserve their calling convention.
+        prototype_refinement : bool, default=False
+            Whether to apply one-pass balanced observation-median refinement
+            after KMeans or MiniBatchKMeans fitting. ``True`` selects the
+            internal ``"balanced_median"`` method; ``False`` leaves fitted
+            prototypes unchanged. Multi-label targets are not supported when
+            refinement is enabled.
         """
         self.rho = rho
         self.r_hat = r_hat
@@ -502,7 +513,9 @@ class OverlapIndex(BaseEstimator):
         self.multilabel_pair_mode = multilabel_pair_mode
         self.top_m = top_m
         self.exclude_classes = exclude_classes
+        self.prototype_refinement = prototype_refinement
         self._validate_multilabel_params()
+        self._validate_prototype_refinement()
 
         # indices / bookkeeping
         self.sparse_adj = defaultdict(int)
@@ -524,6 +537,9 @@ class OverlapIndex(BaseEstimator):
         self._positive_rows_by_label_index_ = {}
         self._score_classes = ()
         self.index = 1.0
+        self.prototype_refinement_ = empty_refinement_summary(
+            refinement_method(self.prototype_refinement)
+        )
 
         self._model: _BaseManyToOneClusteringModel = self._build_model()
 
@@ -549,6 +565,24 @@ class OverlapIndex(BaseEstimator):
             "offline_memory_budget_mb",
         )
 
+    def _validate_prototype_refinement(self) -> None:
+        """Validate the public boolean refinement switch."""
+        # ``bool`` is deliberately strict here: accepting strings or integer
+        # sentinels would make sklearn cloning and parameter introspection
+        # ambiguous (and ``bool`` is a subclass of ``int`` in Python).
+        refinement_method(self.prototype_refinement)
+        if (
+            self.prototype_refinement
+            and (
+                not isinstance(self.model_type, str)
+                or self.model_type not in {"KMeans", "MiniBatchKMeans"}
+            )
+        ):
+            raise ValueError(
+                "prototype_refinement=True is supported only for "
+                "model_type='KMeans' or 'MiniBatchKMeans'."
+            )
+
     def _build_model(self) -> _BaseManyToOneClusteringModel:
         """Construct the backend adapter from the current estimator parameters."""
         if self.model_type in ["Fuzzy", "Hypersphere"]:
@@ -558,9 +592,21 @@ class OverlapIndex(BaseEstimator):
                 r_hat=self.r_hat,
             )
         if self.model_type == "KMeans":
-            return _KMeansManyToOne(k=self.kmeans_k, kmeans_kwargs=self.kmeans_kwargs)
+            return _KMeansManyToOne(
+                k=self.kmeans_k,
+                kmeans_kwargs=self.kmeans_kwargs,
+                prototype_refinement=self.prototype_refinement,
+                refinement_memory_budget_mb=self.offline_memory_budget_mb,
+                refinement_row_cap=self.offline_chunk_size,
+            )
         if self.model_type == "MiniBatchKMeans":
-            return _MiniBatchKMeansManyToOne(k=self.kmeans_k, kmeans_kwargs=self.kmeans_kwargs)
+            return _MiniBatchKMeansManyToOne(
+                k=self.kmeans_k,
+                kmeans_kwargs=self.kmeans_kwargs,
+                prototype_refinement=self.prototype_refinement,
+                refinement_memory_budget_mb=self.offline_memory_budget_mb,
+                refinement_row_cap=self.offline_chunk_size,
+            )
         if self.model_type == "BallCover":
             kwargs = self.ballcover_kwargs or {}
             return _BallCoverManyToOne(
@@ -572,8 +618,25 @@ class OverlapIndex(BaseEstimator):
 
     def set_params(self, **params: Any) -> "OverlapIndex":
         """Update estimator parameters and rebuild the backend adapter."""
+        # Validate the public switch before BaseEstimator mutates attributes so
+        # a rejected value cannot leave this estimator in a half-updated state.
+        if "prototype_refinement" in params:
+            refinement_method(params["prototype_refinement"])
+            candidate_refinement = params["prototype_refinement"]
+        else:
+            candidate_refinement = self.prototype_refinement
+        candidate_model_type = params.get("model_type", self.model_type)
+        if candidate_refinement and (
+            not isinstance(candidate_model_type, str)
+            or candidate_model_type not in {"KMeans", "MiniBatchKMeans"}
+        ):
+            raise ValueError(
+                "prototype_refinement=True is supported only for "
+                "model_type='KMeans' or 'MiniBatchKMeans'."
+            )
         super().set_params(**params)
         self._validate_multilabel_params()
+        self._validate_prototype_refinement()
         self._model = self._build_model()
         self._reset_indices()
         return self
@@ -711,6 +774,9 @@ class OverlapIndex(BaseEstimator):
         self._positive_rows_by_label_index_ = {}
         self._score_classes = ()
         self.index = 1.0
+        self.prototype_refinement_ = empty_refinement_summary(
+            refinement_method(self.prototype_refinement)
+        )
         if hasattr(self, "n_features_in_"):
             del self.n_features_in_
 
@@ -1067,6 +1133,13 @@ class OverlapIndex(BaseEstimator):
             raise ValueError("This OverlapIndex instance is not fit yet.")
 
         X_eval, Y_sets = self._validate_input_data(X, Y)
+        if self.prototype_refinement and any(
+            len(labels) > 1 for labels in Y_sets
+        ):
+            raise ValueError(
+                "prototype_refinement=True does not support "
+                "multi-label targets."
+            )
         self._check_feature_count(X_eval)
         if X_eval.shape[0] == 0:
             self._warn_empty_input()
@@ -1088,7 +1161,11 @@ class OverlapIndex(BaseEstimator):
             )
 
         feature_count = int(self.n_features_in_)
+        refinement_summary = self.prototype_refinement_
         self._reset_indices()
+        # ``score_fixed`` recomputes overlap diagnostics but must not discard
+        # the fit-time refinement decisions that describe the held prototypes.
+        self.prototype_refinement_ = refinement_summary
         self.n_features_in_ = feature_count
         self.rev_map = defaultdict(
             set,
@@ -2025,6 +2102,13 @@ class OverlapIndex(BaseEstimator):
             )
 
         X, Y_sets = self._validate_input_data(X, Y)
+        if self.prototype_refinement and any(
+            len(labels) > 1 for labels in Y_sets
+        ):
+            raise ValueError(
+                "prototype_refinement=True does not support "
+                "multi-label targets."
+            )
         if reset_state:
             self._reset_indices()
             self._model = self._build_model()
@@ -2065,6 +2149,13 @@ class OverlapIndex(BaseEstimator):
             )
         else:
             self._model.fit_offline(X_fit, Y_fit)
+        backend_summary = getattr(self._model, "prototype_refinement_summary", None)
+        if backend_summary is None:
+            backend_summary = empty_refinement_summary(
+                refinement_method(self.prototype_refinement),
+                prototype_count=int(self._model.n_clusters_total),
+            )
+        self.prototype_refinement_ = dict(backend_summary)
         self.n_features_in_ = int(X.shape[1])
         self.rev_map = defaultdict(set, {c: set(s) for c, s in self._model.class_to_clusters.items()})
         self._refresh_under_prototyped_labels()
