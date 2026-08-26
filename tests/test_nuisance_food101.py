@@ -170,7 +170,21 @@ def test_stratified_cap_is_deterministic_and_balanced() -> None:
     assert int(np.max(counts) - np.min(counts)) <= 1
 
 
-def test_repository_code_identity_ignores_generated_output(tmp_path) -> None:
+def test_repository_code_identity_ignores_generated_output(
+    tmp_path, monkeypatch,
+) -> None:
+    # This is a unit test of the declared-source hash, not authorization to
+    # execute the archived Food-101 experiment.  Keep the production branch
+    # guard intact while making the test independent of whichever later
+    # experiment branch runs the repository-wide suite.
+    git_output = food101._git_output
+
+    def archived_branch(*arguments: str) -> str:
+        if arguments == ("branch", "--show-current"):
+            return food101.EXPECTED_BRANCH
+        return git_output(*arguments)
+
+    monkeypatch.setattr(food101, "_git_output", archived_branch)
     before = food101._repository_provenance()["code_identity_sha256"]
     output = tmp_path / "results" / "food101"
     output.mkdir(parents=True)
