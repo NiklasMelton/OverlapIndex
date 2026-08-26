@@ -27,6 +27,56 @@ def _evidence() -> p.PriorSourceEvidence:
     return p.verify_prior_source_evidence()
 
 
+def test_historical_evaluator_dependencies_are_pinned_to_archived_git_blob() -> None:
+    current = p.verify_historical_evaluator_sources()
+    assert current == p.PRIOR_HISTORICAL_EVALUATOR_CURRENT_SOURCE_HASHES
+    assert (
+        p.PRIOR_HISTORICAL_EVALUATOR_ARCHIVE_SOURCE_HASHES["experiments/nuisance_conditioned_distance/analysis.py"]
+        == current["experiments/nuisance_conditioned_distance/analysis.py"]
+    )
+    assert p.PRIOR_HISTORICAL_EVALUATOR_COMMIT == "eb298a845e3c7ac4b482fa7344cbc9d097e7364a"
+    assert p.PRIOR_HISTORICAL_EVALUATOR_PATH == "experiments/nuisance_conditioned_distance/analysis.py"
+    assert (
+        p.PRIOR_HISTORICAL_EVALUATOR_WORKTREE_SOURCE_HASHES[p.PRIOR_HISTORICAL_EVALUATOR_PATH]
+        != current[p.PRIOR_HISTORICAL_EVALUATOR_PATH]
+    )
+
+    evidence = _evidence()
+    serialized = evidence.as_dict()
+    historical = serialized["historical_evaluator"]
+    assert historical["source_mode"] == p.PRIOR_HISTORICAL_EVALUATOR_SOURCE_MODE
+    assert historical["commit"] == p.PRIOR_HISTORICAL_EVALUATOR_COMMIT
+    assert historical["path"] == p.PRIOR_HISTORICAL_EVALUATOR_PATH
+    assert historical["archived_source_hashes"] == p.PRIOR_HISTORICAL_EVALUATOR_ARCHIVE_SOURCE_HASHES
+    assert historical["current_source_hashes"] == current
+    assert historical["worktree_source_hashes"] == p.PRIOR_HISTORICAL_EVALUATOR_WORKTREE_SOURCE_HASHES
+    assert historical["current_source_identity_sha256"] == p.historical_evaluator_source_identity_sha256(current)
+    assert all(path in serialized["implementation_source_hashes"] for path in current)
+
+
+def test_historical_evaluator_dependency_tamper_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    original_blob = p.subprocess.run
+
+    def tampered_run(*args: object, **kwargs: object) -> object:
+        result = original_blob(*args, **kwargs)
+        if isinstance(result, p.subprocess.CompletedProcess) and result.args[:3] == [
+            "git",
+            "cat-file",
+            "blob",
+        ]:
+            return p.subprocess.CompletedProcess(
+                result.args,
+                result.returncode,
+                result.stdout + b"\n# tampered historical evaluator\n",
+                result.stderr,
+            )
+        return result
+
+    monkeypatch.setattr(p.subprocess, "run", tampered_run)
+    with pytest.raises(p.PriorEvidenceError, match="historical evaluator dependency"):
+        p.verify_historical_evaluator_sources()
+
+
 def test_source_evidence_hash_failure_is_rejected_before_old_artifact_read(tmp_path: Path) -> None:
     payload = json.loads(p.CURRENT_PROTOCOL_PATH.read_text(encoding="utf-8"))
     for entry in payload["source_evidence"]:
@@ -293,6 +343,11 @@ def test_production_historical_gate_surface_maps_exact_prior_panel_without_old_o
 
     monkeypatch.setattr(old_analysis, "build_analysis_summary", fake_summary)
     monkeypatch.setattr(old_analysis, "evaluate_historical_gates", fake_gates)
+    monkeypatch.setattr(
+        p,
+        "_load_pinned_historical_analysis",
+        lambda **_kwargs: old_analysis,
+    )
     result = p.evaluate_prior_historical_gates(
         rows,
         locked_candidate=locked,

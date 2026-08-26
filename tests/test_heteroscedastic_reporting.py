@@ -8,9 +8,12 @@ from experiments.heteroscedastic_distance_conditioning.reporting import (
     conditioning_rows,
     decision_rows,
     geometry_chain_rows,
+    negative_control_rows,
+    neighbor_regret_rows,
     render_report,
     resource_rows,
     selector_rows,
+    severity_curve_rows,
     write_reports,
 )
 
@@ -19,8 +22,8 @@ def _summary() -> dict:
     return {
         "stage": "development",
         "candidates": {
-            "B": {"heads": {"linear": {"pooled": {"estimate": 0.02}}}},
-            "P50-SW": {"heads": {"linear": {"pooled": {"estimate": 0.01}}}},
+            "B": {"nuisance_linear_regret_vs_probe": {"estimate": 0.02}, "heads": {"linear": {"pooled": {"estimate": 0.02}}}},
+            "P50-SW": {"nuisance_linear_regret_vs_probe": {"estimate": 0.01}, "heads": {"linear": {"pooled": {"estimate": 0.01}}}},
         },
         "selection": {"candidates": {
             "B": {"heads": {"linear": {
@@ -35,9 +38,20 @@ def _summary() -> dict:
             }},
         }}},
         "primary_claims": {"q1": {"estimate": 0.1, "lower": 0.05, "upper": 0.2, "status": "defined", "direction": "greater_than_zero"}},
+        "negative_controls": {
+            "q2": {"estimate": -0.01, "lower": -0.02, "upper": 0.001, "status": "pass"},
+            "q3": {"estimate": 0.0, "lower": -0.01, "upper": 0.005, "status": "pass"},
+            "q4": {"estimate": -0.005, "lower": -0.01, "upper": 0.0, "status": "pass"},
+        },
         "genuine_overlap": {"pooled": {
             "B": {"auroc": {"estimate": 0.9}, "auprc": {"estimate": 0.8}, "fpr": {"estimate": 0.1}, "fnr": {"estimate": 0.1}, "brier": {"estimate": 0.1}, "ece": {"estimate": 0.1}},
-            "P50-SW": {"auroc": {"estimate": 0.91}, "auprc": {"estimate": 0.81}, "fpr": {"estimate": 0.1}, "fnr": {"estimate": 0.1}, "brier": {"estimate": 0.1}, "ece": {"estimate": 0.1}},
+            "P50-SW": {
+                "auroc": {"estimate": 0.91}, "auprc": {"estimate": 0.81}, "fpr": {"estimate": 0.1}, "fnr": {"estimate": 0.1}, "brier": {"estimate": 0.1}, "ece": {"estimate": 0.1},
+                "severity_curves": {
+                    "homoscedastic": {"severity_values": [0, 1, 2], "error": [{"estimate": 0.1}, {"estimate": 0.2}, {"estimate": 0.3}]},
+                    "heteroscedastic": {"severity_values": [0, 1, 2], "error": [{"estimate": 0.1}, {"estimate": 0.25}, {"estimate": 0.4}]},
+                },
+            },
         }},
         "family_drift": {"P50-SW": {"H2": {"estimate": 0.0, "upper": 0.01, "gate": {"status": "pass"}}}},
         "stable_shift_gates": {"P50-SW": {"balanced": {"X-H2:auroc": {"estimate": -0.01, "upper": 0.0, "gate": {"status": "pass"}}}}},
@@ -83,7 +97,10 @@ def test_report_scope_wording_and_determinism() -> None:
         "Food-101 is not authorized",
         "Selector regret and rank AUC",
         "Genuine-overlap detection and calibration",
+        "Negative controls",
         "Family drift and stable-shift gates",
+        "Nuisance-severity curves",
+        "neighbor_score_movement.svg",
         "Runtime and memory",
         "Algorithmic candidate eligibility and mechanism claims are reported separately",
         "inconclusive",
@@ -97,12 +114,17 @@ def test_reports_emit_stable_tables_and_all_required_plot_surfaces(tmp_path: Pat
     write_reports(tmp_path, summary, decision)
     expected = {
         "report.md", "decision_table.csv", "decision_table.json", "geometry_chain.svg", "claims.svg",
-        "selector.svg", "overlap.svg", "family_shift.svg", "refinement_conditioning.svg", "runtime_memory.svg", "candidate_decisions.svg",
+        "selector.svg", "overlap.svg", "family_shift.svg", "nuisance_severity.svg", "neighbor_score_movement.svg", "neighbor_regret.svg",
+        "refinement_conditioning.svg", "runtime_memory.svg", "candidate_decisions.svg",
     }
     assert {path.name for path in tmp_path.iterdir()} == expected
     assert "causal" in (tmp_path / "report.md").read_text(encoding="utf-8")
     assert "Runtime and memory" in (tmp_path / "runtime_memory.svg").read_text(encoding="utf-8")
     assert "<polyline" not in (tmp_path / "runtime_memory.svg").read_text(encoding="utf-8")
+    assert "<circle" in (tmp_path / "nuisance_severity.svg").read_text(encoding="utf-8")
+    assert "shift balanced X-H2:auroc" in (tmp_path / "family_shift.svg").read_text(encoding="utf-8")
+    assert "Neighbor-to-score movement" in (tmp_path / "neighbor_score_movement.svg").read_text(encoding="utf-8")
+    assert "Neighbor-to-linear-selector regret" in (tmp_path / "neighbor_regret.svg").read_text(encoding="utf-8")
     first = (tmp_path / "report.md").read_bytes()
     write_reports(tmp_path, summary, decision)
     assert first == (tmp_path / "report.md").read_bytes()
@@ -122,6 +144,30 @@ def test_report_consumes_canonical_selector_and_descriptive_surfaces() -> None:
     p50_chain = next(row for row in chain if row["candidate"] == "P50-SW")
     assert p50_chain["score_delta_vs_B"] == 0.05
     assert p50_chain["neighbor_score_movement_spearman"] == 0.4
+    regret_rows = neighbor_regret_rows(summary)
+    assert {row["candidate"] for row in regret_rows} == {"B", "P50-SW"}
+    assert next(row for row in regret_rows if row["candidate"] == "P50-SW")["linear_selector_regret"] == 0.01
+    severity = severity_curve_rows(summary)
+    assert len(severity) == 6
+    assert [row["estimate"] for row in severity[:3]] == [0.1, 0.2, 0.3]
+
+
+def test_report_exposes_canonical_negative_control_statuses() -> None:
+    summary = _summary()
+    rows = negative_control_rows(summary)
+    assert [row["control"] for row in rows] == ["q2", "q3", "q4"]
+    assert all(row["status"] == "pass" for row in rows)
+    decision_rows_with_controls = negative_control_rows(summary, {
+        "stage": "confirmation",
+        "mechanism": {
+            "negative_controls": {
+                "q2": {"status": "inconclusive", "upper": None},
+                "q3": {"status": "fail", "upper": 0.02},
+                "q4": {"status": "pass", "upper": 0.001},
+            },
+        },
+    })
+    assert [row["status"] for row in decision_rows_with_controls] == ["inconclusive", "fail", "pass"]
 
 
 def test_confirmation_failure_does_not_mark_locked_candidate_selected() -> None:

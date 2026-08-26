@@ -205,6 +205,39 @@ def overlap_rows(summary: Mapping[str, Any]) -> List[Dict[str, Any]]:
     return result
 
 
+def negative_control_rows(
+    summary: Mapping[str, Any], decision: Optional[Mapping[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Return the canonical Q2/Q3/Q4 negative-control statuses.
+
+    Confirmation stores the evaluated controls under its mechanism surface;
+    before confirmation the summary carries the same canonical identifiers.
+    Read the decision surface when present so the report shows the exact
+    status used by mechanism confirmation rather than a stale point summary.
+    """
+
+    source: Any = None
+    if isinstance(decision, Mapping):
+        mechanism = decision.get("mechanism")
+        if isinstance(mechanism, Mapping):
+            source = mechanism.get("negative_controls")
+    if not isinstance(source, Mapping):
+        source = _lookup(summary, "negative_controls")
+    if not isinstance(source, Mapping):
+        return []
+    rows: List[Dict[str, Any]] = []
+    for control in ("q2", "q3", "q4"):
+        value = source.get(control)
+        rows.append({
+            "control": control,
+            "status": _status(value),
+            "estimate": _estimate(_lookup(value, "estimate")) if isinstance(value, Mapping) else _estimate(value),
+            "upper": _estimate(_lookup(value, "upper")) if isinstance(value, Mapping) else None,
+            "threshold": _estimate(_lookup(value, "threshold")) if isinstance(value, Mapping) else 0.01,
+        })
+    return rows
+
+
 def family_rows(summary: Mapping[str, Any]) -> List[Dict[str, Any]]:
     family = _lookup(summary, "family_drift", "families")
     rows: List[Dict[str, Any]] = []
@@ -319,6 +352,70 @@ def geometry_chain_rows(summary: Mapping[str, Any]) -> List[Dict[str, Any]]:
     return result
 
 
+def severity_curve_rows(summary: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """Flatten the canonical pooled nuisance-severity curves for reporting."""
+
+    pooled = _lookup(summary, "genuine_overlap")
+    if not isinstance(pooled, Mapping):
+        return []
+    if isinstance(pooled.get("pooled"), Mapping):
+        pooled = pooled["pooled"]
+    elif isinstance(pooled.get("candidates"), Mapping):
+        pooled = pooled["candidates"]
+    rows: List[Dict[str, Any]] = []
+    for candidate in sorted(
+        pooled,
+        key=lambda value: (
+            CANDIDATE_ORDER.index(str(value)) if str(value) in CANDIDATE_ORDER else len(CANDIDATE_ORDER),
+            str(value),
+        ),
+    ):
+        value = pooled[candidate]
+        curves = value.get("severity_curves") if isinstance(value, Mapping) else None
+        if not isinstance(curves, Mapping):
+            continue
+        for curve_name in ("homoscedastic", "heteroscedastic"):
+            curve = curves.get(curve_name)
+            if not isinstance(curve, Mapping):
+                continue
+            errors = curve.get("error")
+            severities = curve.get("severity_values", list(range(len(errors))) if isinstance(errors, Sequence) else [])
+            if not isinstance(errors, Sequence) or isinstance(errors, (str, bytes)):
+                continue
+            if not isinstance(severities, Sequence) or isinstance(severities, (str, bytes)):
+                continue
+            for severity, error in zip(severities, errors):
+                rows.append({
+                    "candidate": str(candidate), "curve": curve_name,
+                    "severity": _number(severity), "estimate": _estimate(error),
+                    "lower": _lookup(error, "lower") if isinstance(error, Mapping) else None,
+                    "upper": _lookup(error, "upper") if isinstance(error, Mapping) else None,
+                    "status": _status(error),
+                })
+    return rows
+
+
+def neighbor_regret_rows(summary: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    """Join canonical neighbor impurity and linear-selector regret descriptively."""
+
+    chain = geometry_chain_rows(summary)
+    candidates = _lookup(summary, "candidates")
+    if not isinstance(candidates, Mapping):
+        return []
+    rows: List[Dict[str, Any]] = []
+    for row in chain:
+        candidate = str(row.get("candidate"))
+        metrics = candidates.get(candidate)
+        if not isinstance(metrics, Mapping):
+            continue
+        regret = _estimate(metrics.get("nuisance_linear_regret_vs_probe"))
+        neighbor = _estimate(row.get("neighbor_impurity"))
+        if neighbor is None or regret is None:
+            continue
+        rows.append({"candidate": candidate, "neighbor_impurity": neighbor, "linear_selector_regret": regret})
+    return rows
+
+
 def resource_rows(summary: Mapping[str, Any]) -> List[Dict[str, Any]]:
     resources = _lookup(summary, "resource_gates", "resources", "runtime")
     result: List[Dict[str, Any]] = []
@@ -414,6 +511,50 @@ def _svg(title: str, series: Mapping[str, Sequence[float]], *, y_label: str = "v
     return "".join(parts)
 
 
+def _scatter_svg(
+    title: str, points: Sequence[Mapping[str, Any]], *, x_key: str, y_key: str,
+    x_label: str, y_label: str,
+) -> str:
+    """Render a deterministic descriptive scatter without connecting categories."""
+
+    width, height = 760, 400
+    finite = [
+        (str(point.get("candidate", "")), _number(point.get(x_key)), _number(point.get(y_key)))
+        for point in points
+    ]
+    finite = [(name, x, y) for name, x, y in finite if x is not None and y is not None]
+    if finite:
+        x_values = [float(item[1]) for item in finite]
+        y_values = [float(item[2]) for item in finite]
+        x_low, x_high = min(x_values), max(x_values)
+        y_low, y_high = min(y_values), max(y_values)
+    else:
+        x_low, x_high, y_low, y_high = 0.0, 1.0, 0.0, 1.0
+    if x_low == x_high:
+        x_low -= 0.5; x_high += 0.5
+    if y_low == y_high:
+        y_low -= 0.5; y_high += 0.5
+    colors = ("#3366cc", "#dc3912", "#ff9900", "#109618", "#990099", "#0099c6", "#dd4477")
+    parts = [
+        '<svg xmlns="http://www.w3.org/2000/svg" width="760" height="400" viewBox="0 0 760 400">',
+        f'<title>{html.escape(title)}</title>',
+        '<rect width="100%" height="100%" fill="white"/>',
+        f'<text x="20" y="24" font-family="sans-serif" font-size="16">{html.escape(title)}</text>',
+        f'<text x="390" y="388" text-anchor="middle" font-family="sans-serif" font-size="12">{html.escape(x_label)}</text>',
+        f'<text x="12" y="205" transform="rotate(-90 12 205)" text-anchor="middle" font-family="sans-serif" font-size="12">{html.escape(y_label)}</text>',
+        '<line x1="70" y1="45" x2="70" y2="350" stroke="#555"/><line x1="70" y1="350" x2="730" y2="350" stroke="#555"/>',
+    ]
+    order = {name: index for index, name in enumerate(CANDIDATE_ORDER)}
+    for offset, (name, x_value, y_value) in enumerate(sorted(finite, key=lambda item: (order.get(item[0], len(order)), item[0]))):
+        x = 70.0 + 660.0 * ((float(x_value) - x_low) / (x_high - x_low))
+        y = 350.0 - 280.0 * ((float(y_value) - y_low) / (y_high - y_low))
+        color = colors[offset % len(colors)]
+        parts.append(f'<circle cx="{x:.3f}" cy="{y:.3f}" r="4.5" fill="{color}"/>')
+        parts.append(f'<text x="{x + 6:.3f}" y="{y - 6:.3f}" font-family="sans-serif" font-size="11" fill="{color}">{html.escape(name)}</text>')
+    parts.append("</svg>")
+    return "".join(parts)
+
+
 def render_report(summary: Mapping[str, Any], decision: Optional[Mapping[str, Any]] = None) -> str:
     decision = decision or {}
     stage = summary.get("stage", "unknown")
@@ -442,6 +583,16 @@ def render_report(summary: Mapping[str, Any], decision: Optional[Mapping[str, An
         lines.append(_table(("Claim", "Estimate", "Lower", "Upper", "Direction", "Status"), [[row["claim"], _fmt(row["estimate"]), _fmt(row["lower"]), _fmt(row["upper"]), _fmt(row["direction"]), _fmt(row["status"])] for row in claims]))
     else:
         lines.append("No outcome claims are defined for this artifact.")
+    lines.extend(["", "## Negative controls", ""])
+    controls = negative_control_rows(summary, decision)
+    lines.append(
+        _table(
+            ("Control", "Estimate", "Upper 95%", "Limit", "Status"),
+            [[row["control"], _fmt(row["estimate"]), _fmt(row["upper"]), _fmt(row["threshold"]), row["status"]] for row in controls],
+        )
+        if controls
+        else "No Q2/Q3/Q4 negative-control surface is available."
+    )
     lines.extend(["", "## Selector regret and rank AUC", ""])
     selector = selector_rows(summary)
     lines.append(_table(("Candidate", "Head", "Regret", "Rank AUC", "Exact best", "Within 1 point", "Status"), [[row["candidate"], row["head"], _fmt(row["regret"]), _fmt(row["rank_auc"]), _fmt(row["exact_best"]), _fmt(row["within_one_point"]), row["status"]] for row in selector]) if selector else "No complete selector panels are available.")
@@ -452,12 +603,23 @@ def render_report(summary: Mapping[str, Any], decision: Optional[Mapping[str, An
     lines.append(_table(("Candidate", "Family", "Estimate", "Upper", "Status"), [[row["candidate"], row["family"], _fmt(row["estimate"]), _fmt(row["upper"]), row["status"]] for row in families]) if families else "No complete family blocks are available.")
     if shifts:
         lines.extend(["", _table(("Candidate", "Balance", "Contrast", "Estimate", "Upper", "Status"), [[row["candidate"], row["balance"], row["contrast"], _fmt(row["estimate"]), _fmt(row["upper"]), row["status"]] for row in shifts])])
+    severity = severity_curve_rows(summary)
+    lines.extend(["", "## Nuisance-severity curves", ""])
+    lines.append(
+        _table(
+            ("Candidate", "Curve", "Severity", "Estimate", "Lower", "Upper", "Status"),
+            [[row["candidate"], row["curve"], _fmt(row["severity"]), _fmt(row["estimate"]), _fmt(row["lower"]), _fmt(row["upper"]), row["status"]] for row in severity],
+        )
+        if severity
+        else "No complete nuisance-severity curves are available."
+    )
     lines.extend(["", "## Conditioning and refinement diagnostics", ""])
     conditioning = conditioning_rows(summary)
     lines.append(_table(("Candidate", "Mode", "Condition before", "Condition after", "Prototype activity", "Regularized eigenvalues", "Cap/floor active"), [[row["candidate"], _fmt(row.get("mode")), _fmt(row.get("condition_before")), _fmt(row.get("condition_number")), _fmt(row.get("prototype_activity")), _fmt(row.get("regularized_eigenvalue_count")), _fmt(row.get("cap_or_floor_active"))] for row in conditioning]) if conditioning else "No conditioning diagnostics are available.")
     chain = geometry_chain_rows(summary)
     lines.extend(["", "## Geometry-to-score concordance (descriptive)", ""])
     lines.append(_table(("Candidate", "Pair-distance Spearman", "Neighbor impurity", "Oracle Jaccard", "Prototype purity", "Owner agreement", "Score", "Score Δ vs B", "B−A refinement", "Neighbor/link ρ", "Prototype/link ρ"), [[row["candidate"], _fmt(row.get("pair_distance_spearman")), _fmt(row.get("neighbor_impurity")), _fmt(row.get("oracle_neighbor_jaccard")), _fmt(row.get("prototype_purity")), _fmt(row.get("owner_agreement")), _fmt(row.get("score")), _fmt(row.get("score_delta_vs_B")), _fmt(row.get("refinement_B_minus_A")), _fmt(row.get("neighbor_score_movement_spearman")), _fmt(row.get("prototype_score_movement_spearman"))] for row in chain]) if chain else "No geometry/prototype concordance rows are available.")
+    lines.extend(["", "Descriptive, non-causal diagnostic plots are written to `neighbor_regret.svg` (neighbor impurity versus linear-selector regret), `neighbor_score_movement.svg` (score movement), and `nuisance_severity.svg` (severity curves)."])
     lines.extend(["", "## Runtime and memory", ""])
     resources = resource_rows(summary)
     lines.append(_table(("Candidate", "Median total", "P95 total", "Median score_fixed", "Median memory", "P95 memory", "Individual memory", "Status"), [[row["candidate"], _fmt(row["median_total"]), _fmt(row["p95_total"]), _fmt(row["median_score_fixed"]), _fmt(row["median_peak_memory"]), _fmt(row["p95_peak_memory"]), _fmt(row["individual_peak_memory"]), row["status"]] for row in resources]) if resources else "No complete resource surface is available.")
@@ -489,12 +651,47 @@ def write_reports(output_path: Path | str, summary: Mapping[str, Any], decision:
     _atomic_write_text(destination / "claims.svg", _svg("Primary claims", {row["candidate"]: [value for value in (row["neighbor_impurity"], row["prototype_purity"], row["score"], row.get("score_delta_vs_B"), row.get("refinement_B_minus_A")) if _number(value) is not None] for row in chain}))
     _atomic_write_text(destination / "selector.svg", _svg("Selector regret and rank AUC", {f"{row['candidate']} {row['head']}": [value for value in (row["regret"], row["rank_auc"]) if _number(value) is not None] for row in selector}))
     _atomic_write_text(destination / "overlap.svg", _svg("Genuine-overlap detection", {str(row["candidate"]): [row[field] for field in ("auroc", "auprc", "fpr", "fnr", "brier") if _number(row.get(field)) is not None] for row in overlap_rows(summary)}))
-    _atomic_write_text(destination / "family_shift.svg", _svg("Family drift and stable shift", {f"{row['candidate']} {row['family']}": [value for value in (row["estimate"], row["upper"]) if _number(value) is not None] for row in family_rows(summary)}))
+    families = family_rows(summary)
+    shifts = shift_rows(summary)
+    family_series = {
+        f"{row['candidate']} family {row['family']}": [value for value in (row["estimate"], row["upper"]) if _number(value) is not None]
+        for row in families
+    }
+    family_series.update({
+        f"{row['candidate']} shift {row['balance']} {row['contrast']}": [value for value in (row["estimate"], row["upper"]) if _number(value) is not None]
+        for row in shifts
+    })
+    _atomic_write_text(destination / "family_shift.svg", _svg("Family drift and stable shift gates", family_series))
+    severity = severity_curve_rows(summary)
+    _atomic_write_text(destination / "nuisance_severity.svg", _svg(
+        "Nuisance-severity curves", {
+            f"{row['candidate']} {row['curve']}": [
+                item["estimate"] for item in severity
+                if item["candidate"] == row["candidate"] and item["curve"] == row["curve"] and _number(item.get("estimate")) is not None
+            ]
+            for row in severity
+        }, y_label="absolute evidence error",
+    ))
     _atomic_write_text(destination / "refinement_conditioning.svg", _svg("Refinement and conditioning", {str(row["candidate"]): [value for value in (row["condition_number"], row["prototype_activity"]) if _number(value) is not None] for row in conditioning_rows(summary)}))
     _atomic_write_text(destination / "runtime_memory.svg", _svg("Runtime and memory", {str(row["candidate"]): [value for value in (row["median_total"], row["median_peak_memory"]) if _number(value) is not None] for row in resource_rows(summary)}))
     _atomic_write_text(destination / "candidate_decisions.svg", _svg("Candidate decisions", {row["candidate"]: [1.0 if row["selected"] else 0.0] for row in decision_rows(summary, decision)}))
+    chain_points = [
+        row for row in chain
+        if _number(row.get("neighbor_impurity")) is not None and _number(row.get("score_delta_vs_B")) is not None
+    ]
+    _atomic_write_text(destination / "neighbor_score_movement.svg", _scatter_svg(
+        "Neighbor-to-score movement (descriptive; non-causal)", chain_points,
+        x_key="neighbor_impurity", y_key="score_delta_vs_B",
+        x_label="cross-class neighbor impurity", y_label="score movement vs B",
+    ))
+    regret_points = neighbor_regret_rows(summary)
+    _atomic_write_text(destination / "neighbor_regret.svg", _scatter_svg(
+        "Neighbor-to-linear-selector regret (descriptive; non-causal)", regret_points,
+        x_key="neighbor_impurity", y_key="linear_selector_regret",
+        x_label="cross-class neighbor impurity", y_label="linear-selector regret",
+    ))
 
 
 __all__ = [
-    "claim_rows", "conditioning_rows", "decision_rows", "family_rows", "geometry_chain_rows", "geometry_rows", "overlap_rows", "render_report", "resource_rows", "runtime_rows", "selector_rows", "shift_rows", "write_decision_table", "write_reports",
+    "claim_rows", "conditioning_rows", "decision_rows", "family_rows", "geometry_chain_rows", "geometry_rows", "negative_control_rows", "neighbor_regret_rows", "overlap_rows", "render_report", "resource_rows", "runtime_rows", "selector_rows", "severity_curve_rows", "shift_rows", "write_decision_table", "write_reports",
 ]

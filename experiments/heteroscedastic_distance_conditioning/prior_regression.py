@@ -36,8 +36,10 @@ import json
 import math
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import time
+import types
 from typing import Any, Callable, Iterable, Mapping, MutableMapping, Optional, Sequence
 
 import numpy as np
@@ -68,14 +70,47 @@ PRIOR_EVALUATION_SPLIT = "evaluation"
 PRIOR_BACKEND = "MiniBatchKMeans"
 PRIOR_SCHEDULE_SEED = 2_026_08_12
 
-# Relevant old source identities.  The old analysis/reporting files are not
-# needed to regenerate a split and are intentionally not treated as a recipe
-# dependency here.  The three files below are exactly the generator, adapter,
-# and runner portions used to define the prior screen.
+# Relevant old source identities.  The three files below are exactly the
+# generator, adapter, and runner portions used to define the prior screen.
+# The historical evaluator is pinned separately to its immutable Git blob
+# below because its worktree path is not the frozen analysis implementation.
 PRIOR_IMPLEMENTATION_SOURCE_HASHES = {
     "experiments/nuisance_conditioned_distance/fixtures.py": "c27a1b6b5b5454edfd62f5b57b17683699503d2e78f0944538c0167b6ac3f49e",
     "experiments/nuisance_conditioned_distance/conditioning_adapter.py": "b985c1696ef31cb62f85d6152f2ee5f4e7c9362d86569eb63cf2d17b151467b7",
     "experiments/nuisance_conditioned_distance/runner.py": "4f4e620e048035d871dbba922ab48f6f69e425848a29e964837edb5dd47876e8",
+}
+
+# The archived screen manifest recorded the source implementing its historical
+# gate formulas.  Use the exact immutable Git blob, rather than the current
+# worktree file: the latter has a different SHA and must never be silently
+# substituted for the frozen evaluator.  The old analysis module imports only
+# stdlib/NumPy at module load; its optional reporting import is confined to the
+# CLI and is not executed by this stage's pure gate surface.
+PRIOR_HISTORICAL_EVALUATOR_COMMIT = "eb298a845e3c7ac4b482fa7344cbc9d097e7364a"
+PRIOR_HISTORICAL_EVALUATOR_PATH = "experiments/nuisance_conditioned_distance/analysis.py"
+PRIOR_HISTORICAL_EVALUATOR_ARCHIVE_SOURCE_HASHES = {
+    PRIOR_HISTORICAL_EVALUATOR_PATH: "cb4a943a572c1ca9ab493a1d3c13bf1c46b96a8e3bcf889dd97f2592bf3d31c7",
+}
+# This is an exact alias for the source bytes actually executed by the prior
+# regression.  Keep the name for callers that previously consumed the
+# dependency map; unlike the removed current-worktree map, it cannot drift.
+PRIOR_HISTORICAL_EVALUATOR_CURRENT_SOURCE_HASHES = dict(
+    PRIOR_HISTORICAL_EVALUATOR_ARCHIVE_SOURCE_HASHES
+)
+# The current worktree hash is provenance-only.  It documents why loading the
+# archived blob is necessary, but it is never accepted as the evaluator hash.
+PRIOR_HISTORICAL_EVALUATOR_WORKTREE_SOURCE_HASHES = {
+    PRIOR_HISTORICAL_EVALUATOR_PATH: "9a816620fa11bc896035905e7d2df8acf8e2eef36967095da747d15826fd097f",
+}
+PRIOR_HISTORICAL_EVALUATOR_SOURCE_MODE = "archived_git_blob"
+
+# Keep the established source map as the single verification input, but make
+# the evaluator dependency hashes first-class members of it.  The old
+# generator/runner hashes above happen to equal the archived manifest values;
+# the evaluator hash is obtained from the pinned Git blob.
+PRIOR_IMPLEMENTATION_SOURCE_HASHES = {
+    **PRIOR_IMPLEMENTATION_SOURCE_HASHES,
+    **PRIOR_HISTORICAL_EVALUATOR_CURRENT_SOURCE_HASHES,
 }
 
 PROMOTABLE_CANDIDATES = (
@@ -138,6 +173,11 @@ class PriorSourceEvidence:
     implementation_source_hashes: Mapping[str, str]
 
     def as_dict(self) -> dict[str, Any]:
+        historical_current = {
+            key: value
+            for key, value in self.implementation_source_hashes.items()
+            if key in PRIOR_HISTORICAL_EVALUATOR_CURRENT_SOURCE_HASHES
+        }
         return {
             "current_protocol_sha256": self.current_protocol_sha256,
             "prior_raw_results_sha256": self.prior_raw_results_sha256,
@@ -146,6 +186,22 @@ class PriorSourceEvidence:
             "prior_report_sha256": self.prior_report_sha256,
             "paths": dict(self.paths),
             "implementation_source_hashes": dict(self.implementation_source_hashes),
+            # The archived report's analysis hash and the bytes actually
+            # executed by this stage are deliberately separate fields.  This
+            # prevents a current dependency from being mistaken for the
+            # historical evaluator merely because both are called
+            # ``analysis.py``.
+            "historical_evaluator": {
+                "source_mode": PRIOR_HISTORICAL_EVALUATOR_SOURCE_MODE,
+                "commit": PRIOR_HISTORICAL_EVALUATOR_COMMIT,
+                "path": PRIOR_HISTORICAL_EVALUATOR_PATH,
+                "archived_source_hashes": dict(PRIOR_HISTORICAL_EVALUATOR_ARCHIVE_SOURCE_HASHES),
+                "current_source_hashes": historical_current,
+                "worktree_source_hashes": dict(PRIOR_HISTORICAL_EVALUATOR_WORKTREE_SOURCE_HASHES),
+                "current_source_identity_sha256": historical_evaluator_source_identity_sha256(
+                    historical_current
+                ),
+            },
         }
 
 
@@ -363,6 +419,116 @@ def _verify_one(path: Path, expected: str, label: str) -> str:
     return actual
 
 
+def historical_evaluator_source_identity_sha256(
+    source_hashes: Mapping[str, str],
+) -> str:
+    """Hash the exact current source bytes used by the historical gate path.
+
+    This is intentionally distinct from the follow-up package code identity:
+    the latter covers the new runner, while this identity covers the pinned
+    old analysis dependency.  The commit/path are part of the identity so a
+    different Git object with coincidentally equal source text cannot silently
+    replace the declared evaluator.
+    """
+
+    return sha256_bytes(
+        canonical_json(
+            {
+                "source_mode": PRIOR_HISTORICAL_EVALUATOR_SOURCE_MODE,
+                "commit": PRIOR_HISTORICAL_EVALUATOR_COMMIT,
+                "path": PRIOR_HISTORICAL_EVALUATOR_PATH,
+                "archived_source_hashes": PRIOR_HISTORICAL_EVALUATOR_ARCHIVE_SOURCE_HASHES,
+                "current_source_hashes": dict(source_hashes),
+            }
+        ).encode("utf-8")
+    )
+
+
+def verify_historical_evaluator_sources(
+    *,
+    root: os.PathLike[str] | str = ROOT,
+) -> dict[str, str]:
+    """Verify the immutable source imported by the historical gate surface.
+
+    The evaluator is loaded from a Git commit blob, not from the mutable
+    worktree path.  The expected blob SHA is fixed to the archived manifest's
+    analysis source hash, and the commit/path are fixed as well.  A missing Git
+    object, a changed blob, or a different repository fails closed.
+    """
+
+    root_path = Path(root).resolve()
+    try:
+        process = subprocess.run(
+            [
+                "git",
+                "cat-file",
+                "blob",
+                f"{PRIOR_HISTORICAL_EVALUATOR_COMMIT}:{PRIOR_HISTORICAL_EVALUATOR_PATH}",
+            ],
+            cwd=str(root_path),
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PriorEvidenceError(
+            "pinned historical evaluator Git blob is unavailable"
+        ) from exc
+    actual = sha256_bytes(process.stdout)
+    expected = PRIOR_HISTORICAL_EVALUATOR_ARCHIVE_SOURCE_HASHES[PRIOR_HISTORICAL_EVALUATOR_PATH]
+    if actual != expected:
+        raise PriorEvidenceError(
+            "historical evaluator dependency blob hash mismatch: "
+            f"expected {expected}, got {actual}"
+        )
+    return {PRIOR_HISTORICAL_EVALUATOR_PATH: actual}
+
+
+def _load_pinned_historical_analysis(*, root: os.PathLike[str] | str = ROOT) -> types.ModuleType:
+    """Load the verified historical analysis source without importing current bytes."""
+
+    root_path = Path(root).resolve()
+    try:
+        process = subprocess.run(
+            [
+                "git",
+                "cat-file",
+                "blob",
+                f"{PRIOR_HISTORICAL_EVALUATOR_COMMIT}:{PRIOR_HISTORICAL_EVALUATOR_PATH}",
+            ],
+            cwd=str(root_path),
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise PriorEvidenceError(
+            "pinned historical evaluator Git blob is unavailable"
+        ) from exc
+    source = process.stdout
+    expected = PRIOR_HISTORICAL_EVALUATOR_ARCHIVE_SOURCE_HASHES[PRIOR_HISTORICAL_EVALUATOR_PATH]
+    actual = sha256_bytes(source)
+    if actual != expected:
+        raise PriorEvidenceError(
+            "historical evaluator dependency blob hash mismatch: "
+            f"expected {expected}, got {actual}"
+        )
+    try:
+        text_source = source.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise PriorEvidenceError("pinned historical evaluator is not UTF-8") from exc
+    module = types.ModuleType("_pinned_nuisance_conditioned_distance_analysis")
+    module.__file__ = (
+        f"git:{PRIOR_HISTORICAL_EVALUATOR_COMMIT}:{PRIOR_HISTORICAL_EVALUATOR_PATH}"
+    )
+    module.__package__ = "experiments.nuisance_conditioned_distance"
+    try:
+        exec(compile(text_source, module.__file__, "exec"), module.__dict__)
+    except Exception as exc:
+        raise PriorEvidenceError("pinned historical evaluator could not be loaded") from exc
+    return module
+
+
 def verify_prior_source_evidence(
     *,
     root: os.PathLike[str] | str = ROOT,
@@ -473,9 +639,16 @@ def verify_prior_source_evidence(
     implementation_actual: dict[str, str] = {}
     if verify_implementation_sources:
         for relative, expected in PRIOR_IMPLEMENTATION_SOURCE_HASHES.items():
+            # The historical evaluator entry is verified from its immutable
+            # Git blob below, not from the mutable worktree path.
+            if relative in PRIOR_HISTORICAL_EVALUATOR_CURRENT_SOURCE_HASHES:
+                continue
             implementation_actual[relative] = _verify_one(
                 root_path / relative, expected, f"prior implementation source {relative}"
             )
+        implementation_actual.update(
+            verify_historical_evaluator_sources(root=root_path)
+        )
 
     return PriorSourceEvidence(
         current_protocol_sha256=current_actual,
@@ -2170,6 +2343,7 @@ def evaluate_prior_historical_gates(
     locked_candidate: str,
     panel: PriorPanel | None = None,
     evaluator: Callable[..., Any] | None = None,
+    root: os.PathLike[str] | str = ROOT,
 ) -> dict[str, Any]:
     """Evaluate explicit unchanged gate evidence without selecting methods.
 
@@ -2206,6 +2380,7 @@ def evaluate_prior_historical_gates(
             rows,
             locked_candidate=locked_candidate,
             panel=panel,
+            root=root,
         )
 
     candidate_rows = [row for row in rows if str(row.get("candidate_id")) == str(locked_candidate)]
@@ -2287,6 +2462,7 @@ def _evaluate_verified_historical_gate_surface(
     *,
     locked_candidate: str,
     panel: PriorPanel,
+    root: os.PathLike[str] | str = ROOT,
 ) -> dict[str, Any]:
     """Apply the unchanged prior gate formulas to the new paired rows.
 
@@ -2298,8 +2474,26 @@ def _evaluate_verified_historical_gate_surface(
     any old outcome as a selection input.
     """
 
+    # Recheck immediately before loading/executing the historical module.
+    # Initial source verification happens before panel recovery and dataset
+    # generation; this second check closes the small interval in which a
+    # repository/object replacement could otherwise invalidate the evaluator
+    # after its hash had been recorded in the run identity.
+    current_dependency_hashes = verify_historical_evaluator_sources(root=root)
+    recorded_dependency_hashes = {
+        key: value
+        for key, value in panel.source_evidence.implementation_source_hashes.items()
+        if key in PRIOR_HISTORICAL_EVALUATOR_CURRENT_SOURCE_HASHES
+    }
+    if recorded_dependency_hashes != current_dependency_hashes:
+        raise PriorEvidenceError(
+            "historical evaluator dependency bytes changed after source verification"
+        )
+
     try:
-        from experiments.nuisance_conditioned_distance import analysis as old_analysis
+        old_analysis = _load_pinned_historical_analysis(root=root)
+    except PriorEvidenceError:
+        raise
     except (ImportError, AttributeError) as exc:
         return {
             "status": "inconclusive",
@@ -2798,6 +2992,7 @@ def run_prior_regression(
             locked_candidate=authorization.locked_candidate,
             panel=panel,
             evaluator=historical_gate_evaluator,
+            root=root,
         )
     else:
         gate_result = {
@@ -2963,6 +3158,12 @@ __all__ = [
     "PRIOR_EVALUATION_SPLIT",
     "PRIOR_FIT_SPLIT",
     "PRIOR_IMPLEMENTATION_SOURCE_HASHES",
+    "PRIOR_HISTORICAL_EVALUATOR_ARCHIVE_SOURCE_HASHES",
+    "PRIOR_HISTORICAL_EVALUATOR_CURRENT_SOURCE_HASHES",
+    "PRIOR_HISTORICAL_EVALUATOR_COMMIT",
+    "PRIOR_HISTORICAL_EVALUATOR_PATH",
+    "PRIOR_HISTORICAL_EVALUATOR_SOURCE_MODE",
+    "PRIOR_HISTORICAL_EVALUATOR_WORKTREE_SOURCE_HASHES",
     "PRIOR_MANIFEST_PATH",
     "PRIOR_PROTOCOL_PATH",
     "PRIOR_RAW_RESULTS_PATH",
@@ -3018,10 +3219,12 @@ __all__ = [
     "run_stage",
     "sha256_bytes",
     "sha256_path",
+    "historical_evaluator_source_identity_sha256",
     "validate_development_promotion_decision",
     "validate_paired_block",
     "validate_promotion_decision",
     "verify_deterministic_rows",
+    "verify_historical_evaluator_sources",
     "verify_parity",
     "verify_parity_rows",
     "verify_prior_hashes",

@@ -2449,7 +2449,10 @@ def negative_controls(
     sw = exact_seeds(_mean_seed_cells(geometry_rows, candidate="W50-SW", metric="neighbor_impurity", scenario="H2", balance="balanced", separated_only=True, require_frozen_cells=True))
     q4_values = {key: cb[key] - sw[key] for key in set(cb) & set(sw)}
     q4 = complete_seed_bootstrap({"control": q4_values}, n_resamples=n_resamples, seed=seed, level=PRIMARY_INTERVAL_LEVEL).get("control", interval(None, [], n=0, n_blocks=0))
-    controls = {"q2_homoscedastic": q2, "q3_h2": q3, "q4_h2": q4}
+    # Keep the control identifiers exactly aligned with protocol.json.  These
+    # names are consumed by confirmation and reporting; do not add aliases
+    # that could make a missing canonical control look defined.
+    controls = {"q2": q2, "q3": q3, "q4": q4}
     for value in controls.values():
         value["limit"] = NEIGHBOR_NEGATIVE_CONTROL_LIMIT
         value["status"] = classify_gate(value.get("upper"), NEIGHBOR_NEGATIVE_CONTROL_LIMIT, direction="le")["status"]
@@ -3033,7 +3036,20 @@ def genuine_overlap_gates(
                 "reason": "all 12 separated scenario/balance blocks are required",
                 "n_blocks": len(false_blocks) if isinstance(false_blocks, Mapping) else 0,
             }
-        statuses = [gate.get("status") for gate in gates.values() if isinstance(gate, Mapping)]
+        # ``false_overlap`` is deliberately retained as a complete paired
+        # diagnostic and lock criterion, but it is not a genuine-overlap
+        # reliability gate.  A positive lock metric therefore must not make
+        # an otherwise reliable candidate ineligible; only the reliability
+        # surfaces below determine this aggregate status.
+        reliability_gate_names = (
+            "fpr", "auroc", "auprc", "fnr", "brier",
+            "refinement_fnr_vs_raw", "clean_mae", "severity", "strata_fnr",
+        )
+        statuses = [
+            gates[name].get("status")
+            for name in reliability_gate_names
+            if isinstance(gates.get(name), Mapping)
+        ]
         result[candidate] = {
             "status": "fail" if "fail" in statuses else "inconclusive" if "inconclusive" in statuses else "pass",
             "gates": gates,
@@ -3172,9 +3188,12 @@ def candidate_eligibility(
         return {"status": "inconclusive", "reason": "missing paired interval"}
 
     def genuine_status(value: Any) -> Dict[str, Any]:
+        # False-overlap is a lock-ranking criterion, not a pre-ranking
+        # reliability gate.  Keep its detailed gate in the source surface,
+        # but do not let a positive value exclude an otherwise reliable arm.
         required = {
             "fpr", "auroc", "auprc", "fnr", "brier", "refinement_fnr_vs_raw",
-            "clean_mae", "severity", "strata_fnr", "false_overlap",
+            "clean_mae", "severity", "strata_fnr",
         }
         if not isinstance(value, Mapping) or not isinstance(value.get("gates"), Mapping):
             return {"status": "inconclusive", "reason": "missing complete genuine-overlap gate surface"}
@@ -3337,17 +3356,45 @@ def select_lock(
         "structural_gates": summary.get("structural_gates", {}),
         "pipeline_stop": False,
     }
+    lock_criterion_names = (
+        "nuisance_linear_regret_vs_probe_upper",
+        "worst_family_drift_upper",
+        "worst_block_false_overlap_upper",
+    )
+
+    def missing_lock_criteria(candidate: str) -> List[str]:
+        metrics = summary.get("candidates", {}).get(candidate, {})
+        return [
+            name for name in lock_criterion_names
+            if not isinstance(metrics, Mapping) or _number(metrics.get(name)) is None
+        ]
+
     if stage in {"smoke", "structural"}:
         decision["reason"] = "smoke/structural artifacts cannot rank or lock candidates"
         decision["pipeline_stop"] = True
     elif eligible:
+        missing_by_candidate = {
+            candidate: missing_lock_criteria(candidate)
+            for candidate in eligible
+            if missing_lock_criteria(candidate)
+        }
+        if missing_by_candidate:
+            # Do not rank a partial lock surface: an absent criterion could
+            # change the winner.  This is separate from reliability
+            # eligibility and keeps false-overlap's role as criterion 3.
+            decision["status"] = "inconclusive"
+            decision["pipeline_stop"] = True
+            decision["lock_criteria_missing"] = missing_by_candidate
+            decision["reason"] = "required lock criteria are incomplete; no candidate was ranked"
+            return decision
+
         def criterion(candidate: str, key: str, default: float = float("inf")) -> float:
             metrics = summary.get("candidates", {}).get(candidate, {})
             value = metrics.get(key)
             if isinstance(value, Mapping): value = value.get("upper", value.get("estimate"))
             return default if _number(value) is None else float(value)
         remaining = list(eligible)
-        for key in ("nuisance_linear_regret_vs_probe_upper", "worst_family_drift_upper", "worst_block_false_overlap_upper"):
+        for key in lock_criterion_names:
             values = [criterion(candidate, key) for candidate in remaining]
             if not values: break
             best = min(values)
@@ -3402,8 +3449,37 @@ def evaluate_confirmation(
             mechanism_status[name] = "pass" if lower > 0 else "fail"
         else:
             mechanism_status[name] = "pass" if upper < 0 else "fail"
+    # Every primary claim also requires its predeclared negative-control
+    # margin, except Q1 which has no separate control.  Evaluate the paired
+    # upper 95% bound directly rather than trusting a self-declared status;
+    # missing or undefined controls remain inconclusive and never become a
+    # mechanism pass by omission.
+    negative_controls = summary.get("negative_controls")
+    negative_control_status: Dict[str, Any] = {}
+    for name in ("q2", "q3", "q4"):
+        control = negative_controls.get(name) if isinstance(negative_controls, Mapping) else None
+        upper = _upper(control)
+        if upper is None:
+            negative_control_status[name] = {
+                "status": "inconclusive", "estimate": _number(control.get("estimate")) if isinstance(control, Mapping) else None,
+                "lower": _number(control.get("lower")) if isinstance(control, Mapping) else None,
+                "upper": None, "threshold": NEIGHBOR_NEGATIVE_CONTROL_LIMIT,
+                "reason": "missing or undefined paired negative-control upper bound",
+            }
+        else:
+            negative_control_status[name] = {
+                **classify_gate(upper, NEIGHBOR_NEGATIVE_CONTROL_LIMIT, direction="le"),
+                "estimate": _number(control.get("estimate")) if isinstance(control, Mapping) else None,
+                "lower": _number(control.get("lower")) if isinstance(control, Mapping) else None,
+                "upper": upper,
+            }
+    mechanism_status.update({
+        f"negative_control_{name}": value["status"]
+        for name, value in negative_control_status.items()
+    })
+    mechanism_values = list(mechanism_status.values())
     return {
-        "status": "pass" if algorithm_status == "pass" and all(value == "pass" for value in mechanism_status.values()) else algorithm_status,
+        "status": "pass" if algorithm_status == "pass" and all(value == "pass" for value in mechanism_values) else algorithm_status,
         "schema_version": 1,
         "stage": "confirmation",
         "protocol_sha256": protocol_hash,
@@ -3413,7 +3489,11 @@ def evaluate_confirmation(
         "locked_candidate": locked_candidate,
         "structural_gates": summary.get("structural_gates", {}),
         "algorithm": {"status": algorithm_status, "locked_candidate": locked_candidate, "prerequisite_failures": failures},
-        "mechanism": {"status": "pass" if all(value == "pass" for value in mechanism_status.values()) else "fail" if "fail" in mechanism_status.values() else "inconclusive", "claims": mechanism_status},
+        "mechanism": {
+            "status": "pass" if all(value == "pass" for value in mechanism_values) else "fail" if "fail" in mechanism_values else "inconclusive",
+            "claims": {name: mechanism_status[name] for name in ("q1", "q2", "q3", "q4")},
+            "negative_controls": negative_control_status,
+        },
         "runner_up_after_failure": False,
     }
 

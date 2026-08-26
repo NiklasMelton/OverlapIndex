@@ -308,7 +308,7 @@ def test_negative_control_q3_uses_p50_not_legacy_baseline() -> None:
             for row in rows[-16:]:
                 row["scenario"] = scenario
     controls = stats.negative_controls(rows, n_resamples=16)
-    assert controls["q3_h2"]["estimate"] == -0.4
+    assert controls["q3"]["estimate"] == -0.4
 
 
 def test_stable_shift_matches_exact_cells_and_all_directions() -> None:
@@ -382,6 +382,50 @@ def test_candidate_eligibility_requires_every_primary_gate() -> None:
     } & set(summary["candidates"]["P25"])
     summary["candidates"]["P25"].pop("nonlinear_retention")
     assert candidate_eligibility(summary, candidates=("P25",))["P25"]["status"] == "inconclusive"
+
+
+def test_false_overlap_is_lock_criterion_not_reliability_exclusion() -> None:
+    summary = {
+        "artifact_identity": {"status": "pass"},
+        "structural_gates": {key: True for key in ("exact_parity", "determinism", "leakage", "review_identity")},
+        "genuine_overlap_gates": {"P25": {
+            "status": "fail",
+            "gates": {
+                **{key: {"status": "pass"} for key in ("fpr", "auroc", "auprc", "fnr", "brier", "refinement_fnr_vs_raw", "clean_mae", "severity", "strata_fnr")},
+                "false_overlap": {"status": "fail", "upper": 0.25},
+            },
+        }},
+        "stable_shift_gates": {"P25": {balance: {
+            f"{shifted}-{stable}:{metric}": {"gate": {"status": "pass"}}
+            for shifted, stable in (("X", "H2"), ("ALL", "C"))
+            for metric in ("auroc", "auprc", "brier", "clean_mae", "nuisance_drift")
+        } for balance in ("balanced", "imbalanced")}},
+        "resource_gates": {"P25": {
+            "status": "pass",
+            "summaries": {key: 1.0 for key in ("median_total", "p95_total", "median_score_fixed", "median_peak_memory", "p95_peak_memory", "individual_peak_memory")},
+            "gates": {key: {"status": "pass"} for key in ("median_total", "p95_total", "median_score_fixed", "median_peak_memory", "p95_peak_memory", "individual_peak_memory")},
+        }},
+        "family_drift": {"P25": {scenario: {"gate": {"status": "pass"}} for scenario in stats.SCENARIO_ORDER}},
+        "candidates": {"P25": {
+            "nuisance_linear_regret_vs_probe": {"lower": -0.001, "upper": 0.005},
+            "nonlinear_retention": {head: {"lower": -0.001, "upper": 0.005} for head in ("quadratic", "knn", "rbf")},
+            "nuisance_linear_regret_vs_probe_upper": 0.005,
+            "worst_family_drift_upper": 0.01,
+            "worst_block_false_overlap_upper": 0.25,
+        }},
+    }
+    eligibility = candidate_eligibility(summary, candidates=("P25",))
+    assert eligibility["P25"]["status"] == "pass"
+    assert eligibility["P25"]["eligible"] is True
+    decision = select_lock(summary)
+    assert decision["status"] == "locked"
+    assert decision["selected_candidate"] == "P25"
+
+    summary["candidates"]["P25"].pop("worst_block_false_overlap_upper")
+    missing_decision = select_lock(summary)
+    assert missing_decision["status"] == "inconclusive"
+    assert missing_decision["selected_candidate"] is None
+    assert missing_decision["pipeline_stop"] is True
 
 
 def test_genuine_overlap_requires_exact_four_k_balance_strata() -> None:
@@ -636,3 +680,77 @@ def test_decision_file_hash_matches_canonical_mapping_and_prior_consumes_it(
         prior_path, protocol_hash="p", code_identity_hash="c",
         expected_status=("pass",), locked_candidate="P25", promotion_hash=promotion_hash,
     )["status"] == "pass"
+
+
+def _confirmation_summary_with_controls(controls: dict[str, object]) -> dict[str, object]:
+    return {
+        "stage": "confirmation",
+        "artifact_identity": {"status": "pass"},
+        "candidates": {"P25": {}},
+        "primary_claims": {
+            "q1": {"lower": 0.01, "upper": 0.2, "direction": "greater_than_zero"},
+            "q2": {"lower": -0.2, "upper": -0.01, "direction": "less_than_zero"},
+            "q3": {"lower": -0.2, "upper": -0.01, "direction": "less_than_zero"},
+            "q4": {"lower": -0.2, "upper": -0.01, "direction": "less_than_zero"},
+        },
+        "negative_controls": controls,
+    }
+
+
+def _confirmation_prerequisites() -> tuple[dict[str, object], dict[str, object]]:
+    promotion = {
+        "status": "locked", "protocol_sha256": "p", "code_identity_sha256": "c",
+        "locked_candidate": "P25",
+    }
+    prior = {
+        "status": "pass", "protocol_sha256": "p", "code_identity_sha256": "c",
+        "locked_candidate": "P25", "promotion_decision_sha256": stats._decision_hash(promotion),
+    }
+    return promotion, prior
+
+
+def test_confirmation_requires_q2_q3_q4_negative_control_margins(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        stats, "candidate_eligibility",
+        lambda summary, candidates: {candidate: {"eligible": True, "status": "pass"} for candidate in candidates},
+    )
+    controls = {
+        name: {"estimate": 0.0, "lower": -0.01, "upper": 0.005}
+        for name in ("q2", "q3", "q4")
+    }
+    promotion, prior = _confirmation_prerequisites()
+    passed = stats.evaluate_confirmation(
+        _confirmation_summary_with_controls(controls), locked_candidate="P25",
+        promotion_decision=promotion, prior_regression_decision=prior,
+        protocol_hash="p", code_identity_hash="c",
+    )
+    assert passed["algorithm"]["status"] == "pass"
+    assert passed["mechanism"]["status"] == "pass"
+    assert {name: value["status"] for name, value in passed["mechanism"]["negative_controls"].items()} == {"q2": "pass", "q3": "pass", "q4": "pass"}
+    assert passed["status"] == "pass"
+
+    violated = dict(controls)
+    violated["q3"] = {"estimate": 0.02, "lower": 0.01, "upper": 0.02}
+    failed = stats.evaluate_confirmation(
+        _confirmation_summary_with_controls(violated), locked_candidate="P25",
+        promotion_decision=promotion, prior_regression_decision=prior,
+        protocol_hash="p", code_identity_hash="c",
+    )
+    assert failed["algorithm"]["status"] == "pass"
+    assert failed["mechanism"]["negative_controls"]["q3"]["status"] == "fail"
+    assert failed["mechanism"]["status"] == "fail"
+    # Mechanism failure alone does not reject the independently passing arm.
+    assert failed["status"] == "pass"
+
+    missing = dict(controls)
+    missing.pop("q4")
+    inconclusive = stats.evaluate_confirmation(
+        _confirmation_summary_with_controls(missing), locked_candidate="P25",
+        promotion_decision=promotion, prior_regression_decision=prior,
+        protocol_hash="p", code_identity_hash="c",
+    )
+    assert inconclusive["algorithm"]["status"] == "pass"
+    assert inconclusive["mechanism"]["negative_controls"]["q4"]["status"] == "inconclusive"
+    assert inconclusive["mechanism"]["status"] == "inconclusive"
