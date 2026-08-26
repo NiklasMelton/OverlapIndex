@@ -1,0 +1,558 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_candidate_outcomes",
+  "authorization": {
+    "implementation": "authorized after this protocol and sidecar are committed",
+    "smoke": "requires focused tests pass and hashed implementation_review.json status go",
+    "development": "requires completed structural smoke_decision.json and hashed pre_screen_review.json status go",
+    "prior_regression": "requires hashed development promotion_decision.json with exactly one locked candidate",
+    "confirmation": "requires the same promotion decision hash plus hashed prior_regression_decision.json status pass; confirmation banks may not be generated earlier",
+    "food101": "not authorized"
+  },
+  "frozen_date": "2026-08-26",
+  "plan_sha256": "62285777ce2f18c56eaa539fb992d8440604ded008acc390d026737dbadedeae",
+  "repository": {
+    "branch": "codex/experiment-heteroscedastic-distance-conditioning",
+    "starting_commit": "46aa626f07ab91b34371dc8f2065b42d179fe510",
+    "starting_commit_subject": "Record nuisance experiment stop decision",
+    "original_develop_base": "165fa344653a72dd2abc04a20387d90b891b9acc",
+    "public_api_changes_allowed": false,
+    "vertebrae_changes_allowed": false
+  },
+  "question": "Is the remaining OI nuisance failure caused by transferring one overconfident sample-weighted pooled diagonal precision metric across heterogeneous class scale, and can partial whitening, robust scale, or class-balanced pooling repair it?",
+  "claim_scope": "ordered mechanistic concordance, not formal causal mediation or universal behavior",
+  "candidates": [
+    {
+      "id": "A",
+      "name": "oi_unrefined_raw",
+      "estimator": "none",
+      "weighting": null,
+      "gamma": 0.0,
+      "prototype_refinement": false,
+      "role": "exact_control",
+      "promotable": false
+    },
+    {
+      "id": "B",
+      "name": "oi_refined_raw",
+      "estimator": "none",
+      "weighting": null,
+      "gamma": 0.0,
+      "prototype_refinement": true,
+      "role": "exact_refined_control",
+      "promotable": false
+    },
+    {
+      "id": "L",
+      "name": "legacy_pooled_diagonal_full_whitening",
+      "estimator": "oas_diagonal",
+      "weighting": "sample_weighted_rows",
+      "gamma": 1.0,
+      "prototype_refinement": true,
+      "role": "exact_legacy_D_reference",
+      "promotable": false
+    },
+    {
+      "id": "P25",
+      "name": "oas_partial_025_sample_weighted",
+      "estimator": "oas_diagonal",
+      "weighting": "sample_weighted_rows",
+      "gamma": 0.25,
+      "prototype_refinement": true,
+      "role": "partial_whitening_candidate",
+      "promotable": true
+    },
+    {
+      "id": "P50-SW",
+      "name": "oas_partial_050_sample_weighted",
+      "estimator": "oas_diagonal",
+      "weighting": "sample_weighted_rows",
+      "gamma": 0.5,
+      "prototype_refinement": true,
+      "role": "partial_whitening_candidate",
+      "promotable": true
+    },
+    {
+      "id": "P50-CB",
+      "name": "oas_partial_050_class_balanced",
+      "estimator": "oas_diagonal",
+      "weighting": "class_balanced",
+      "gamma": 0.5,
+      "prototype_refinement": true,
+      "role": "class_balance_candidate",
+      "promotable": true
+    },
+    {
+      "id": "W50-SW",
+      "name": "winsorized_oas_partial_050_sample_weighted",
+      "estimator": "winsorized_oas_diagonal",
+      "weighting": "sample_weighted_rows",
+      "gamma": 0.5,
+      "prototype_refinement": true,
+      "role": "robust_candidate",
+      "promotable": true
+    },
+    {
+      "id": "W50-CB",
+      "name": "winsorized_oas_partial_050_class_balanced",
+      "estimator": "winsorized_oas_diagonal",
+      "weighting": "class_balanced",
+      "gamma": 0.5,
+      "prototype_refinement": true,
+      "role": "lead_robust_balanced_candidate",
+      "promotable": true
+    },
+    {
+      "id": "M50-SW",
+      "name": "mad_partial_050_sample_weighted",
+      "estimator": "pooled_mad",
+      "weighting": "sample_weighted_rows",
+      "gamma": 0.5,
+      "prototype_refinement": true,
+      "role": "robust_replication_candidate",
+      "promotable": true
+    },
+    {
+      "id": "M50-CB",
+      "name": "mad_partial_050_class_balanced",
+      "estimator": "pooled_mad",
+      "weighting": "class_balanced",
+      "gamma": 0.5,
+      "prototype_refinement": true,
+      "role": "robust_balanced_replication_candidate",
+      "promotable": true
+    }
+  ],
+  "conditioning": {
+    "fit_rows": "training_fold_only",
+    "held_out_policy": "apply frozen transform; predict and score_fixed never refit",
+    "geometry_scope": [
+      "prototype_fit",
+      "prototype_refinement",
+      "adjacency",
+      "predict",
+      "score_fixed"
+    ],
+    "target_scope": "scalar_single_label_only",
+    "class_center": "training class arithmetic mean",
+    "residual": "x_i minus its training class mean",
+    "sample_weight": "1/N",
+    "class_balanced_weight": "1/(C*n_c)",
+    "gamma_transform": "T_jj = regularized_variance_j ** (-gamma/2)",
+    "weighted_median": "stable sort by (value, original_row_index); smallest value with cumulative normalized weight >= 0.5",
+    "mad_scale": "1.4826 * weighted_median(abs(residual - weighted_median(residual)))",
+    "mad_variance": "q_j squared",
+    "winsor_limit_mad_units": 3.0,
+    "winsor_weighting_isolation": "SW and CB share sample-weighted median/MAD clip thresholds and sample-weighted OAS alpha; only final diagonal moment weights differ",
+    "mad_weighting": "MAD-only SW/CB candidates apply their declared weights in the median",
+    "oas": {
+      "implementation": "sklearn.covariance.oas",
+      "assume_centered": true,
+      "sample_weighted_path": "returned diagonal and alpha exactly",
+      "class_balanced_path": "m_j=sum(w_i*u_ij^2); target=mean(m); v=(1-alpha_SW)*m+alpha_SW*target",
+      "shared_alpha_across_weighting": true
+    },
+    "relative_eigenvalue_floor": 1e-08,
+    "condition_number_cap": 10000.0,
+    "regularization": "raw variance=max(raw variance,0); if largest<=0 use identity; otherwise effective_floor=max(largest*1e-8,largest/1e4) and regularized=max(raw,effective_floor)",
+    "nonpositive_all_variance_fallback": "identity",
+    "balanced_weighting_identity": "SW and CB route through one code path and must be bit-identical when class counts are equal",
+    "invalid_input": "reject sparse, non-2D, nonnumeric, nonfinite, feature-mismatch, unknown estimator/weighting, gamma outside [0,1], nonscalar/multilabel targets, fewer than two classes, duplicate explicit refinement kwargs",
+    "arithmetic": "float64 outside identity mode",
+    "fixed_vector_rtol": 1e-12,
+    "fixed_vector_atol": 1e-12,
+    "exact_paths": [
+      "A",
+      "B",
+      "gamma_zero",
+      "L_vs_prior_D"
+    ]
+  },
+  "dataset": {
+    "n_classes": 4,
+    "signal_dim": 2,
+    "nuisance_dims": [4, 32],
+    "k_values": [2, 8],
+    "count_levels": {
+      "small": {
+        "balanced": [40, 40, 40, 40],
+        "imbalanced_size_ranks": [16, 24, 40, 80]
+      },
+      "large": {
+        "balanced": [160, 160, 160, 160],
+        "imbalanced_size_ranks": [64, 96, 160, 320]
+      }
+    },
+    "development_seeds": [21000, 21001, 21002, 21003, 21004, 21005, 21006, 21007, 21008, 21009, 21010, 21011],
+    "confirmation_seeds": [31000, 31001, 31002, 31003, 31004, 31005, 31006, 31007, 31008, 31009, 31010, 31011, 31012, 31013, 31014, 31015, 31016, 31017, 31018, 31019, 31020, 31021, 31022, 31023],
+    "maximum_rows_per_class_per_pool": 320,
+    "train_evaluation_independent": true,
+    "stream_codes": {
+      "signal_train": 100,
+      "signal_evaluation": 101,
+      "uniform_nuisance_train": 200,
+      "uniform_nuisance_evaluation": 201,
+      "contamination_mask_train": 300,
+      "contamination_mask_evaluation": 301,
+      "outlier_gaussian_train": 400,
+      "outlier_gaussian_evaluation": 401,
+      "row_order_train": 500,
+      "row_order_evaluation": 501
+    },
+    "bank_recipe": {
+      "rng": "numpy.random.default_rng(numpy.random.SeedSequence(seed_components))",
+      "signal_seed_components": "[seed, stream_code, signal_state_index]",
+      "nuisance_seed_components": "[seed, stream_code]",
+      "row_order_seed_components": "[seed, stream_code, signal_state_index, balance_index, count_level_index]",
+      "signal_state_index": {"linear_separated": 0, "nonlinear_separated": 1, "genuine_overlap_half": 2},
+      "balance_index": {"balanced": 0, "imbalanced": 1},
+      "count_level_index": {"small": 0, "large": 1},
+      "signal_bank_shape": [4, 320, 2],
+      "uniform_nuisance_bank_shape": [4, 320, 32],
+      "outlier_gaussian_bank_shape": [4, 320, 32],
+      "contamination_mask_shape": [4, 320],
+      "uniform_draw": "rng.random((4,320,32),dtype=numpy.float64)",
+      "contamination_mask_draw": "rng.random((4,320),dtype=numpy.float64) < 0.05",
+      "outlier_gaussian_draw": "rng.standard_normal((4,320,32),dtype=numpy.float64)",
+      "row_permutation_draw": "rng.permutation(total_selected_rows)",
+      "nuisance_dim_nesting": "d4 is first four coordinates of d32",
+      "nuisance_sharing": "same pool-specific banks across signal states, scenarios, balances, count levels, and k",
+      "linear_draw_order": "one class-major (4,320,2) uniform draw",
+      "ring_draw_order": "all class-major (4,320) angles then all (4,320) radial perturbations",
+      "overlap_draw_order": "class0 shared then private; class1 shared then private; class2 private; class3 private; interleave shared/private",
+      "open_interval_lower": "numpy.nextafter(0.0,1.0)",
+      "open_interval_upper": "numpy.nextafter(1.0,0.0)",
+      "normal_inverse_cdf": "scipy.special.ndtri",
+      "student_inverse_cdf": "scipy.stats.t.ppf(uniform,df=5)*sqrt(3/5)",
+      "contamination": "row mask shared over features; false uses common Gaussian bank; true uses 8*independent standard-normal outlier bank; divide all by sqrt(4.15)",
+      "nested_selection": "select class-major prefixes before row permutation",
+      "row_permutation": "apply after concatenated class selection; shared across scenarios, nuisance dims, and k"
+    },
+    "signal_states": {
+      "linear_separated": {
+        "centers_axis_0": [-2.25, -0.75, 0.75, 2.25],
+        "uniform_half_width": 0.2,
+        "overlap_pair": null,
+        "overlap_truth": 0.0
+      },
+      "nonlinear_separated": {
+        "kind": "concentric_rings",
+        "radii": [0.5, 1.0, 1.5, 2.0],
+        "radial_uniform_half_width": 0.08,
+        "angle": "uniform_[0,2pi)",
+        "overlap_pair": null,
+        "overlap_truth": 0.0
+      },
+      "genuine_overlap_half": {
+        "shared_fraction": 0.5,
+        "shared_square_half_width": 0.2,
+        "private_centers": [[-1.15, 0.0], [1.15, 0.0], [3.5, 0.0], [5.0, 0.0]],
+        "private_uniform_half_width": 0.2,
+        "overlap_pair": [0, 1],
+        "overlap_truth": 0.5,
+        "shared_private_interleaved_before_nested_selection": true
+      }
+    },
+    "nuisance": {
+      "construction": "concat(signal, amplitude*normalized_class_scale*base_noise)",
+      "scale_values": "four log-spaced values from R^(-1/2) to R^(1/2), normalized to unweighted mean square one",
+      "reversed_evaluation_rank": "3-training_rank",
+      "gaussian": "normal inverse CDF of clipped common uniform bank",
+      "student_t5": "t(5) inverse CDF of common uniform bank multiplied by sqrt(3/5)",
+      "contaminated": "row-wise 0.95*N(0,1)+0.05*N(0,64), divided by sqrt(4.15)",
+      "contamination_component_variance": 64.0,
+      "contamination_probability": 0.05
+    },
+    "scenario_blocks": [
+      ["S0", 0.0, 1.0, "gaussian", "stable"],
+      ["S1", 1.0, 1.0, "gaussian", "stable"],
+      ["S2", 2.0, 1.0, "gaussian", "stable"],
+      ["H1", 1.0, 2.0, "gaussian", "stable"],
+      ["H2", 2.0, 4.0, "gaussian", "stable"],
+      ["T", 2.0, 4.0, "student_t5", "stable"],
+      ["C", 2.0, 4.0, "contaminated", "stable"],
+      ["X", 2.0, 4.0, "gaussian", "reversed"],
+      ["ALL", 2.0, 4.0, "contaminated", "reversed"]
+    ],
+    "balance_levels": ["balanced", "imbalanced"],
+    "nested_selection": true,
+    "shared_panel_row_order": true,
+    "development_case_count": 5184,
+    "development_method_row_count": 51840,
+    "confirmation_case_count": 10368,
+    "confirmation_fixed_methods": ["A", "B", "L", "P50-SW", "W50-SW", "W50-CB"],
+    "confirmation_method_row_count_min": 62208,
+    "confirmation_method_row_count_max": 72576
+  },
+  "permutations": {
+    "development_scale_ranks": [
+      [0, 1, 2, 3], [1, 2, 3, 0], [2, 3, 0, 1], [3, 0, 1, 2],
+      [0, 3, 2, 1], [1, 0, 3, 2], [2, 1, 0, 3], [3, 2, 1, 0],
+      [0, 2, 1, 3], [1, 3, 2, 0], [2, 0, 3, 1], [3, 1, 0, 2]
+    ],
+    "development_size_ranks": [
+      [0, 1, 2, 3], [0, 1, 2, 3], [0, 1, 2, 3], [1, 0, 3, 2],
+      [2, 0, 3, 1], [3, 2, 1, 0], [3, 2, 1, 0], [3, 2, 1, 0],
+      [1, 3, 0, 2], [2, 3, 0, 1], [1, 3, 0, 2], [2, 0, 3, 1]
+    ],
+    "development_requirements": {
+      "each_rank_per_class": 3,
+      "each_joint_rank_pair": 3
+    },
+    "confirmation_scale_ranks": "all 24 permutations in lexicographic order",
+    "confirmation_size_shift": [0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 1, 1, 3, 1, 3, 2, 3, 3, 2, 2],
+    "confirmation_size_rule": "size_rank[c]=(scale_rank[c]+shift[seed_offset]) mod 4",
+    "confirmation_requirements": {
+      "each_rank_per_class": 6,
+      "each_joint_rank_pair": 6
+    }
+  },
+  "selector": {
+    "panel_identity": ["seed", "balance", "count_level", "nuisance_dim", "k", "signal_state"],
+    "full_items": ["S0", "S1", "S2", "H1", "H2", "T", "C", "X", "ALL"],
+    "primary_nuisance_items": ["H1", "H2", "T", "C", "X", "ALL"],
+    "homoscedastic_negative_control_items": ["S0", "S1", "S2"],
+    "oi_direction": "higher_is_better",
+    "oi_tie_order": ["S0", "S1", "S2", "H1", "H2", "T", "C", "X", "ALL"],
+    "reference_heads": {
+      "linear": "unscaled sklearn.linear_model.LogisticRegression(max_iter=500,solver='lbfgs',random_state=seed)",
+      "quadratic": "unscaled sklearn.preprocessing.PolynomialFeatures(degree=2,include_bias=False) then the linear estimator",
+      "knn": "sklearn.neighbors.KNeighborsClassifier(n_neighbors=5)",
+      "rbf": "sklearn.svm.SVC(kernel='rbf',C=1,gamma='scale')"
+    },
+    "reference_symbol": "experiments.heteroscedastic_distance_conditioning.runner:_reference_models; implementation SHA required in manifest",
+    "reference_labels": "first-observed deterministic integer encoding for sklearn fit; original labels retained for OI",
+    "reference_best": "maximum held-out accuracy in reported subpanel",
+    "exact_best_accuracy_tolerance": 1e-12,
+    "within_one_point_regret": 0.01,
+    "linear_probe_selector": {
+      "folds": 5,
+      "splitter": "sklearn.model_selection.StratifiedKFold(n_splits=5,shuffle=True,random_state=seed)",
+      "score": "out-of-fold training accuracy",
+      "standardization": "sklearn.preprocessing.StandardScaler fit within training fold only",
+      "estimator": "sklearn.linear_model.LogisticRegression(C=1,solver='lbfgs',max_iter=2000,n_jobs=1,random_state=seed)",
+      "stratification": "first-observed deterministic integer encoding of original scalar labels for split and sklearn fit",
+      "symbol": "experiments.heteroscedastic_distance_conditioning.runner:_linear_probe_oof; implementation SHA required in manifest"
+    },
+    "promotion_regret_formula": "complete-seed paired candidate linear-head regret minus linear-probe-selector linear-head regret on six nuisance items",
+    "nonlinear_retention_formula": "complete-seed paired candidate regret minus B regret on six nuisance items, separately for quadratic, knn, and rbf",
+    "balance_aggregation": "report balanced and imbalanced separately; promotion averages the two stratum means equally within seed",
+    "missing_balance": "inconclusive",
+    "rank_correlation": "tie-safe Spearman within complete panel",
+    "rank_auc": "normalized trapezoid over small/large count on log2(total_rows)",
+    "completeness": "all expected unique finite items required"
+  },
+  "diagnostics": {
+    "oracle_use": "diagnostic only; never fit or select candidate",
+    "primary_neighbor_endpoint": "separated-state held-out cross-class top-k neighbor impurity",
+    "primary_neighbor_aggregation": "row mean per case; equal cell mean within seed over two separated signals, nuisance dims, count levels, and k",
+    "pair_distance_sample_size": 4096,
+    "pair_distance_seed": "SHA-256 of case id",
+    "fold_stability": "five deterministic stratified folds; integer labels only for split planning; original labels to fit; all ten fold-pair scale comparisons",
+    "geometry": ["oracle_neighbor_jaccard", "cross_class_neighbor_impurity", "pair_distance_spearman", "fold_scale_spearman", "median_log_scale_difference", "max_log_scale_difference"],
+    "prototype": ["occupied_normalized_label_entropy_macro", "occupied_normalized_label_entropy_weighted", "mixed_rate_occupied", "empty_rate_all", "weighted_majority_assignment_purity", "owner_label_agreement", "directional_pair_support_hits_evidence", "refinement_activity_all_pre_refinement_prototypes", "changed_parent_ids", "paired_total_refined_vs_unrefined_score_movement"],
+    "prototype_nonclaims": ["backend_owner_entropy", "per_prototype_score_contribution", "prototype_adjacency_graph"],
+    "adjacency_validation": "post-score_fixed directional supports/hits/evidence must exactly match OI sparse_adj, _pairwise_hits, and 1-pairwise_index; under-prototyped labels recorded",
+    "conditioning": ["clip_count_per_feature", "clipped_row_fraction", "condition_before", "condition_after", "regularized_variance_count", "cap_or_floor_active", "state_sha256"]
+  },
+  "statistics": {
+    "paired": true,
+    "bootstrap_unit": "complete_seed",
+    "bootstrap_resamples": 10000,
+    "bootstrap_seed": 20260812,
+    "interval": "two-sided_percentile_95",
+    "mechanism_interval": "Bonferroni_98.75_percent_across_four_primary_claims",
+    "auroc_auprc": "archived pooled-row complete-seed bootstrap; archived stable directed-pair ordering",
+    "primary_claims": {
+      "q1": "balanced L neighbor_impurity(H2)-neighbor_impurity(S2); lower 98.75 bound > 0",
+      "q2": "balanced [P50-SW(H2-S2)-L(H2-S2)]; upper 98.75 bound < 0",
+      "q3": "within-draw max of balanced W50-SW-vs-P50-SW DiD for T-H2 and C-H2; upper 98.75 bound < 0",
+      "q4": "[W50-CB imbalance penalty on H2]-[W50-SW imbalance penalty on H2]; upper 98.75 bound < 0"
+    },
+    "negative_controls": {
+      "q2": "within-draw max P50-SW-minus-L over balanced S0/S1/S2",
+      "q3": "W50-SW-minus-P50-SW on balanced H2",
+      "q4": "W50-CB-minus-W50-SW on balanced H2",
+      "neighbor_impurity_upper_margin": 0.01
+    },
+    "family_drift": "for each candidate, scenario block, and seed, equally average absolute OI evidence error over the complete 2 balance x 2 nuisance-dim x 2 count x 2 k x 3 signal = 48 cells; bootstrap the paired candidate-minus-B seed means; each block upper 95 bound <= 0.02",
+    "stable_shift": {
+      "contrasts": ["X-H2", "ALL-C"],
+      "strata": "each balance separately",
+      "higher_is_better": "[(stable_candidate-shift_candidate)-(stable_B-shift_B)] for AUROC and AUPRC",
+      "lower_is_better": "[(shift_candidate-stable_candidate)-(shift_B-stable_B)] for Brier, clean MAE, and absolute nuisance-drift error",
+      "gate": "each sign-normalized upper paired 95 bound <= 0",
+      "missing": "inconclusive"
+    },
+    "lock_false_overlap": "maximum over separated S2/H2/T/C/X/ALL-by-balance candidate-minus-B upper 95 bound for mean directed 0->1/1->0 evidence"
+  },
+  "genuine_overlap_gates": {
+    "evidence_threshold": 0.05,
+    "pair_rows": "complete directed off-diagonal class-pair support/hits/evidence; pair label binary and truth overlap continuous",
+    "separated_fpr": "if B pooled FPR >= 0.10, candidate-minus-B upper paired 95 bound must be strictly < 0; otherwise <= 0.02",
+    "pair_auroc": "candidate-minus-B lower paired 95 bound >= -0.03",
+    "pair_auprc": "candidate-minus-B lower paired 95 bound >= -0.03",
+    "overlap_fnr": "candidate-minus-B upper paired 95 bound <= 0.05",
+    "refinement_fnr_vs_raw": "candidate-minus-A upper paired 95 bound <= 0.002",
+    "clean_mae": "candidate-minus-B upper paired 95 bound <= 0.05 on S0",
+    "brier": "candidate-minus-B upper paired 95 bound <= 0.05 against continuous pair-overlap truth",
+    "severity_curves": {
+      "homoscedastic": ["S0", "S1", "S2"],
+      "heteroscedastic": ["S0", "H1", "H2"],
+      "severity_values": [0.0, 1.0, 2.0],
+      "minimum_spearman_each": 0.9,
+      "minimum_ordering_rate_each": 0.9,
+      "candidate_minimum_vs_B": "candidate point value >= B point value - 0.05",
+      "maximum_ordering_loss_vs_B": 0.05
+    },
+    "strata_fnr": "for every k-by-balance stratum on genuine-overlap rows, candidate-minus-B upper paired 95 bound <= 0; crossing zero with upper <= 0.05 is inconclusive and does not pass; low > 0 or upper > 0.05 fails",
+    "pooling": "archived pooled directed-row estimands within complete seed resamples; every expected block/balance/dimension/count/k/signal identity required",
+    "missing": "inconclusive",
+    "ece": "reported but not gated"
+  },
+  "resource_gates": {
+    "scope": "R0-R3 only; development B,L,and all promotable candidates; confirmation B and locked candidate",
+    "paired_ratio_unit": "candidate/B within identical seed and resource cell",
+    "aggregation": "pool all paired ratios across the complete four resource cells and all stage seeds (48 development ratios; 96 confirmation ratios); report cells separately but apply median/p95 gates to the pooled ratios",
+    "percentile": "numpy.quantile(values,0.95,method='linear')",
+    "median_total_ratio_max": 1.1,
+    "p95_total_ratio_max": 1.25,
+    "median_score_fixed_ratio_max": 1.25,
+    "median_peak_memory_ratio_max": 1.15,
+    "p95_peak_memory_ratio_max": 1.25,
+    "individual_peak_memory_ratio_max": 1.5,
+    "individual_memory_statistic": "maximum over every paired seed-by-resource-cell ratio",
+    "comparison": "less than or equal",
+    "warmup": "excluded structurally",
+    "missing_or_nonfinite": "inconclusive",
+    "excluded_prior_gates": ["Food-101 larger-budget runtime", "full linear probe runtime", "Food-only product guardrail"]
+  },
+  "eligibility": {
+    "exact_parity": ["A", "B", "gamma_zero", "L_vs_prior_D"],
+    "determinism": "exact fitted state, structural diagnostics, predictions, and scores",
+    "leakage": "train-only conditioning and references; predict/score_fixed no refit",
+    "genuine_overlap": "all gates in genuine_overlap_gates must pass",
+    "nuisance_linear_regret_vs_probe_upper": 0.01,
+    "nonlinear_regret_vs_B_upper_each_head": 0.01,
+    "family_drift_upper_each_block": 0.02,
+    "stable_shift_upper_each_metric": 0.0,
+    "resources": "all gates in resource_gates must pass; missing mandatory memory is inconclusive"
+  },
+  "lock_rule": {
+    "criteria": ["nuisance_linear_regret_vs_probe_upper", "worst_family_drift_upper", "worst_block_false_overlap_upper"],
+    "sequential_tolerance": 0.001,
+    "simplicity_order": ["P50-SW", "P25", "P50-CB", "W50-SW", "W50-CB", "M50-SW", "M50-CB"],
+    "no_eligible": "stop",
+    "runner_up_after_lock": false
+  },
+  "resources": {
+    "warmup_excluded": true,
+    "counterbalance": "deterministic hash-seeded cyclic; every method position-count max difference one; observed equals manifest",
+    "timing_stages": ["conditioning_fit", "oi_fit_refinement", "score_fixed_including_adjacency_and_aggregation", "total", "cpu", "diagnostic_replay_separate"],
+    "timing_policy": "measure stages directly; never derive by subtraction",
+    "fresh_process_memory_required": true,
+    "cells": [
+      ["R0", "S0", "balanced", "small", 4, 2, "linear_separated"],
+      ["R1", "H2", "balanced", "large", 32, 8, "linear_separated"],
+      ["R2", "C", "imbalanced", "large", 32, 8, "genuine_overlap_half"],
+      ["R3", "ALL", "imbalanced", "large", 32, 8, "nonlinear_separated"]
+    ]
+  },
+  "stages": {
+    "smoke": {
+      "case_count": 30,
+      "outcome_use": "structural/invariant checks only; no rankings, gates, thresholds, or design amendments",
+      "cells": "18 seed-21000 scenario-by-balance small/d4/k2/linear; exact 9 seed-21001 tuples in smoke_cells.group_2; 3 seed-21002 ALL/imbalanced/large/d32/k8 signal states"
+    },
+    "development": {
+      "case_count": 5184,
+      "method_row_count": 51840,
+      "purpose": "diagnose effects and lock one candidate"
+    },
+    "prior_regression": {
+      "source": "prior nuisance-conditioned-distance screen",
+      "methods": ["A", "B", "L", "locked_candidate"],
+      "selection_use": false,
+      "failure": "reject lock; do not reopen ranking"
+    },
+    "confirmation": {
+      "case_count": 10368,
+      "fixed_methods": ["A", "B", "L", "P50-SW", "W50-SW", "W50-CB"],
+      "locked_candidate_added_if_distinct": true,
+      "one_shot": true,
+      "algorithm_decision": "locked candidate must pass all gates",
+      "mechanism_decision": "all four claims reported separately; all required for mechanism confirmation; mechanism failure alone does not reject algorithm",
+      "runner_up_after_failure": false
+    },
+    "food101": {
+      "authorized": false,
+      "next_step": "separate pre-outcome protocol after synthetic confirmation"
+    }
+  },
+  "smoke_cells": {
+    "group_1": "seed 21000; all 9 scenarios x 2 balances; small; d4; k2; linear",
+    "group_2": [
+      [21001, "S0", "balanced", "large", 32, 8, "linear_separated"],
+      [21001, "S1", "imbalanced", "large", 32, 8, "nonlinear_separated"],
+      [21001, "S2", "balanced", "large", 32, 8, "genuine_overlap_half"],
+      [21001, "H1", "imbalanced", "large", 32, 8, "linear_separated"],
+      [21001, "H2", "balanced", "large", 32, 8, "nonlinear_separated"],
+      [21001, "T", "imbalanced", "large", 32, 8, "genuine_overlap_half"],
+      [21001, "C", "balanced", "large", 32, 8, "linear_separated"],
+      [21001, "X", "imbalanced", "large", 32, 8, "nonlinear_separated"],
+      [21001, "ALL", "balanced", "large", 32, 8, "genuine_overlap_half"]
+    ],
+    "group_3": "seed 21002; ALL; imbalanced; large; d32; k8; all 3 signals"
+  },
+  "stop_semantics": {
+    "whole_stage": ["leakage", "A_or_B_or_reference_mismatch", "nondeterminism", "incomplete_paired_block", "artifact_identity_mismatch"],
+    "candidate_exclusion": ["genuine_overlap_failure", "family_or_shift_failure", "resource_failure"],
+    "atomic_block": "finish current block, emit stopped artifact, never analyze incomplete block",
+    "all_candidates_excluded": "stop pipeline",
+    "post_lock_failure": "reject locked candidate and stop"
+  },
+  "artifact_contract": {
+    "output_root_excluded_from_code_identity": true,
+    "source_hashes_required": true,
+    "protocol_hash_required": true,
+    "generator_bank_hashes_required": true,
+    "environment_and_packages_required": true,
+    "git_commit_dirty_and_code_identity_required": true,
+    "atomic_stopped_artifacts": true,
+    "resume_identity_validation": true,
+    "tables": ["case_rows.jsonl", "geometry_rows.jsonl", "prototype_rows.jsonl", "pair_rows.jsonl", "selector_panels.jsonl", "resource_rows.jsonl"],
+    "table_order": "canonical case and method order; byte-stable across PYTHONHASHSEED",
+    "manifest_table_identity": "schema, row count, and SHA-256 per normalized table",
+    "checkpoint": "one atomic identity-validated JSON object per complete case; no monolithic rewrite",
+    "decision_artifacts": {
+      "implementation_review.json": "hash and go status consumed by smoke",
+      "smoke_decision.json": "structural pass and hash consumed by development",
+      "pre_screen_review.json": "hash and go status consumed by development",
+      "promotion_decision.json": "exactly one locked candidate plus input/protocol/code hashes consumed by prior regression and confirmation",
+      "prior_regression_decision.json": "same lock hash and pass status consumed by confirmation",
+      "confirmation_decision.json": "separate algorithm and four mechanism statuses"
+    },
+    "decision_consumption": "every consumer serializes the exact SHA-256 of each prerequisite decision and fails on mismatch",
+    "runtime_excluded_from_determinism_hash": true,
+    "long_runs_in_default_unit_suite": false
+  },
+  "source_evidence": [
+    {
+      "path": "artifacts/nuisance_conditioned_distance/screen/analysis_final_v2/report.md",
+      "sha256": "3dbfd2da109821841d671d96d70ca5bd1c444a581f18bae49b33f7a774f42c8c"
+    },
+    {
+      "path": "artifacts/nuisance_conditioned_distance/screen/raw_results.json",
+      "sha256": "9e88c48369ff3dea28d119391cf66120d740b5e3a19c6963be5ec334238c23e3"
+    },
+    {
+      "path": "artifacts/nuisance_conditioned_distance/screen/manifest.json",
+      "sha256": "9a289e261236e82bd94d188f44833971737267928240806be8ec98e06341137a"
+    },
+    {
+      "path": "experiments/nuisance_conditioned_distance/protocol.json",
+      "sha256": "1ec47e521b67ce39db5c887004a68f1f2319a0ed5ee075067d0818b0823df0ea"
+    }
+  ],
+  "confirmation_status": "No new real embedding panel is available; synthetic confirmation is one-shot and public/default change remains unauthorized without a future new embedding/task panel."
+}
