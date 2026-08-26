@@ -10,7 +10,15 @@
     "food101": "not authorized"
   },
   "frozen_date": "2026-08-26",
-  "plan_sha256": "62285777ce2f18c56eaa539fb992d8440604ded008acc390d026737dbadedeae",
+  "pre_outcome_amendments": [
+    {
+      "date": "2026-08-26",
+      "scope": "structural smoke pair-row schema only",
+      "reason": "freeze one descriptor-only representation that proves pairwise state coverage without serializing recoverable numeric outcomes",
+      "outcomes_observed": false
+    }
+  ],
+  "plan_sha256": "c65b081e36d97491193fa0c22e84e7312b046dc02a7e760cfef2acefa7463aa6",
   "repository": {
     "branch": "codex/experiment-heteroscedastic-distance-conditioning",
     "starting_commit": "46aa626f07ab91b34371dc8f2065b42d179fe510",
@@ -521,6 +529,23 @@
     "atomic_stopped_artifacts": true,
     "resume_identity_validation": true,
     "tables": ["case_rows.jsonl", "geometry_rows.jsonl", "prototype_rows.jsonl", "pair_rows.jsonl", "selector_panels.jsonl", "resource_rows.jsonl"],
+    "smoke_pair_row_schema": {
+      "identity_fields": ["source_label", "target_label"],
+      "required_exact_state_match": true,
+      "pair_structure": {
+        "required_keys": ["support", "hits", "sparse_adj_hits", "pairwise_index", "evidence"],
+        "descriptor_required_keys": ["present", "type", "finite"],
+        "descriptor_present": true,
+        "descriptor_finite": true,
+        "descriptor_type": "actual JSON numeric scalar class (int or float)",
+        "forbidden_descriptor_keys": ["value"],
+        "extra_keys_allowed": false
+      },
+      "top_level_generic_finite_allowed": false,
+      "numeric_outcomes_allowed": false,
+      "source_target_aliases_allowed": false,
+      "diagonal_pairs_allowed": false
+    },
     "table_order": "canonical case and method order; byte-stable across PYTHONHASHSEED",
     "manifest_table_identity": "schema, row count, and SHA-256 per normalized table",
     "checkpoint": "one atomic identity-validated JSON object per complete case; no monolithic rewrite",

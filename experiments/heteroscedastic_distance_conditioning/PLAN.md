@@ -708,7 +708,14 @@ The 30 smoke cells are:
    signal states (3 cells).
 
 The smoke runner executes every method on every cell but exposes only structural and
-invariant checks as specified in Section 10.
+invariant checks as specified in Section 10. Each directional pair row retains the
+original scalar `source_label` and `target_label`, `exact_state_match=true`, and one
+`pair_structure` object. That object has exactly `support`, `hits`,
+`sparse_adj_hits`, `pairwise_index`, and `evidence`; each value is only a
+`{present, type, finite}` descriptor. Descriptors never contain `value` or another
+recoverable numeric outcome, and no direct-field or source/target alias is allowed.
+This descriptor-only schema was clarified before any smoke or candidate outcome was
+run and is recorded as a pre-outcome amendment in `protocol.json`.
 
 The remaining post-freeze, pre-outcome work is mechanical: implement and hash the
 exact generator, latent-bank recipe, split identities, environment, code, and
