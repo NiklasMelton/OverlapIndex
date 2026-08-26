@@ -17,9 +17,9 @@ evidence. There is no manufactured "untouched" confirmation panel.
 |---|---|---:|---|
 | A | raw OI, unrefined | no | exact baseline |
 | B | raw OI, balanced-median refinement | no | exact refined baseline |
-| C | refined OI, label-neutral full global OAS whitening | no | candidate |
-| D | refined OI, pooled-within-class diagonal OAS scaling | training labels | candidate |
-| E | refined OI, pooled-within-class full OAS whitening | training labels | candidate |
+| C | refined OI, globally centered full OAS covariance inverse-square-root | no | candidate |
+| D | refined OI, pooled-within-class diagonal OAS inverse scaling | training labels; sample-weighted residual rows | candidate |
+| E | refined OI, pooled-within-class full OAS covariance inverse-square-root | training labels; sample-weighted residual rows | candidate |
 | F | absolute B/E disagreement | diagnostic only | never promoted |
 | G | panel-level selective capped probe | training labels | product-policy comparator, not OI |
 
@@ -27,7 +27,9 @@ Every conditioner is fit only on training rows. Held-out rows are transformed us
 that frozen fitted state and passed to `score_fixed`; neither conditioning nor
 prototypes are refit. OAS shrinkage is automatic, the condition-number cap is `1e4`,
 and no hard PCA truncation is used. Pooled-within-class covariance is estimated from
-sample-weighted class residual rows; it is not class-balanced under imbalance.
+sample-weighted class residual rows; it is not class-balanced under imbalance, so
+larger classes contribute proportionally more residual rows. Residual weighting is
+not applicable (JSON `null`) for the raw and global candidates.
 
 ## Staged commands
 

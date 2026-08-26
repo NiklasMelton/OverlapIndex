@@ -15,6 +15,7 @@
       "id": "A",
       "name": "oi_unrefined_raw",
       "mode": "none",
+      "residual_weighting": null,
       "prototype_refinement": false,
       "role": "exact_current_baseline"
     },
@@ -22,6 +23,7 @@
       "id": "B",
       "name": "oi_refined_raw",
       "mode": "none",
+      "residual_weighting": null,
       "prototype_refinement": true,
       "role": "exact_current_refined_baseline"
     },
@@ -29,6 +31,7 @@
       "id": "C",
       "name": "oi_refined_global_isotropy",
       "mode": "global_isotropy",
+      "residual_weighting": null,
       "prototype_refinement": true,
       "role": "label_neutral_candidate",
       "definition": "Full OAS covariance on global-centered training rows; apply the symmetric inverse-square-root transform"
@@ -37,6 +40,7 @@
       "id": "D",
       "name": "oi_refined_pooled_diagonal",
       "mode": "pooled_diagonal",
+      "residual_weighting": "sample_weighted_rows",
       "prototype_refinement": true,
       "role": "label_aware_diagonal_candidate",
       "definition": "OAS covariance on sample-weighted training residuals about training class means; retain the shrunk diagonal and inverse-square-root scale it"
@@ -45,6 +49,7 @@
       "id": "E",
       "name": "oi_refined_pooled_full",
       "mode": "pooled_full",
+      "residual_weighting": "sample_weighted_rows",
       "prototype_refinement": true,
       "role": "label_aware_full_candidate",
       "definition": "OAS covariance on sample-weighted training residuals about training class means; symmetric full inverse-square-root transform"
