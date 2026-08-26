@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import csv
+import json
 from pathlib import Path
 
 from experiments.nuisance_conditioned_distance.reporting import (
@@ -13,6 +15,7 @@ from experiments.nuisance_conditioned_distance.reporting import (
     render_report,
     runtime_rows,
     selector_rows,
+    write_decision_table,
     write_reports,
 )
 
@@ -172,23 +175,49 @@ def test_decision_rows_keep_non_promotable_f_and_g_explicit() -> None:
 def test_locked_candidate_gate_status_never_reranks() -> None:
     summary = _summary()
     summary["candidates"]["D"] = dict(summary["candidates"]["C"])
-    for status, expected in (
-        ("pass", "Final locked-candidate decision: **pass** for locked candidate **C**"),
-        ("fail", "Final locked-candidate decision: **rejected** (status **fail**) for locked candidate **C**"),
-        ("inconclusive", "Final locked-candidate decision: **inconclusive** (status **inconclusive**) for locked candidate **C**"),
+    for status, selected, expected, promoted in (
+        ("pass", "C", "Final locked-candidate decision: **pass** for locked candidate **C**", True),
+        ("promoted_for_full_evaluation", "C", "Synthetic screen locked candidate **C** for Food-101 evaluation", True),
+        ("fail", None, "Final locked-candidate decision: **rejected** (status **fail**) for locked candidate **C**", False),
+        ("inconclusive", None, "Final locked-candidate decision: **inconclusive** (status **inconclusive**) for locked candidate **C**", False),
     ):
         promotion = {
             "locked_candidate": "C",
-            "selected_candidate": "D",
+            "selected_candidate": selected,
             "status": status,
             "reason": "mandatory Food-101 product gates",
         }
         report = render_report(summary, promotion)
         assert expected in report
-        assert "No reranking was performed." in report
+        if status == "promoted_for_full_evaluation":
+            assert "They never trigger reranking." in report
+        else:
+            assert "No reranking was performed." in report
         rows = decision_rows(summary, promotion)
-        assert next(row for row in rows if row["candidate"] == "C")["promoted"] is True
+        assert next(row for row in rows if row["candidate"] == "C")["promoted"] is promoted
         assert next(row for row in rows if row["candidate"] == "D")["promoted"] is False
+
+
+def test_rejected_lock_is_not_promoted_in_markdown_csv_or_json(tmp_path: Path) -> None:
+    summary = _summary()
+    promotion = {
+        "locked_candidate": "C",
+        "selected_candidate": None,
+        "status": "fail",
+        "reason": "locked candidate failed a final gate",
+    }
+    rows = write_decision_table(tmp_path, summary, promotion)
+    c_row = next(row for row in rows if row["candidate"] == "C")
+    assert c_row["promoted"] is False
+    json_rows = json.loads((tmp_path / "decision_table.json").read_text(encoding="utf-8"))
+    assert next(row for row in json_rows if row["candidate"] == "C")["promoted"] is False
+    with (tmp_path / "decision_table.csv").open(newline="", encoding="utf-8") as handle:
+        csv_rows = list(csv.DictReader(handle))
+    assert next(row for row in csv_rows if row["candidate"] == "C")["promoted"] == "False"
+    report = render_report(summary, promotion)
+    assert "Final locked-candidate decision: **rejected**" in report
+    assert "Promoted" in report
+    assert "| C |" in report
 
 
 def test_food_probe_pseudo_candidates_are_reported_as_probe_artifacts() -> None:

@@ -3315,8 +3315,12 @@ def evaluate_product_gates(
             ),
             "gates": gates,
         }
-        food_completeness = summary.get("food_artifact_completeness") if isinstance(summary, Mapping) else None
-        if stage == "food101" and (
+        food_completeness = (
+            summary.get("food101_completeness", summary.get("food_artifact_completeness"))
+            if isinstance(summary, Mapping)
+            else None
+        )
+        if stage in {"food101", "full"} and (
             not isinstance(food_completeness, Mapping)
             or food_completeness.get("status") != "pass"
         ):
@@ -3364,6 +3368,11 @@ def select_promotion(
     completeness = summary.get("artifact_completeness") if isinstance(summary, Mapping) else None
     robustness_completeness = summary.get("robustness_completeness") if isinstance(summary, Mapping) else None
     runtime_benchmark = summary.get("runtime_benchmark") if isinstance(summary, Mapping) else None
+    food101_completeness = (
+        summary.get("food101_completeness", summary.get("food_artifact_completeness"))
+        if isinstance(summary, Mapping)
+        else None
+    )
     locked_candidate = summary.get("locked_candidate") if isinstance(summary, Mapping) else None
     scores: dict[str, dict[str, Any]] = {}
     excluded: dict[str, str] = {"A": "exact baseline control", "B": "exact baseline control", "F": "diagnostic only", "G": "product-policy comparator only"}
@@ -3403,6 +3412,12 @@ def select_promotion(
         ):
             excluded[candidate] = "incomplete or unverifiable large-budget runtime artifact"
             continue
+        if stage == "full" and (
+            not isinstance(food101_completeness, Mapping)
+            or food101_completeness.get("status") != "pass"
+        ):
+            excluded[candidate] = "incomplete or unverifiable Food-101 artifact"
+            continue
         if historical_status == "fail" or (stage != "screen" and product_status == "fail"):
             excluded[candidate] = "frozen gate failure"
             continue
@@ -3425,6 +3440,8 @@ def select_promotion(
             or not isinstance(runtime_benchmark, Mapping)
             or not isinstance(runtime_benchmark.get("completeness"), Mapping)
             or runtime_benchmark["completeness"].get("status") != "pass"
+            or not isinstance(food101_completeness, Mapping)
+            or food101_completeness.get("status") != "pass"
         ):
             full_lock_gate_status = "inconclusive"
             reason = "screen-locked candidate lacks a verified complete full-stage artifact"
@@ -3437,7 +3454,12 @@ def select_promotion(
                 else "pass"
             )
             if full_lock_gate_status == "fail":
-                selected = locked_candidate
+                # The lock remains auditable, but a failed final gate is a
+                # rejection, not a new promotion.  In particular, never
+                # leave the locked id in selected_candidate: downstream
+                # reporting must be able to distinguish "evaluated and
+                # rejected" from "promoted" without guessing from status.
+                selected = None
                 status = "fail"
                 reason = "screen-locked candidate failed a definite full-stage gate"
             elif full_lock_gate_status == "inconclusive":
@@ -3524,6 +3546,10 @@ def select_promotion(
         "robustness_completeness": json_safe(robustness_completeness),
         "runtime_benchmark": json_safe(runtime_benchmark),
         "locked_candidate": locked_candidate,
+        "promoted": bool(
+            selected is not None
+            and status in {"pass", "promoted_for_full_evaluation"}
+        ),
         "input_hashes": dict(input_hashes or {}),
         "source_hashes": dict(source_hashes_map or {}),
     }
@@ -5284,6 +5310,14 @@ def build_analysis_summary(
         if str(stage).lower() == "food101"
         else None
     )
+    food101_completeness = food_artifact_completeness
+    if stage == "full" and food101_completeness is None:
+        food101_completeness = {
+            "stage": "food101",
+            "status": "inconclusive",
+            "failures": ["Food-101 artifact was not supplied for the full-stage decision"],
+            "inconclusive_reasons": ["food101_path is missing"],
+        }
     grouped = _candidate_rows(records)
     ordered_candidates = [candidate for candidate in CANDIDATE_ORDER if candidate in grouped]
     ordered_candidates.extend(sorted(candidate for candidate in grouped if candidate not in ordered_candidates))
@@ -5524,6 +5558,7 @@ def build_analysis_summary(
         "artifact_completeness": artifact_completeness,
         "robustness_completeness": robustness_completeness,
         "food_artifact_completeness": food_artifact_completeness,
+        "food101_completeness": food101_completeness,
         "runtime_benchmark": json_safe(runtime_benchmark),
         "baseline_parity": json_safe(manifest.get("baseline_parity")),
         "determinism": json_safe(manifest.get("determinism")),

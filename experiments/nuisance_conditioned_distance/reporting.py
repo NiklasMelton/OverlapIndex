@@ -478,6 +478,27 @@ def _promotion_candidate(promotion: Mapping[str, Any] | None) -> str | None:
     return None
 
 
+def _promotion_is_promoted(
+    promotion: Mapping[str, Any] | None,
+    candidate: str,
+) -> bool:
+    """Return true only for an explicit successful promotion decision.
+
+    A full-stage rejection still carries ``locked_candidate`` for audit, but
+    that lock must not become a promoted marker in any report surface.
+    """
+
+    if not isinstance(promotion, Mapping):
+        return False
+    status = str(_lookup(promotion, "status") or "").strip().lower()
+    selected = _lookup(promotion, "selected_candidate")
+    return (
+        selected is not None
+        and str(selected) == str(candidate)
+        and status in {"pass", "promoted_for_full_evaluation"}
+    )
+
+
 def decision_rows(summary: Mapping[str, Any], promotion: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
     """Flatten every candidate into one stable decision/metrics row."""
 
@@ -505,7 +526,7 @@ def decision_rows(summary: Mapping[str, Any], promotion: Mapping[str, Any] | Non
             "clean_mae": _estimate(_lookup(metrics, "clean_mae")), "clean_linear_regret_upper": _ci(clean_regret_source, "upper") if _ci(clean_regret_source, "upper") is not None else _estimate(_lookup(metrics, "clean_linear_regret_upper")), "nuisance_linear_regret_upper": _ci(nuisance_regret_source, "upper") if _ci(nuisance_regret_source, "upper") is not None else _estimate(_lookup(metrics, "nuisance_linear_regret_upper")), "robustness_auc": robust.get(candidate, {}).get("robustness_auc"), "nuisance_spearman": _estimate(_lookup(metrics, "nuisance_spearman")), "nuisance_ordering_rate": _estimate(_lookup(metrics, "nuisance_ordering_rate")),
             "refinement_rate": diag.get("refinement_rate"), "condition_number": diag.get("condition_number"), "median_total_seconds": candidate_timing.get("total", {}).get("median"), "p95_total_seconds": candidate_timing.get("total", {}).get("p95"), "median_score_fixed_seconds": candidate_timing.get("score_fixed", {}).get("median"),
             **{field: _ratio(metrics, field) for field in _RATIO_FIELDS},
-            "historical_gate": historical_status, "product_gate": product_status, "decision_status": _decision_status(candidate, historical_status, product_status), "promoted": candidate == selected,
+            "historical_gate": historical_status, "product_gate": product_status, "decision_status": _decision_status(candidate, historical_status, product_status), "promoted": _promotion_is_promoted(promotion, candidate),
         })
     return out
 

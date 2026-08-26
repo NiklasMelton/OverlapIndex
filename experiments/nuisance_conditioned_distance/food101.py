@@ -727,6 +727,198 @@ def _environment(provenance: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def _write_food_artifacts(
+    *,
+    output: Path,
+    artifact_status: str,
+    stop_reason: str | None,
+    stop_error: str | None,
+    args: argparse.Namespace,
+    models: Sequence[str],
+    replicates: Sequence[int],
+    budgets: Sequence[int],
+    arm_names: Sequence[str],
+    candidate_ids: Sequence[str],
+    promoted_candidate: str | None,
+    promotion_decision_sha256: str | None,
+    provenance: Mapping[str, Any],
+    source_paths: Mapping[str, tuple[Path, str]],
+    cache_identity: Mapping[str, Any],
+    rows: Sequence[Mapping[str, Any]],
+    probe_rows: Sequence[Mapping[str, Any]],
+    guardrail_rows: Sequence[Mapping[str, Any]],
+    prior_full_probe_rows: Sequence[Mapping[str, Any]],
+    reference_rows: Sequence[Mapping[str, Any]],
+    parity: Sequence[Mapping[str, Any]],
+    deterministic_repeats: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Write one complete, analyzable Food artifact bundle.
+
+    This is also the failure-path writer.  Candidate, determinism, and frozen
+    baseline-parity stops must leave the accumulated rows and provenance at the
+    top level before the caller raises.  Each individual file is replaced via
+    :func:`_write_json`'s temporary-file protocol, so a stopped run cannot
+    expose a half-written JSON document to resume/analysis tooling.
+    """
+
+    raw_result: dict[str, Any] = {
+        "schema_version": 1,
+        "artifact_status": str(artifact_status),
+        "study": "food101_nuisance_conditioned_distance",
+        "retrospective": True,
+        "configuration": {
+            "models": list(models),
+            "replicates": list(replicates),
+            "budgets": list(budgets),
+            "arms": list(arm_names),
+            "candidates": list(candidate_ids),
+            "promoted_candidate_for_G": promoted_candidate,
+            "promotion_decision": (
+                {
+                    "path": str(args.promotion_decision.resolve()),
+                    "sha256": promotion_decision_sha256,
+                }
+                if args.promotion_decision is not None
+                else None
+            ),
+            "folds": FOLDS,
+            "k": K,
+            "seed": SEED,
+            "capped_probe_maximum_rows": CAP_ROWS,
+            "counterbalanced": True,
+            "serial_one_thread": True,
+            "warmup_excluded": True,
+            "smoke": bool(args.smoke),
+            "cache_matrix_sha256_verified": True,
+        },
+        "environment": _environment(provenance),
+        "repository_provenance": dict(provenance),
+        "protocol": {
+            "path": str(PROTOCOL_PATH),
+            "sha256": _sha256(PROTOCOL_PATH),
+        },
+        "sources": {
+            name: {"path": str(path), "sha256": expected}
+            for name, (path, expected) in source_paths.items()
+        },
+        "cache_identity": dict(cache_identity),
+        "selector_rows": [dict(row) for row in rows],
+        "capped_probe_rows": [dict(row) for row in probe_rows],
+        "guardrail_rows": [dict(row) for row in guardrail_rows],
+        "prior_full_probe_rows": [dict(row) for row in prior_full_probe_rows],
+        "reference_rows": [dict(row) for row in reference_rows],
+        "baseline_parity_rows": [dict(row) for row in parity],
+        "baseline_parity": {
+            "n": len(parity),
+            "exact": bool(parity) and all(row["exact"] for row in parity),
+            "max_absolute_delta": max(
+                (abs(float(row["delta"])) for row in parity), default=None
+            ),
+        },
+        "determinism_verification": {
+            "status": (
+                "pass"
+                if set(deterministic_repeats) == set(candidate_ids)
+                and all(
+                    value.get("exact") is True
+                    for value in deterministic_repeats.values()
+                )
+                else "inconclusive"
+            ),
+            "exact": (
+                True
+                if set(deterministic_repeats) == set(candidate_ids)
+                and all(
+                    value.get("exact") is True
+                    for value in deterministic_repeats.values()
+                )
+                else None
+            ),
+            "basis": "excluded per-candidate first warmup versus identical first measured Food cell",
+            "runtime_fields_excluded": True,
+            "candidates": {
+                str(candidate_id): dict(comparison)
+                for candidate_id, comparison in deterministic_repeats.items()
+            },
+        },
+        "deviations": [
+            "The panel is retrospective development evidence, not untouched confirmation.",
+            "Peak memory requires a separate fresh-process benchmark and is not inferred here.",
+            "The capped probe component is measured for G but kept separate from OI candidates.",
+            "Capped-probe components are measured for every model to support paired runtime analysis; G applies them only in panels satisfying the frozen trigger.",
+        ],
+    }
+    if stop_reason is not None:
+        raw_result["stop_reason"] = str(stop_reason)
+        raw_result["stop_error"] = str(stop_error) if stop_error is not None else None
+
+    _write_json(output / "raw_results.json", raw_result)
+    manifest = {
+        key: raw_result[key]
+        for key in (
+            "schema_version",
+            "artifact_status",
+            "study",
+            "configuration",
+            "environment",
+            "repository_provenance",
+            "protocol",
+            "sources",
+            "cache_identity",
+            "baseline_parity",
+            "determinism_verification",
+            "deviations",
+        )
+    }
+    if stop_reason is not None:
+        manifest["stop_reason"] = raw_result["stop_reason"]
+        manifest["stop_error"] = raw_result["stop_error"]
+    _write_json(output / "manifest.json", manifest)
+    _write_csv(output / "selector_rows.csv", rows)
+    _write_csv(output / "capped_probe_rows.csv", probe_rows)
+    _write_csv(output / "guardrail_rows.csv", guardrail_rows)
+    _write_csv(output / "baseline_parity_rows.csv", parity)
+    return raw_result
+
+
+def _baseline_parity_rows(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    old_method: Mapping[str, str],
+    prior_lookup: Mapping[tuple[str, int, str, int, str], float],
+) -> list[dict[str, Any]]:
+    """Materialize parity observations already available in ``rows``."""
+
+    parity: list[dict[str, Any]] = []
+    for row in rows:
+        method = old_method.get(str(row.get("candidate_id")))
+        if method is None or row.get("score") is None:
+            continue
+        key = (
+            str(row["backbone"]),
+            int(row["replicate"]),
+            str(row["arm"]),
+            int(row["budget"]),
+            method,
+        )
+        if key in prior_lookup:
+            delta = float(row["score"]) - prior_lookup[key]
+            parity.append(
+                {
+                    "candidate_id": row["candidate_id"],
+                    "model": row["model"],
+                    "replicate": row["replicate"],
+                    "arm": row["arm"],
+                    "budget": row["budget"],
+                    "new_score": row["score"],
+                    "prior_score": prior_lookup[key],
+                    "delta": delta,
+                    "exact": delta == 0.0,
+                }
+            )
+    return parity
+
+
 def _run(args: argparse.Namespace) -> int:
     provenance = _repository_provenance()
     models = _parse_subset(args.models, MODELS)
@@ -817,6 +1009,23 @@ def _run(args: argparse.Namespace) -> int:
         "A": "overlap_unrefined_cross_fitted",
         "B": "overlap_refined_cross_fitted",
     }
+    # These source/reference rows are available before any candidate cell is
+    # fitted, so a stopped run can still carry the same analyzable reference
+    # surface as a completed run.
+    reference_rows = [
+        dict(row) for row in source_result.get("reference_rows", ())
+        if str(row.get("backbone")) in models
+        and int(row.get("replicate")) in replicates
+        and str(row.get("arm")) in arm_names
+    ]
+    prior_full_probe_rows = [
+        dict(row) for row in prior.get("selector_rows", ())
+        if str(row.get("backbone")) in models
+        and int(row.get("replicate")) in replicates
+        and str(row.get("arm")) in arm_names
+        and int(row.get("budget")) in budgets
+        and str(row.get("method")) == "linear_probe_oof"
+    ]
 
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -887,21 +1096,142 @@ def _run(args: argparse.Namespace) -> int:
                             raise RuntimeError(
                                 f"Resume checkpoint identity mismatch: {checkpoint}"
                             )
-                        rows.extend(cached.get("rows", ()))
-                        probe_rows.extend(cached.get("probe_rows", ()))
-                        cached_repeats = cached.get("determinism_verification", {})
-                        if isinstance(cached_repeats, Mapping):
+                        cached_rows_raw = cached.get("rows", ())
+                        cached_probe_rows_raw = cached.get("probe_rows", ())
+                        cached_rows = tuple(
+                            row for row in cached_rows_raw
+                            if isinstance(row, Mapping)
+                        ) if isinstance(cached_rows_raw, Sequence) and not isinstance(
+                            cached_rows_raw, (str, bytes)
+                        ) else ()
+                        cached_probe_rows = tuple(
+                            row for row in cached_probe_rows_raw
+                            if isinstance(row, Mapping)
+                        ) if isinstance(cached_probe_rows_raw, Sequence) and not isinstance(
+                            cached_probe_rows_raw, (str, bytes)
+                        ) else ()
+                        cached_status = cached.get("artifact_status")
+                        expected_candidate_ids = {
+                            str(candidate[0]) for candidate in selected_candidates
+                        }
+                        cached_repeats = cached.get("determinism_verification")
+                        cached_repeats_valid = (
+                            isinstance(cached_repeats, Mapping)
+                            and set(cached_repeats) == expected_candidate_ids
+                            and all(
+                                isinstance(comparison, Mapping)
+                                and comparison.get("exact") is True
+                                for comparison in cached_repeats.values()
+                            )
+                        )
+                        # Validate the checkpoint-local determinism record
+                        # before consulting/merging the cumulative signatures.
+                        # Otherwise a later incomplete checkpoint could be
+                        # masked by an earlier complete one during resume.
+                        invalid_reason: str | None = (
+                            None
+                            if cached_repeats_valid
+                            else "resume_checkpoint_incomplete_determinism"
+                        )
+                        if cached_status != "completed":
+                            invalid_reason = "resume_stopped_checkpoint"
+                        elif (
+                            not isinstance(cached_rows_raw, Sequence)
+                            or isinstance(cached_rows_raw, (str, bytes))
+                            or len(cached_rows) != len(cached_rows_raw)
+                            or not cached_rows
+                            or any(row.get("status") != "ok" for row in cached_rows)
+                        ):
+                            invalid_reason = "resume_checkpoint_failed_rows"
+                        else:
+                            cached_candidate_ids = {
+                                str(row.get("candidate_id")) for row in cached_rows
+                            }
+                            probe_complete = (
+                                isinstance(cached_probe_rows_raw, Sequence)
+                                and not isinstance(cached_probe_rows_raw, (str, bytes))
+                                and len(cached_probe_rows) == len(cached_probe_rows_raw) == 1
+                                and str(cached_probe_rows[0].get("candidate_id"))
+                                == "G_probe_component"
+                                and cached_probe_rows[0].get("score") is not None
+                                and cached_probe_rows[0].get("wall_seconds") is not None
+                                and cached_probe_rows[0].get("cpu_seconds") is not None
+                            )
+                            if (
+                                len(cached_rows) != len(expected_candidate_ids)
+                                or cached_candidate_ids != expected_candidate_ids
+                            ):
+                                invalid_reason = (
+                                    invalid_reason
+                                    or "resume_checkpoint_incomplete_rows"
+                                )
+                            elif not probe_complete:
+                                invalid_reason = (
+                                    invalid_reason
+                                    or "resume_checkpoint_incomplete_probe"
+                                )
+                        if cached_repeats_valid:
                             for candidate_id, comparison in cached_repeats.items():
                                 existing = deterministic_repeats.get(str(candidate_id))
                                 if existing is not None and existing != comparison:
-                                    raise RuntimeError(
-                                        "Resume checkpoint determinism signature mismatch: "
-                                        f"{checkpoint}"
+                                    invalid_reason = (
+                                        invalid_reason
+                                        or "resume_checkpoint_determinism_mismatch"
                                     )
+                                    continue
                                 if isinstance(comparison, Mapping):
                                     deterministic_repeats[str(candidate_id)] = dict(
                                         comparison
                                     )
+                            if (
+                                set(deterministic_repeats) != expected_candidate_ids
+                                or any(
+                                    comparison.get("exact") is not True
+                                    for comparison in deterministic_repeats.values()
+                                )
+                            ):
+                                invalid_reason = (
+                                    invalid_reason
+                                    or "resume_checkpoint_incomplete_determinism"
+                                )
+                        if invalid_reason is not None:
+                            rows.extend(cached_rows)
+                            probe_rows.extend(cached_probe_rows)
+                            stop_error = (
+                                f"Cannot resume Food-101 checkpoint {checkpoint}: "
+                                f"{invalid_reason}; artifact_status={cached_status!r}."
+                            )
+                            _write_food_artifacts(
+                                output=output,
+                                artifact_status="stopped",
+                                stop_reason=invalid_reason,
+                                stop_error=stop_error,
+                                args=args,
+                                models=models,
+                                replicates=replicates,
+                                budgets=budgets,
+                                arm_names=arm_names,
+                                candidate_ids=candidate_ids,
+                                promoted_candidate=promoted_candidate,
+                                promotion_decision_sha256=promotion_decision_sha256,
+                                provenance=provenance,
+                                source_paths=source_paths,
+                                cache_identity=cache_identity,
+                                rows=rows,
+                                probe_rows=probe_rows,
+                                guardrail_rows=(),
+                                prior_full_probe_rows=prior_full_probe_rows,
+                                reference_rows=reference_rows,
+                                parity=_baseline_parity_rows(
+                                    rows,
+                                    old_method=old_method,
+                                    prior_lookup=prior_lookup,
+                                ),
+                                deterministic_repeats=deterministic_repeats,
+                            )
+                            raise RuntimeError(stop_error)
+                        rows.extend(cached_rows)
+                        probe_rows.extend(cached_probe_rows)
                         continue
                     offset = (
                         model_position + int(replicate) + arm_position + budget_position
@@ -910,16 +1240,20 @@ def _run(args: argparse.Namespace) -> int:
                     block: list[dict[str, Any]] = []
                     for order, candidate in enumerate(execution):
                         warmup_result: dict[str, Any] | None = None
-                        if candidate[0] not in warmed_candidates:
-                            warmup_result = _cross_fitted_score(
-                                subset,
-                                subset_target,
-                                candidate=candidate,
-                                seed=SEED + int(replicate),
-                            )
-                            warmed_candidates.add(candidate[0])
-                        started_wall, started_cpu = perf_counter(), process_time()
+                        started_wall: float | None = None
+                        started_cpu: float | None = None
                         try:
+                            if candidate[0] not in warmed_candidates:
+                                warmup_result = _cross_fitted_score(
+                                    subset,
+                                    subset_target,
+                                    candidate=candidate,
+                                    seed=SEED + int(replicate),
+                                )
+                                warmed_candidates.add(candidate[0])
+                            # The first call is a real warm-up and is excluded
+                            # from the measured candidate clocks.
+                            started_wall, started_cpu = perf_counter(), process_time()
                             result = _cross_fitted_score(
                                 subset,
                                 subset_target,
@@ -937,6 +1271,8 @@ def _run(args: argparse.Namespace) -> int:
                                     )
                             status, error = "ok", None
                         except Exception as exc:  # preserve failed research rows
+                            if started_wall is None or started_cpu is None:
+                                started_wall, started_cpu = perf_counter(), process_time()
                             result = {
                                 "candidate_id": candidate[0],
                                 "candidate_name": candidate[1],
@@ -945,6 +1281,7 @@ def _run(args: argparse.Namespace) -> int:
                                 "score": None,
                             }
                             status, error = "error", f"{type(exc).__name__}: {exc}"
+                        assert started_wall is not None and started_cpu is not None
                         block.append(
                             {
                                 "model": model,
@@ -972,6 +1309,19 @@ def _run(args: argparse.Namespace) -> int:
                         # after a candidate error. This is an explicit frozen
                         # early-stop condition, not a missing observation to
                         # be silently dropped by analysis.
+                        rows.extend(block)
+                        failures = "; ".join(
+                            f"{row.get('candidate_id')}: {row.get('error')}"
+                            for row in failed_rows
+                        )
+                        stop_reason = (
+                            "nondeterminism_failure"
+                            if any(
+                                "nondeterministic" in str(row.get("error", "")).lower()
+                                for row in failed_rows
+                            )
+                            else "candidate_failure"
+                        )
                         _write_json(
                             checkpoint,
                             {
@@ -980,38 +1330,105 @@ def _run(args: argparse.Namespace) -> int:
                                 "probe_rows": [],
                                 "determinism_verification": deterministic_repeats,
                                 "artifact_status": "stopped_candidate_error",
+                                "stop_reason": stop_reason,
+                                "stop_error": failures,
                             },
                         )
-                        failures = "; ".join(
-                            f"{row.get('candidate_id')}: {row.get('error')}"
-                            for row in failed_rows
+                        _write_food_artifacts(
+                            output=output,
+                            artifact_status="stopped",
+                            stop_reason=stop_reason,
+                            stop_error=failures,
+                            args=args,
+                            models=models,
+                            replicates=replicates,
+                            budgets=budgets,
+                            arm_names=arm_names,
+                            candidate_ids=candidate_ids,
+                            promoted_candidate=promoted_candidate,
+                            promotion_decision_sha256=promotion_decision_sha256,
+                            provenance=provenance,
+                            source_paths=source_paths,
+                            cache_identity=cache_identity,
+                            rows=rows,
+                            probe_rows=probe_rows,
+                            guardrail_rows=(),
+                            prior_full_probe_rows=prior_full_probe_rows,
+                            reference_rows=reference_rows,
+                            parity=_baseline_parity_rows(
+                                rows, old_method=old_method, prior_lookup=prior_lookup
+                            ),
+                            deterministic_repeats=deterministic_repeats,
                         )
                         raise RuntimeError(
                             "Food-101 candidate cell failed; frozen early stop: "
                             f"{failures}"
                         )
-                    for baseline_row in block:
-                        method = old_method.get(str(baseline_row["candidate_id"]))
-                        if method is None:
-                            continue
-                        parity_key = (
-                            str(baseline_row["backbone"]),
-                            int(baseline_row["replicate"]),
-                            str(baseline_row["arm"]),
-                            int(baseline_row["budget"]),
-                            method,
+                    rows.extend(block)
+                    try:
+                        for baseline_row in block:
+                            method = old_method.get(str(baseline_row["candidate_id"]))
+                            if method is None:
+                                continue
+                            parity_key = (
+                                str(baseline_row["backbone"]),
+                                int(baseline_row["replicate"]),
+                                str(baseline_row["arm"]),
+                                int(baseline_row["budget"]),
+                                method,
+                            )
+                            expected_score = prior_lookup.get(parity_key)
+                            if expected_score is None:
+                                raise RuntimeError(
+                                    f"Missing frozen A/B parity row for {parity_key!r}."
+                                )
+                            if baseline_row.get("score") != expected_score:
+                                raise RuntimeError(
+                                    "Frozen A/B parity mismatch for "
+                                    f"{parity_key!r}: expected {expected_score!r}, "
+                                    f"got {baseline_row.get('score')!r}."
+                                )
+                    except RuntimeError as exc:
+                        parity_failure = str(exc)
+                        _write_json(
+                            checkpoint,
+                            {
+                                "identity": checkpoint_identity,
+                                "rows": block,
+                                "probe_rows": [],
+                                "determinism_verification": deterministic_repeats,
+                                "artifact_status": "stopped_parity_failure",
+                                "stop_reason": "baseline_parity_failure",
+                                "stop_error": parity_failure,
+                            },
                         )
-                        expected_score = prior_lookup.get(parity_key)
-                        if expected_score is None:
-                            raise RuntimeError(
-                                f"Missing frozen A/B parity row for {parity_key!r}."
-                            )
-                        if baseline_row.get("score") != expected_score:
-                            raise RuntimeError(
-                                "Frozen A/B parity mismatch for "
-                                f"{parity_key!r}: expected {expected_score!r}, "
-                                f"got {baseline_row.get('score')!r}."
-                            )
+                        _write_food_artifacts(
+                            output=output,
+                            artifact_status="stopped",
+                            stop_reason="baseline_parity_failure",
+                            stop_error=parity_failure,
+                            args=args,
+                            models=models,
+                            replicates=replicates,
+                            budgets=budgets,
+                            arm_names=arm_names,
+                            candidate_ids=candidate_ids,
+                            promoted_candidate=promoted_candidate,
+                            promotion_decision_sha256=promotion_decision_sha256,
+                            provenance=provenance,
+                            source_paths=source_paths,
+                            cache_identity=cache_identity,
+                            rows=rows,
+                            probe_rows=probe_rows,
+                            guardrail_rows=(),
+                            prior_full_probe_rows=prior_full_probe_rows,
+                            reference_rows=reference_rows,
+                            parity=_baseline_parity_rows(
+                                rows, old_method=old_method, prior_lookup=prior_lookup
+                            ),
+                            deterministic_repeats=deterministic_repeats,
+                        )
+                        raise
                     probe = _capped_probe(
                         subset, subset_target, SEED + int(replicate)
                     )
@@ -1033,48 +1450,14 @@ def _run(args: argparse.Namespace) -> int:
                             "rows": block,
                             "probe_rows": probe_block,
                             "determinism_verification": deterministic_repeats,
+                            "artifact_status": "completed",
                         },
                     )
-                    rows.extend(block)
                     probe_rows.extend(probe_block)
 
-    parity: list[dict[str, Any]] = []
-    for row in rows:
-        method = old_method.get(str(row["candidate_id"]))
-        if method is None or row.get("score") is None:
-            continue
-        key = (
-            str(row["backbone"]), int(row["replicate"]), str(row["arm"]),
-            int(row["budget"]), method,
-        )
-        if key in prior_lookup:
-            delta = float(row["score"]) - prior_lookup[key]
-            parity.append({
-                "candidate_id": row["candidate_id"],
-                "model": row["model"],
-                "replicate": row["replicate"],
-                "arm": row["arm"],
-                "budget": row["budget"],
-                "new_score": row["score"],
-                "prior_score": prior_lookup[key],
-                "delta": delta,
-                "exact": delta == 0.0,
-            })
-
-    reference_rows = [
-        dict(row) for row in source_result.get("reference_rows", ())
-        if str(row.get("backbone")) in models
-        and int(row.get("replicate")) in replicates
-        and str(row.get("arm")) in arm_names
-    ]
-    prior_probe_rows = [
-        dict(row) for row in prior.get("selector_rows", ())
-        if str(row.get("backbone")) in models
-        and int(row.get("replicate")) in replicates
-        and str(row.get("arm")) in arm_names
-        and int(row.get("budget")) in budgets
-        and str(row.get("method")) == "linear_probe_oof"
-    ]
+    parity = _baseline_parity_rows(
+        rows, old_method=old_method, prior_lookup=prior_lookup
+    )
     guardrail_rows = (
         _guardrail_policy_rows(
             rows, probe_rows, promoted_candidate=str(promoted_candidate)
@@ -1082,91 +1465,33 @@ def _run(args: argparse.Namespace) -> int:
         if promoted_candidate is not None
         else []
     )
-    raw_result = {
-        "schema_version": 1,
-        "artifact_status": "completed" if all(row["status"] == "ok" for row in rows) else "partial",
-        "study": "food101_nuisance_conditioned_distance",
-        "retrospective": True,
-        "configuration": {
-            "models": list(models),
-            "replicates": list(replicates),
-            "budgets": list(budgets),
-            "arms": list(arm_names),
-            "candidates": list(candidate_ids),
-            "promoted_candidate_for_G": promoted_candidate,
-            "promotion_decision": (
-                {
-                    "path": str(args.promotion_decision.resolve()),
-                    "sha256": promotion_decision_sha256,
-                }
-                if args.promotion_decision is not None
-                else None
-            ),
-            "folds": FOLDS,
-            "k": K,
-            "seed": SEED,
-            "capped_probe_maximum_rows": CAP_ROWS,
-            "counterbalanced": True,
-            "serial_one_thread": True,
-            "warmup_excluded": True,
-            "smoke": bool(args.smoke),
-            "cache_matrix_sha256_verified": True,
-        },
-        "environment": _environment(provenance),
-        "repository_provenance": provenance,
-        "protocol": {
-            "path": str(PROTOCOL_PATH),
-            "sha256": _sha256(PROTOCOL_PATH),
-        },
-        "sources": {
-            name: {"path": str(path), "sha256": expected}
-            for name, (path, expected) in source_paths.items()
-        },
-        "cache_identity": cache_identity,
-        "selector_rows": rows,
-        "capped_probe_rows": probe_rows,
-        "guardrail_rows": guardrail_rows,
-        "prior_full_probe_rows": prior_probe_rows,
-        "reference_rows": reference_rows,
-        "baseline_parity_rows": parity,
-        "baseline_parity": {
-            "n": len(parity),
-            "exact": bool(parity) and all(row["exact"] for row in parity),
-            "max_absolute_delta": max((abs(float(row["delta"])) for row in parity), default=None),
-        },
-        "determinism_verification": {
-            "status": (
-                "pass"
-                if set(deterministic_repeats) == set(candidate_ids)
-                and all(value.get("exact") is True for value in deterministic_repeats.values())
-                else "inconclusive"
-            ),
-            "exact": (
-                True
-                if set(deterministic_repeats) == set(candidate_ids)
-                and all(value.get("exact") is True for value in deterministic_repeats.values())
-                else None
-            ),
-            "basis": "excluded per-candidate first warmup versus identical first measured Food cell",
-            "runtime_fields_excluded": True,
-            "candidates": deterministic_repeats,
-        },
-        "deviations": [
-            "The panel is retrospective development evidence, not untouched confirmation.",
-            "Peak memory requires a separate fresh-process benchmark and is not inferred here.",
-            "The capped probe component is measured for G but kept separate from OI candidates.",
-            "Capped-probe components are measured for every model to support paired runtime analysis; G applies them only in panels satisfying the frozen trigger.",
-        ],
-    }
-    _write_json(output / "raw_results.json", raw_result)
-    _write_json(output / "manifest.json", {
-        key: raw_result[key]
-        for key in ("schema_version", "artifact_status", "study", "configuration", "environment", "repository_provenance", "protocol", "sources", "cache_identity", "baseline_parity", "determinism_verification", "deviations")
-    })
-    _write_csv(output / "selector_rows.csv", rows)
-    _write_csv(output / "capped_probe_rows.csv", probe_rows)
-    _write_csv(output / "guardrail_rows.csv", guardrail_rows)
-    _write_csv(output / "baseline_parity_rows.csv", parity)
+    artifact_status = (
+        "completed" if all(row["status"] == "ok" for row in rows) else "partial"
+    )
+    raw_result = _write_food_artifacts(
+        output=output,
+        artifact_status=artifact_status,
+        stop_reason=None,
+        stop_error=None,
+        args=args,
+        models=models,
+        replicates=replicates,
+        budgets=budgets,
+        arm_names=arm_names,
+        candidate_ids=candidate_ids,
+        promoted_candidate=promoted_candidate,
+        promotion_decision_sha256=promotion_decision_sha256,
+        provenance=provenance,
+        source_paths=source_paths,
+        cache_identity=cache_identity,
+        rows=rows,
+        probe_rows=probe_rows,
+        guardrail_rows=guardrail_rows,
+        prior_full_probe_rows=prior_full_probe_rows,
+        reference_rows=reference_rows,
+        parity=parity,
+        deterministic_repeats=deterministic_repeats,
+    )
     print(f"Food-101 replay complete: {output}", flush=True)
     return 0
 

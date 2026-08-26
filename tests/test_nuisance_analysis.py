@@ -501,6 +501,7 @@ def _full_selection_summary(
         "locked_candidate": lock.get("selected_candidate"),
         "artifact_completeness": {"status": "pass"},
         "robustness_completeness": {"status": "pass"},
+        "food101_completeness": {"status": "pass"},
         "runtime_benchmark": {"completeness": {"status": "pass"}},
         "screen_promotion": lock,
         "candidates": candidate_metrics,
@@ -526,8 +527,10 @@ def test_full_stage_honors_screen_lock_without_runner_up() -> None:
     assert passing["excluded"]["E"] == "not the screen-locked candidate"
 
     failed = select_promotion(_full_selection_summary(historical_status="fail"))
-    assert failed["selected_candidate"] == "C"
+    assert failed["selected_candidate"] is None
+    assert failed["locked_candidate"] == "C"
     assert failed["status"] == "fail"
+    assert failed["promoted"] is False
     assert failed["excluded"]["D"] == "not the screen-locked candidate"
 
     missing = select_promotion(_full_selection_summary(product_status="inconclusive"))
@@ -540,6 +543,17 @@ def test_full_stage_honors_screen_lock_without_runner_up() -> None:
     )
     assert invalid_lock["selected_candidate"] is None
     assert invalid_lock["status"] == "inconclusive"
+
+
+def test_full_stage_without_food_evidence_cannot_promote() -> None:
+    summary = _full_selection_summary()
+    summary.pop("food101_completeness")
+    decision = select_promotion(summary)
+    assert decision["locked_candidate"] == "C"
+    assert decision["selected_candidate"] is None
+    assert decision["status"] == "inconclusive"
+    assert decision["promoted"] is False
+    assert decision["excluded"]["C"] == "incomplete or unverifiable Food-101 artifact"
 
 
 def test_food_partial_and_sha_mismatch_are_definite_completeness_failures() -> None:
