@@ -2522,7 +2522,13 @@ def _robustness_auc_summary(
     # The frozen nuisance grid is exactly three strengths.  A stratum with a
     # missing strength is not a partial curve: exclude that stratum entirely.
     required_strengths = {0.0, 1.0, 2.0}
-    common_strata = set(candidate_values) & set(baseline_values)
+    # The set intersection is deliberately sorted: its iteration order would
+    # otherwise depend on PYTHONHASHSEED and would alter per-seed accumulation
+    # (and therefore the serialized bootstrap interval at the last bit).
+    common_strata = sorted(
+        set(candidate_values) & set(baseline_values),
+        key=repr,
+    )
     per_seed: dict[Any, dict[float, list[float]]] = defaultdict(lambda: defaultdict(list))
     complete_strata = 0
     for stratum in common_strata:
@@ -2538,8 +2544,13 @@ def _robustness_auc_summary(
         seed = stratum[-1]
         complete_strata += 1
         for strength in sorted(required_strengths):
-            candidate_evidence = float(np.mean(candidate_values[stratum][strength]))
-            baseline_evidence = float(np.mean(baseline_values[stratum][strength]))
+            # Rows may arrive in a different serialized order from raw JSON;
+            # sort each matched cell before reduction so equivalent artifacts
+            # have byte-identical point estimates and bootstrap inputs.
+            candidate_cell = sorted(candidate_values[stratum][strength])
+            baseline_cell = sorted(baseline_values[stratum][strength])
+            candidate_evidence = float(np.mean(candidate_cell))
+            baseline_evidence = float(np.mean(baseline_cell))
             # Positive values mean the candidate introduces more false-
             # overlap evidence than raw B (degradation); minimize this AUC.
             per_seed[seed][float(strength)].append(candidate_evidence - baseline_evidence)

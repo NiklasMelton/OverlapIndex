@@ -466,6 +466,10 @@ def test_robustness_auc_excludes_genuine_overlap_cells() -> None:
     summary = build_analysis_summary(rows)
     auc = summary["candidates"]["C"]["nuisance_robustness_auc"]
     assert np.isclose(auc["estimate"], 0.01)
+    shuffled_summary = build_analysis_summary(list(reversed(rows)))
+    assert canonical_json(auc) == canonical_json(
+        shuffled_summary["candidates"]["C"]["nuisance_robustness_auc"]
+    )
 
 
 def test_robustness_requires_both_directions_and_all_three_strengths() -> None:
