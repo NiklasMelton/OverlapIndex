@@ -179,7 +179,7 @@
     "food101_regret_bootstrap_seed": 145,
     "food101_rank_auc_bootstrap_seed": 143,
     "interval": "two-sided percentile 95%",
-    "rank_auc": "trapezoidal AUC of rank association across frozen budgets",
+    "rank_auc": "tie-safe Spearman at each frozen budget, followed by trapezoidal AUC over the budget axis normalized in log2 space",
     "regret": "best frozen reference accuracy minus reference accuracy of selector-chosen model",
     "exact_best_tolerance": 0.0,
     "within_one_point_tolerance": 0.01
