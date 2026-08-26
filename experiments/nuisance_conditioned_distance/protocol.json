@@ -170,6 +170,33 @@
       "folds": 5,
       "k": 10,
       "seed": 42
+    },
+    "food101_large_budget_runtime": {
+      "role": "retrospective_resource_gate",
+      "models": [
+        "dinov2-small",
+        "deit-tiny",
+        "convnext-tiny",
+        "mobilenetv3-large",
+        "openclip-vit-b-32",
+        "resnet50",
+        "efficientnet-b0",
+        "swin-tiny",
+        "vit-small-16",
+        "densenet121"
+      ],
+      "budgets_per_class": [64, 128, 256, 512, 640],
+      "repeats": [0, 1, 2, 3, 4],
+      "methods": ["A", "B", "C", "D", "E", "linear_probe_oof"],
+      "folds": 5,
+      "k": 10,
+      "seed": 42,
+      "normalization": "row_l2 for OI and linear_probe_oof",
+      "linear_probe": "Normalizer(l2) plus LogisticRegression(C=1,max_iter=2000,n_jobs=1)",
+      "execution_order": "deterministic exact position counterbalance within each paired model-by-budget-by-repeat cell",
+      "warmup_excluded": true,
+      "gate_cells": "budgets_per_class >= 128",
+      "memory": "No per-cell memory value may be inferred from process-wide ru_maxrss; absent fresh-process one-cell-per-process measurements remain inconclusive."
     }
   },
   "statistics": {
@@ -259,6 +286,10 @@
     {
       "path": "/Users/niklasmelton/.codex/worktrees/a9b5/vertabrae/examples/research/selector_replay/artifacts/runtime/raw_results.json",
       "sha256": "98ec1a8e2a76332478567a2a4ce801cfbf077bb5c8fd7e1f8ce090e2783bd3c3"
+    },
+    {
+      "path": "/Users/niklasmelton/code/vertabrae/examples/food101_selector_runtime_scaling.py",
+      "sha256": "72a10f57681c27229572f885805b06c73ea20b7b0240e5477980dbef6103e7b9"
     },
     {
       "path": "/Users/niklasmelton/.codex/worktrees/cb8b/OverlapIndex/experiments/synthetic_nuisance/confirm_generators.py",
