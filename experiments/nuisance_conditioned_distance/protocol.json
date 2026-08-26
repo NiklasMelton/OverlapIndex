@@ -1,0 +1,303 @@
+{
+  "schema_version": 1,
+  "status": "frozen_before_candidate_outcomes",
+  "frozen_date": "2026-08-25",
+  "repository": {
+    "branch": "codex/experiment-nuisance-conditioned-distance",
+    "required_base_branch": "develop",
+    "starting_commit": "165fa344653a72dd2abc04a20387d90b891b9acc",
+    "starting_commit_subject": "Merge pull request #45 from NiklasMelton/codex/balanced-median-refinement",
+    "public_api_changes_allowed": false
+  },
+  "question": "Can regularized, train-fold-only distance conditioning make balanced-median OI competitive with a linear probe under nuisance geometry while preserving genuine-overlap reliability and nonlinear ranking utility?",
+  "candidates": [
+    {
+      "id": "A",
+      "name": "oi_unrefined_raw",
+      "mode": "none",
+      "prototype_refinement": false,
+      "role": "exact_current_baseline"
+    },
+    {
+      "id": "B",
+      "name": "oi_refined_raw",
+      "mode": "none",
+      "prototype_refinement": true,
+      "role": "exact_current_refined_baseline"
+    },
+    {
+      "id": "C",
+      "name": "oi_refined_global_isotropy",
+      "mode": "global_isotropy",
+      "prototype_refinement": true,
+      "role": "label_neutral_candidate",
+      "definition": "OAS covariance on global-centered training rows; retain the shrunk diagonal and inverse-square-root scale it"
+    },
+    {
+      "id": "D",
+      "name": "oi_refined_pooled_diagonal",
+      "mode": "pooled_diagonal",
+      "prototype_refinement": true,
+      "role": "label_aware_diagonal_candidate",
+      "definition": "OAS covariance on training residuals about training class means; retain the shrunk diagonal and inverse-square-root scale it"
+    },
+    {
+      "id": "E",
+      "name": "oi_refined_pooled_full",
+      "mode": "pooled_full",
+      "prototype_refinement": true,
+      "role": "label_aware_full_candidate",
+      "definition": "OAS covariance on training residuals about training class means; symmetric full inverse-square-root transform"
+    },
+    {
+      "id": "F",
+      "name": "raw_conditioned_disagreement",
+      "role": "diagnostic_only",
+      "aggregation": null,
+      "definition": "absolute score difference between B and E; it is not a selector and cannot be promoted"
+    },
+    {
+      "id": "G",
+      "name": "panel_selective_capped_probe_guardrail",
+      "role": "product_policy_comparator_only",
+      "trigger": "run the capped probe for every model in a selection panel when any model has B refinement applied-rate >= 0.50 or abs(B-E score) >= 0.05; otherwise rank the full panel by the promoted OI candidate",
+      "probe": {
+        "kind": "five_fold_oof_logistic",
+        "maximum_rows_per_model": 2048,
+        "subsample": "deterministic_stratified_without_replacement",
+        "standardization": "fit_within_each_training_fold",
+        "seed": "paired_selector_seed"
+      }
+    }
+  ],
+  "conditioning": {
+    "automatic_shrinkage": "sklearn.covariance.oas",
+    "center": "global training-fold mean",
+    "condition_number_cap": 10000.0,
+    "relative_eigenvalue_floor": 1e-08,
+    "hard_pca_truncation": false,
+    "fit_rows": "training_fold_only",
+    "held_out_policy": "apply the frozen fitted transform and call score_fixed without refitting",
+    "geometry_scope": [
+      "prototype_fit",
+      "prototype_refinement",
+      "adjacency",
+      "score_fixed"
+    ],
+    "target_scope": "scalar single-label only"
+  },
+  "stages": {
+    "smoke": {
+      "purpose": "mechanism and correctness screen",
+      "required_axes": [
+        "appended_isotropic_nuisance",
+        "anisotropic_scaling",
+        "correlated_low_rank_nuisance",
+        "dimensionality",
+        "imbalance",
+        "sample_count",
+        "k",
+        "linear_separation",
+        "nonlinear_separation",
+        "genuine_overlap"
+      ]
+    },
+    "screen": {
+      "role": "development_only",
+      "seeds": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+      "promotion": "A and B must be exact; among eligible C/D/E, minimize the upper paired 95% bound for nuisance-linear regret, then robustness AUC; candidates within 0.001 on both use fixed simplicity order C,D,E. No outcome-specific tuning is allowed."
+    },
+    "full_synthetic": {
+      "role": "frozen_retrospective_development_evidence",
+      "families": [
+        "shared_low_rank",
+        "clustered_multimodal",
+        "heteroscedastic_multiplicative"
+      ],
+      "seeds": [1000, 1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008, 1009, 1010, 1011, 1012, 1013, 1014, 1015, 1016, 1017, 1018, 1019],
+      "nuisance_strengths": [0.0, 1.0, 2.0],
+      "k_values": [2, 8],
+      "n_classes": 4,
+      "n_per_class": 40,
+      "signal_dim": 2,
+      "nuisance_dim": 4,
+      "conditions": [
+        ["separated_balanced_stable", 0.0, "balanced", false],
+        ["separated_balanced_shift", 0.0, "balanced", true],
+        ["overlap_half_balanced_stable", 0.5, "balanced", false],
+        ["overlap_half_balanced_shift", 0.5, "balanced", true],
+        ["overlap_quarter_imbalanced_stable", 0.25, "imbalanced", false],
+        ["overlap_full_imbalanced_stable", 1.0, "imbalanced", false]
+      ],
+      "signal_gap": 0.75,
+      "overlap_pairs": [[0, 1]]
+    },
+    "food101": {
+      "role": "retrospective_development_evidence",
+      "models": [
+        "dinov2-small",
+        "deit-tiny",
+        "convnext-tiny",
+        "mobilenetv3-large",
+        "openclip-vit-b-32",
+        "resnet50",
+        "efficientnet-b0",
+        "swin-tiny",
+        "vit-small-16",
+        "densenet121"
+      ],
+      "arms": ["baseline", "nonlinearity_full", "nuisance_full"],
+      "heads": ["linear", "quadratic", "knn", "rbf"],
+      "budgets_per_class": [64, 68, 72, 80],
+      "replicates": [0, 1, 2, 3, 4],
+      "folds": 5,
+      "k": 10,
+      "seed": 42
+    }
+  },
+  "statistics": {
+    "paired": true,
+    "bootstrap_estimator": "v3_pooled_rows_seed_bootstrap for synthetic; paired replicate-block bootstrap for Food-101",
+    "bootstrap_resamples": 10000,
+    "bootstrap_seed": 20260812,
+    "food101_regret_bootstrap_seed": 145,
+    "food101_rank_auc_bootstrap_seed": 143,
+    "interval": "two-sided percentile 95%",
+    "rank_auc": "trapezoidal AUC of rank association across frozen budgets",
+    "regret": "best frozen reference accuracy minus reference accuracy of selector-chosen model",
+    "exact_best_tolerance": 0.0,
+    "within_one_point_tolerance": 0.01
+  },
+  "historical_genuine_overlap_gates": {
+    "evidence_thresholds": [0.0, 0.05],
+    "separated_fpr": "if baseline FPR@0.05 >= 0.10, candidate-minus-baseline upper 95% bound < 0; otherwise upper bound <= 0.02",
+    "pair_auroc_loss_margin": 0.03,
+    "pair_auprc_loss_margin": 0.03,
+    "overlap_fnr_noninferiority_margin": 0.05,
+    "later_refinement_fnr_delta_margin_vs_raw": 0.002,
+    "clean_mae_noninferiority_margin": 0.05,
+    "calibration_brier_noninferiority_margin": 0.05,
+    "minimum_spearman_and_ordering_rate": 0.9,
+    "maximum_ordering_loss_vs_baseline": 0.05,
+    "family_drift_worsening_margin": 0.02,
+    "family_drift_material_improvement_requirement": "at least two of three families have upper paired bound < 0 and none has upper bound > 0.02",
+    "stable_shift": "all degradation deltas require upper paired bound <= 0; crossing zero is inconclusive",
+    "strata_fnr": "every k-by-balance stratum must have upper paired bound <= 0 for pass; upper <= 0.05 while crossing zero is inconclusive",
+    "promotion": "all historical rules must pass",
+    "radius_experiment_clean_mae_margins": {
+      "adjacency_only": 0.03,
+      "end_to_end": 0.05
+    },
+    "radius_fallback_limits": {
+      "overall": 0.1,
+      "per_cell": 0.25
+    }
+  },
+  "provisional_product_gates": {
+    "clean_linear_regret_vs_probe": "upper paired 95% bound <= 0.01 accuracy",
+    "nuisance_linear_regret_vs_probe": "upper paired 95% bound <= 0.01 accuracy",
+    "nonlinear_retention": "for each quadratic, kNN, and RBF reference, candidate regret minus B regret upper paired 95% bound <= 0.01 accuracy",
+    "baseline_parity": "A and B exact bit-for-bit against direct current estimators",
+    "determinism": "exact repeated fitted state, diagnostics, and scores",
+    "runtime": {
+      "per_cell_median_total_ratio_vs_B": 1.1,
+      "per_cell_p95_total_ratio_vs_B": 1.25,
+      "per_cell_median_score_fixed_ratio_vs_B": 1.25,
+      "larger_food_budget": "candidate median total time must remain below full probe"
+    },
+    "memory": {
+      "per_cell_median_peak_ratio_vs_B": 1.15,
+      "per_cell_p95_peak_ratio_vs_B": 1.25,
+      "individual_peak_ratio_vs_B": 1.5
+    }
+  },
+  "early_stop": [
+    "train/evaluation leakage",
+    "A or B baseline mismatch",
+    "nondeterminism",
+    "genuine-overlap gate failure",
+    "clear runtime or memory gate violation"
+  ],
+  "excluded_rejected_ideas": [
+    "margin-aware adjacency",
+    "radius calibration",
+    "reciprocal adjacency",
+    "Wilson shrinkage",
+    "post-hoc prototype or adjacency variants from the archived nuisance battery",
+    "median-point refinement as a default (held-out FNR delta +0.004234, 95% CI [0.002369, 0.006401], failed frozen <=0.002 gate)",
+    "support-scaled boundary refinement (FNR delta +0.002344, failed frozen <=0.002 gate)",
+    "connectivity protection (diagnostic/optional only; did not solve ring geometry)",
+    "two-point and MiniBatchKMeans-2 split refinements (not promoted)",
+    "boundary-count refinement (development diagnostic only; lacked held-out confirmation)"
+  ],
+  "source_evidence": [
+    {
+      "path": "/Users/niklasmelton/.codex/worktrees/a9b5/vertabrae/examples/research/selector_replay/artifacts/analysis/report.md",
+      "sha256": "dba5ed4ca8535cf187a71597b33544caaf95e9ba3e5f0d8e938ad890678394f6"
+    },
+    {
+      "path": "/Users/niklasmelton/.codex/worktrees/a9b5/vertabrae/examples/research/selector_replay/artifacts/full/raw_results.json",
+      "sha256": "56d394e8c7f07a83e37cc14e0c33fd6188c2020c4011f3b5d635a2d13934586d"
+    },
+    {
+      "path": "/Users/niklasmelton/.codex/worktrees/a9b5/vertabrae/examples/research/selector_replay/artifacts/runtime/raw_results.json",
+      "sha256": "98ec1a8e2a76332478567a2a4ce801cfbf077bb5c8fd7e1f8ce090e2783bd3c3"
+    },
+    {
+      "path": "/Users/niklasmelton/.codex/worktrees/cb8b/OverlapIndex/experiments/synthetic_nuisance/confirm_generators.py",
+      "sha256": "277af6d6a6fd8fb8d613faeb4bf0bce845145b57c6a0862de05167efd5f0efb3"
+    },
+    {
+      "path": "/Users/niklasmelton/.codex/worktrees/cb8b/OverlapIndex/experiments/synthetic_nuisance/configs/stage2_confirm.json",
+      "sha256": "66719e8f0a053a618e0c946dd34a346d34d31ef639287fba578dfbed599b6586"
+    },
+    {
+      "path": "/Users/niklasmelton/.codex/worktrees/cb8b/OverlapIndex/artifacts/synthetic_nuisance/stage2_confirm_minibatch_kmeans/manifest.json",
+      "sha256": "e5f4fd2fea2976799693d37e9f4dab3d8c0b66b2599dd9cef4f0d6362d44e8cb"
+    },
+    {
+      "path": "/Users/niklasmelton/.codex/worktrees/0976/OverlapIndex/artifacts/synthetic_nuisance/refinement_median_confirm_heldout_minibatch_kmeans/analysis_report.md",
+      "sha256": "c75654bfeb0914873bc4aa6950e32f996329097cbc110cfc0a6530be22de2a0a"
+    },
+    {
+      "path": "/Users/niklasmelton/.codex/worktrees/0976/OverlapIndex/artifacts/synthetic_nuisance/refinement_median_confirm_heldout_minibatch_kmeans/manifest.json",
+      "sha256": "4b01db05f33fcc68430d3676e816ef0f574dcbc31448449eb7603191c2fc47c9"
+    },
+    {
+      "path": "/Users/niklasmelton/.codex/worktrees/0976/OverlapIndex/artifacts/synthetic_nuisance/refinement_compare_support_scaled_boundary_dev_minibatch_kmeans/analysis_report.md",
+      "sha256": "af97e2487ceade555fa7fece15b05c587450ace7503e94c934686fc74f73de28"
+    },
+    {
+      "path": "/Users/niklasmelton/.codex/worktrees/0976/OverlapIndex/artifacts/synthetic_nuisance/refinement_compare_connectivity_dev_minibatch_kmeans/analysis_report.md",
+      "sha256": "a90f861ab75d1aab84089cfe3e8a74b3e5ef1327ff2a59d74a216e40868c4873"
+    },
+    {
+      "path": "/Users/niklasmelton/.codex/worktrees/0976/OverlapIndex/artifacts/synthetic_nuisance/refinement_compare_two_point_dev_minibatch_kmeans/analysis_report.md",
+      "sha256": "eabf61c8ef15d74e0d0f76d8562a6b646bdd76e5f4e89c447442145dfa66579b"
+    },
+    {
+      "path": "/Users/niklasmelton/.codex/worktrees/0976/OverlapIndex/artifacts/synthetic_nuisance/refinement_compare_boundary_count_dev_minibatch_kmeans/analysis_report.md",
+      "sha256": "9777eaa6baa2a702d4e643b0d0f95f35a24b9bcd62b876c09874d4dcd85eafbc"
+    },
+    {
+      "path": "/Users/niklasmelton/code/vertabrae/examples/food101_nonlinear_backbone_bridge.py",
+      "sha256": "63f906f12070aaf697d88c193dd11dc2f430bc9fa6b0389756d556636ad85eae"
+    },
+    {
+      "path": "/Users/niklasmelton/code/vertabrae/examples/output/food101_nonlinear_backbone_bridge_food101_k10_89095e3bc0db.json",
+      "sha256": "0826871de7a37d72ad6618e48a39b4895c74bb6ab30d9eb7521a2b767e483b55"
+    },
+    {
+      "path": "/Users/niklasmelton/code/vertabrae/examples/output/food101_nonlinear_backbone_bridge_food101_k10_89095e3bc0db.cohorts.json",
+      "sha256": "038c5ecff1fa42b4a71bb235a35fb562d2a9542ce52caa336566be56d0f9d88d"
+    }
+  ],
+  "recovered_deviations": [
+    "The earlier radius audit was not launched after its p95 runtime ratio failed at 1.413 > 1.25.",
+    "The later radius-gated-median artifact has raw tables and manifest but no analysis report or summary; its outcome is unavailable and must not be inferred.",
+    "The prior Food-101 replay did not remeasure peak memory.",
+    "The prior three-way hierarchical refined Food-101 bootstrap exceeded twenty minutes; refined contrasts therefore used the frozen five-block paired convention.",
+    "All recovered Food-101 and synthetic panels have already been observed and are development evidence."
+  ],
+  "confirmation_status": "No untouched embedding panel was identified before candidate screening; do not manufacture one. Recommend a future one-shot confirmation if any candidate passes retrospective gates."
+}
