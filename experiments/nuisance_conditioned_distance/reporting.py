@@ -415,7 +415,7 @@ def probe_rows(summary: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 def conditioning_rows(summary: Mapping[str, Any]) -> list[dict[str, Any]]:
     aliases = {
-        "refinement_rate": ("refinement_rate", "refinement.applied_rate", "applied_rate"),
+        "prototype_activity": ("prototype_activity",),
         "refinement_applied": ("refinement_applied", "refinement.applied_count", "applied_count"),
         "refinement_eligible": ("refinement_eligible", "refinement.eligible_count", "eligible_count"),
         "condition_number": ("condition_number", "conditioning.condition_number", "conditioning.condition_number_after"),
@@ -524,14 +524,14 @@ def decision_rows(summary: Mapping[str, Any], promotion: Mapping[str, Any] | Non
             "linear_regret": linear.get("regret"), "linear_regret_lower": linear.get("regret_lower"), "linear_regret_upper": linear.get("regret_upper"), "linear_rank_auc": linear.get("rank_auc"), "linear_exact_best": linear.get("exact_best"), "linear_within_one_point": linear.get("within_one_point"), "linear_within_1pp": linear.get("within_1pp"),
             "fpr": detect.get("fpr"), "fnr": detect.get("fnr"), "auroc": detect.get("auroc"), "auprc": detect.get("auprc"), "brier": detect.get("brier"), "ece": detect.get("ece"),
             "clean_mae": _estimate(_lookup(metrics, "clean_mae")), "clean_linear_regret_upper": _ci(clean_regret_source, "upper") if _ci(clean_regret_source, "upper") is not None else _estimate(_lookup(metrics, "clean_linear_regret_upper")), "nuisance_linear_regret_upper": _ci(nuisance_regret_source, "upper") if _ci(nuisance_regret_source, "upper") is not None else _estimate(_lookup(metrics, "nuisance_linear_regret_upper")), "robustness_auc": robust.get(candidate, {}).get("robustness_auc"), "nuisance_spearman": _estimate(_lookup(metrics, "nuisance_spearman")), "nuisance_ordering_rate": _estimate(_lookup(metrics, "nuisance_ordering_rate")),
-            "refinement_rate": diag.get("refinement_rate"), "condition_number": diag.get("condition_number"), "median_total_seconds": candidate_timing.get("total", {}).get("median"), "p95_total_seconds": candidate_timing.get("total", {}).get("p95"), "median_score_fixed_seconds": candidate_timing.get("score_fixed", {}).get("median"),
+            "prototype_activity": diag.get("prototype_activity"), "condition_number": diag.get("condition_number"), "median_total_seconds": candidate_timing.get("total", {}).get("median"), "p95_total_seconds": candidate_timing.get("total", {}).get("p95"), "median_score_fixed_seconds": candidate_timing.get("score_fixed", {}).get("median"),
             **{field: _ratio(metrics, field) for field in _RATIO_FIELDS},
             "historical_gate": historical_status, "product_gate": product_status, "decision_status": _decision_status(candidate, historical_status, product_status), "promoted": _promotion_is_promoted(promotion, candidate),
         })
     return out
 
 
-_DECISION_FIELDS = ("candidate", "name", "role", "scope", "definition", "n_rows", "linear_regret", "linear_regret_lower", "linear_regret_upper", "linear_rank_auc", "linear_exact_best", "linear_within_one_point", "linear_within_1pp", "auroc", "auprc", "fpr", "fnr", "brier", "ece", "robustness_auc", "refinement_rate", "condition_number", "median_total_seconds", "p95_total_seconds", "median_score_fixed_seconds", *_RATIO_FIELDS, "historical_gate", "product_gate", "decision_status", "promoted")
+_DECISION_FIELDS = ("candidate", "name", "role", "scope", "definition", "n_rows", "linear_regret", "linear_regret_lower", "linear_regret_upper", "linear_rank_auc", "linear_exact_best", "linear_within_one_point", "linear_within_1pp", "auroc", "auprc", "fpr", "fnr", "brier", "ece", "robustness_auc", "prototype_activity", "condition_number", "median_total_seconds", "p95_total_seconds", "median_score_fixed_seconds", *_RATIO_FIELDS, "historical_gate", "product_gate", "decision_status", "promoted")
 
 
 def write_decision_table(destination: Path, summary: Mapping[str, Any], promotion: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -694,7 +694,7 @@ def _write_runtime_plot(path: Path, summary: Mapping[str, Any]) -> None:
 
 def _write_diagnostic_plot(path: Path, summary: Mapping[str, Any]) -> None:
     rows = conditioning_rows(summary)
-    body1, okay1 = _bar_panel([row["candidate"] for row in rows], [("refinement rate", [row["refinement_rate"] for row in rows], "#ff9da6")], x=0, y=0, width=480, height=330, title="Prototype refinement", ylabel="applied / eligible")
+    body1, okay1 = _bar_panel([row["candidate"] for row in rows], [("prototype activity", [row["prototype_activity"] for row in rows], "#ff9da6")], x=0, y=0, width=480, height=330, title="Mean per-cell prototype activity", ylabel="applied / prototypes before")
     body2, okay2 = _bar_panel([row["candidate"] for row in rows], [("condition number", [row["condition_number"] for row in rows], "#9d755d")], x=480, y=0, width=480, height=330, title="Conditioning", ylabel="stored condition number")
     if not okay1 and not okay2:
         _placeholder_svg(path, "conditioning and refinement diagnostics unavailable")
@@ -764,6 +764,12 @@ def _find_scalar(summary: Mapping[str, Any], names: set[str]) -> Any:
 
 
 def _retrospective_lines(summary: Mapping[str, Any]) -> list[str]:
+    stage = _lookup(summary, "stage") or _lookup(summary, "manifest.stage")
+    if str(stage or "").lower() == "screen":
+        return [
+            "- Screen status: **retrospective development-only and protocol-specific**.",
+            "- Untouched confirmation: **none; no untouched confirmation is claimed**.",
+        ]
     retrospective = _find_scalar(summary, {"retrospective", "retrospective_evidence"})
     confirmation = _find_scalar(summary, {"confirmation_status", "untouched_confirmation", "untouched_confirmed", "untouched_embedding_panel"})
     retro_text = ("yes" if retrospective else "no") if isinstance(retrospective, bool) else str(retrospective or "not recorded")
@@ -910,7 +916,7 @@ def render_report(summary: Mapping[str, Any], promotion: Mapping[str, Any] | Non
     lines.extend(_markdown_table(("Probe", "Source path", "Status", "n", "Median seconds", "P95 seconds", "Score", "Max rows", "Triggered panels"), ((row["probe"], row["path"], row["status"], row["n"], row["median_seconds"], row["p95_seconds"], row["score"], row["max_rows"], row["triggered_panels"]) for row in probes)))
     if not probes: lines.append("| — | — | unavailable | — | — | — | — | — | — |")
     lines.extend(["", "## Conditioning and refinement diagnostics", ""])
-    lines.extend(_markdown_table(("Candidate", "Mode", "Refinement rate", "Applied", "Eligible", "Condition number", "Strength Spearman", "Cap/floor active", "Status"), ((row["candidate"], row["mode"], row["refinement_rate"], row["refinement_applied"], row["refinement_eligible"], row["condition_number"], row["conditioning_strength_spearman"], row["cap_or_floor_active"], row["status"]) for row in diagnostics)))
+    lines.extend(_markdown_table(("Candidate", "Mode", "Mean per-cell prototype activity", "Applied", "Eligible", "Condition number after", "Strength Spearman", "Cap/floor active", "Status"), ((row["candidate"], row["mode"], row["prototype_activity"], row["refinement_applied"], row["refinement_eligible"], row["condition_number"], row["conditioning_strength_spearman"], row["cap_or_floor_active"], row["status"]) for row in diagnostics)))
     lines.extend(["", "## Candidate decision table", "", "Pass/fail/inconclusive gate statuses are retained; controls, F, and G are never silently treated as promotable. F and G remain non-promotable by protocol.", ""])
     lines.extend(_markdown_table(("Candidate", "Historical", "Product", "Decision", "Promoted", "Role"), ((row["candidate"], row["historical_gate"] or "inconclusive", row["product_gate"] or "inconclusive", row["decision_status"], row["promoted"], row["role"]) for row in rows)))
     gate_rows = _gate_rows(summary)

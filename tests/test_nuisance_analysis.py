@@ -35,6 +35,9 @@ from experiments.nuisance_conditioned_distance.analysis import (
     _RUNTIME_MODELS,
     _RUNTIME_REPEATS,
     _food_artifact_completeness,
+    _diagnostic_summary,
+    _extract_condition_number,
+    _extract_refinement,
     _normalise_records,
     _robustness_completeness,
     _runtime_artifact_completeness,
@@ -164,6 +167,28 @@ def test_calibration_uses_continuous_pair_overlap_truth() -> None:
     # Evidence is .5 and continuous rho is .25, so the pooled Brier is .0625;
     # a binary-label shortcut would incorrectly report .25.
     assert np.isclose(summary["candidates"]["B"]["genuine_overlap"]["brier"], 0.0625)
+
+
+def test_diagnostics_use_post_condition_number_and_prototype_activity() -> None:
+    row = {
+        "conditioning": {
+            "condition_number_cap": 10_000.0,
+            "condition_after": 37.0,
+        },
+        "refinement": {
+            "applied_count": 2,
+            "eligible_count": 2,
+            "prototype_count_before": 8,
+        },
+    }
+    assert _extract_condition_number(row) == 37.0
+    activity, denominator = _extract_refinement(row)
+    assert activity == 0.25
+    assert denominator == 8.0
+    diagnostics = _diagnostic_summary([row])
+    assert diagnostics["prototype_activity"]["estimate"] == 0.25
+    assert diagnostics["condition_number"]["estimate"] == 37.0
+    assert "refinement_rate" not in diagnostics
 
 
 def test_gate_boundaries_are_not_tuned() -> None:

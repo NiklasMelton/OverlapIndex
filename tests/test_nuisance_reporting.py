@@ -56,7 +56,7 @@ def _summary() -> dict:
             "median_peak_memory_ratio_vs_B": 1.05,
         },
         "conditioning_refinement": {
-            "refinement_rate": 0.25,
+            "prototype_activity": 0.25,
             "condition_number": 12.0,
             "conditioning_strength_spearman": 0.7,
         },
@@ -73,7 +73,10 @@ def _summary() -> dict:
         "provenance": {"commit": "deadbeef", "dirty": False, "code_identity_sha256": "codehash"},
         "manifest": {
             "retrospective": True,
-            "deviations": ["probe memory was not collected"],
+            "deviations": [
+                "probe memory was not collected",
+                "Food/product comparator containers are deferred or unavailable; displayed synthetic screen metrics remain separate",
+            ],
             "configuration": {"capped_probe_maximum_rows": 2048},
         },
         "capped_probe_rows": [{"status": "ok", "wall_seconds": 2.0, "score": 0.8, "n_rows": 128}],
@@ -97,6 +100,7 @@ def test_report_extractors_preserve_real_summary_fields() -> None:
     assert next(row for row in genuine_overlap_rows(summary) if row["candidate"] == "C")["auroc"] == 0.91
     assert next(row for row in runtime_rows(summary) if row["candidate"] == "C" and row["stage"] == "total")["p95"] == 1.5
     assert next(row for row in conditioning_rows(summary) if row["candidate"] == "C")["condition_number"] == 12.0
+    assert next(row for row in conditioning_rows(summary) if row["candidate"] == "C")["prototype_activity"] == 0.25
 
     probes = probe_rows(summary)
     assert {row["probe"] for row in probes} == {"capped probe", "full probe (prior)", "G guardrail policy"}
@@ -135,11 +139,15 @@ def test_report_contains_scope_gates_provenance_and_is_deterministic(tmp_path: P
         "Retrospective status and untouched confirmation",
         "results.json",
         "probe memory was not collected",
+        "Food/product comparator containers are deferred or unavailable",
+        "retrospective development-only and protocol-specific",
+        "no untouched confirmation is claimed",
         "Food-101 retrospective panel (separate evidence)",
         "Synthetic screen ranking locks one C–E candidate",
         "mandatory Food-101 product gates decide the final locked candidate",
         "never trigger reranking",
         "regret **145**; rank AUC **143**",
+        "Mean per-cell prototype activity",
     ):
         assert phrase in first
 
@@ -159,7 +167,9 @@ def test_report_contains_scope_gates_provenance_and_is_deterministic(tmp_path: P
     assert "robustness AUC" in (output / "nuisance_curves.svg").read_text(encoding="utf-8")
     assert "AUROC" in (output / "genuine_overlap.svg").read_text(encoding="utf-8")
     assert "Runtime stages" in (output / "runtime.svg").read_text(encoding="utf-8")
-    assert "Conditioning" in (output / "conditioning_refinement.svg").read_text(encoding="utf-8")
+    diagnostic_svg = (output / "conditioning_refinement.svg").read_text(encoding="utf-8")
+    assert "Conditioning" in diagnostic_svg
+    assert "prototype activity" in diagnostic_svg
 
 
 def test_decision_rows_keep_non_promotable_f_and_g_explicit() -> None:

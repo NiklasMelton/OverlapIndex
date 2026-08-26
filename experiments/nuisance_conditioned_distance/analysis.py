@@ -1515,6 +1515,27 @@ def _extract_timing(row: Mapping[str, Any], *names: str) -> float | None:
 
 
 def _extract_refinement(row: Mapping[str, Any]) -> tuple[float | None, float | None]:
+    """Return per-cell prototype activity and its denominator.
+
+    ``eligible_count`` describes a different diagnostic (eligible-success)
+    and is intentionally not used as the activity denominator.  The frozen
+    activity estimand is applied prototypes divided by prototypes present
+    before refinement, unless the row explicitly records the canonical
+    ``refinement.applied_rate``.
+    """
+
+    before = _finite_float(
+        _lookup(
+            row,
+            "refinement.prototype_count_before",
+            "prototype_refinement.prototype_count_before",
+            "diagnostics.refinement.prototype_count_before",
+            "prototype_count_before",
+        )
+    )
+    canonical_rate = _finite_float(_lookup(row, "refinement.applied_rate"))
+    if canonical_rate is not None:
+        return canonical_rate, before
     applied = _finite_float(
         _lookup(
             row,
@@ -1524,33 +1545,31 @@ def _extract_refinement(row: Mapping[str, Any]) -> tuple[float | None, float | N
             "diagnostics.refinement.applied_count",
         )
     )
-    eligible = _finite_float(
-        _lookup(
-            row,
-            "refinement_eligible",
-            "refinement.eligible_count",
-            "prototype_refinement.eligible_count",
-            "diagnostics.refinement.eligible_count",
-            "refinement.prototype_refinement_.eligible_count",
-        )
-    )
-    rate = _finite_float(_lookup(row, "refinement_rate", "refinement.applied_rate"))
-    if rate is not None:
-        return rate, 1.0
-    if applied is None or eligible is None or eligible <= 0.0:
+    if applied is None or before is None or before <= 0.0:
         return None, None
-    return applied / eligible, 1.0
+    return applied / before, before
 
 
 def _extract_condition_number(row: Mapping[str, Any]) -> float | None:
+    """Extract actual post-conditioning condition number, never its cap."""
+
     direct = _finite_float(
         _lookup(
             row,
-            "condition_number",
-            "conditioning.condition_number",
+            # This is the adapter's canonical diagnostic.  Keep it before
+            # generic aliases so a configured cap cannot win by traversal
+            # order.
+            "conditioning.condition_after",
+            "conditioning_diagnostics.condition_after",
+            "diagnostics.condition_after",
+            "condition_after",
             "conditioning.condition_number_after",
-            "conditioning.condition_number_",
+            "conditioning_diagnostics.condition_number_after",
+            "diagnostics.condition_number_after",
+            "condition_number_after",
+            "conditioning.condition_number",
             "diagnostics.condition_number",
+            "condition_number",
         )
     )
     if direct is not None:
@@ -1560,7 +1579,23 @@ def _extract_condition_number(row: Mapping[str, Any]) -> float | None:
     def find(value: Any) -> float | None:
         if isinstance(value, Mapping):
             for key, child in value.items():
-                if "condition" in str(key).lower() and "number" in str(key).lower():
+                key_text = str(key).lower().replace("-", "_")
+                # Recursive fallback is restricted to actual post-fit
+                # values.  In particular, never mistake condition_number_cap
+                # (or a floor/before diagnostic) for the measured result.
+                is_actual_after = (
+                    "cap" not in key_text
+                    and "floor" not in key_text
+                    and (
+                        key_text in {"condition_after", "condition_number_after"}
+                        or (
+                            "condition" in key_text
+                            and "number" in key_text
+                            and "after" in key_text
+                        )
+                    )
+                )
+                if is_actual_after:
                     number = _finite_float(child)
                     if number is not None:
                         return number
@@ -2411,7 +2446,7 @@ def _diagnostic_summary(rows: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
         if strength is not None:
             strengths.append(strength)
     output = {
-        "refinement_rate": _metric_summary(rates),
+        "prototype_activity": _metric_summary(rates),
         "condition_number": _metric_summary(condition_numbers),
     }
     if len(strengths) == len(condition_numbers) and strengths:
@@ -5605,7 +5640,7 @@ def build_analysis_summary(
         for row in records
     ):
         base["deviations"].append(
-            "panel reference/explicit selector rows unavailable; downstream regret, exact-best, and within-0.01 cells are inconclusive"
+            "Food/product comparator containers (reference_rows and selector_rows) are deferred or unavailable; displayed synthetic screen regret, exact-best, and within-0.01 metrics remain separate"
         )
     if not any(_lookup(row, "family") is not None for row in records):
         base["deviations"].append(
