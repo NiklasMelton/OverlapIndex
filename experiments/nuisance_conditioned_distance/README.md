@@ -37,6 +37,12 @@ Higher OI scores rank better. The screen locks one candidate for full evaluation
 Food-101 and full-only gates are deferred, and a later failure rejects that locked
 candidate rather than promoting a runner-up.
 
+The secondary robustness statistic uses only separated cases. Within each complete
+seed/family/`k`/shift curve, it measures candidate-minus-B designated-pair false-overlap
+evidence at the three frozen nuisance strengths, averages matched strata within seed,
+and integrates the curve on a normalized nuisance axis. Promotion minimizes its upper
+paired seed-block 95% bound; genuine-overlap cases never enter this secondary statistic.
+
 ## Staged commands
 
 Run focused correctness tests before research:
