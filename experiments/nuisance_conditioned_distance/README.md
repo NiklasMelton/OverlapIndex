@@ -17,7 +17,7 @@ evidence. There is no manufactured "untouched" confirmation panel.
 |---|---|---:|---|
 | A | raw OI, unrefined | no | exact baseline |
 | B | raw OI, balanced-median refinement | no | exact refined baseline |
-| C | refined OI, label-neutral global-isotropy OAS scaling | no | candidate |
+| C | refined OI, label-neutral full global OAS whitening | no | candidate |
 | D | refined OI, pooled-within-class diagonal OAS scaling | training labels | candidate |
 | E | refined OI, pooled-within-class full OAS whitening | training labels | candidate |
 | F | absolute B/E disagreement | diagnostic only | never promoted |
@@ -26,7 +26,8 @@ evidence. There is no manufactured "untouched" confirmation panel.
 Every conditioner is fit only on training rows. Held-out rows are transformed using
 that frozen fitted state and passed to `score_fixed`; neither conditioning nor
 prototypes are refit. OAS shrinkage is automatic, the condition-number cap is `1e4`,
-and no hard PCA truncation is used.
+and no hard PCA truncation is used. Pooled-within-class covariance is estimated from
+sample-weighted class residual rows; it is not class-balanced under imbalance.
 
 ## Staged commands
 

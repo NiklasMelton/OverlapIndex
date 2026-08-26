@@ -31,7 +31,7 @@
       "mode": "global_isotropy",
       "prototype_refinement": true,
       "role": "label_neutral_candidate",
-      "definition": "OAS covariance on global-centered training rows; retain the shrunk diagonal and inverse-square-root scale it"
+      "definition": "Full OAS covariance on global-centered training rows; apply the symmetric inverse-square-root transform"
     },
     {
       "id": "D",
@@ -39,7 +39,7 @@
       "mode": "pooled_diagonal",
       "prototype_refinement": true,
       "role": "label_aware_diagonal_candidate",
-      "definition": "OAS covariance on training residuals about training class means; retain the shrunk diagonal and inverse-square-root scale it"
+      "definition": "OAS covariance on sample-weighted training residuals about training class means; retain the shrunk diagonal and inverse-square-root scale it"
     },
     {
       "id": "E",
@@ -47,7 +47,7 @@
       "mode": "pooled_full",
       "prototype_refinement": true,
       "role": "label_aware_full_candidate",
-      "definition": "OAS covariance on training residuals about training class means; symmetric full inverse-square-root transform"
+      "definition": "OAS covariance on sample-weighted training residuals about training class means; symmetric full inverse-square-root transform"
     },
     {
       "id": "F",
@@ -84,7 +84,8 @@
       "adjacency",
       "score_fixed"
     ],
-    "target_scope": "scalar single-label only"
+    "target_scope": "scalar single-label only",
+    "pooled_covariance_weighting": "sample-weighted residual rows; classes are not balanced before covariance estimation"
   },
   "stages": {
     "smoke": {
