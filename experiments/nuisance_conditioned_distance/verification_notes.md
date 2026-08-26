@@ -54,7 +54,50 @@ its interpreter cache outside the writable worktree. Verification was rerun with
 `PYTHONPYCACHEPREFIX=/tmp/overlapindex_pycache`; this changes only bytecode cache
 placement, not imported source or experiment behavior.
 
-The pre-screen repository-wide Python 3.9 test run completed with 309 passing
-and 14 skipped tests. Its 34 warnings were the repository's expected
+The final pre-outcome repository-wide Python 3.9 test run completed with 336
+passing and 14 skipped tests. Its 34 warnings were the repository's expected
 degenerate-prototype and unevaluable-multilabel warnings; no experiment,
 joblib, numerical, or fit warning was emitted.
+
+## Frozen execution and stop decision
+
+- The independently reviewed pre-outcome implementation was committed as
+  `eb298a845e3c7ac4b482fa7344cbc9d097e7364a`. The runner recorded that exact
+  clean commit, the verified starting commit `165fa344653a72dd2abc04a20387d90b891b9acc`,
+  and per-source hashes in every raw artifact.
+- The 24-case smoke completed all 144 A--F rows with no candidate error or
+  early stop. The excluded warm-up and first measured case had bit-exact A--E
+  structural signatures. Two warnings on deliberately tiny cells were the
+  existing under-prototyped-label warning, not numerical or fit failures.
+- The 720-case screen completed all 4,320 paired A--F rows with no errors.
+  Artifact completeness passed (720/720 cases and 4,320/4,320 rows), the
+  designated-pair robustness grid passed (120/120 strata for each B--E arm),
+  and the excluded warm-up repeat was bit-exact for A--E.
+- The immutable screen raw and manifest SHA-256 values are
+  `9e88c48369ff3dea28d119391cf66120d740b5e3a19c6963be5ec334238c23e3`
+  and `9a289e261236e82bd94d188f44833971737267928240806be8ec98e06341137a`.
+- No C--E candidate passed the recovered historical reliability gates, so the
+  screen decision is `inconclusive` with no selected or locked candidate.
+  C failed separated-FPR, AUROC/AUPRC, clean-MAE, calibration, family-drift,
+  and stable-shift gates. D failed the family-drift gates. E failed the
+  family-drift and stable-shift AUROC gates. The full synthetic, Food-101,
+  large-budget runtime, G policy, and fresh-process memory panels were therefore
+  not run; running them without a valid screen lock would violate the frozen
+  stop rule.
+- A post-outcome audit found two report-only extraction errors (the configured
+  condition-number cap was shown as the measured value, and applied/eligible
+  was mislabeled as prototype activity). Commit
+  `f21fe5a67042822edd97740934719de3d0008c67` corrected only those diagnostics.
+  Commit `20b06afcec6c98ef8afeeab93362df6a2cc6e0cd` then sorted robustness
+  accumulation to remove last-bit `PYTHONHASHSEED` dependence without changing
+  its estimand, bootstrap, threshold, gate status, or decision.
+- The final analysis was generated twice from the unchanged raw screen and all
+  ten output files were byte-identical. Its summary, promotion decision, and
+  report SHA-256 values are
+  `86d0238d292ebc6125ec7e06ba6fda12a192cc0ab5a8d9981db96a836b85c9c4`,
+  `d3ed3d0b69e9cc51dd8c1fd32c52b3169fc8947a48f29c085743c7950fb46e3a`,
+  and `3dbfd2da109821841d671d96d70ca5bd1c444a581f18bae49b33f7a774f42c8c`.
+  Original analysis artifacts remain preserved beside `analysis_final_v2/`.
+- After the two post-outcome analysis/reporting corrections, the six focused
+  Python 3.9 suites passed 96 tests, and the final repository-wide suite passed
+  338 tests with 14 skips and the same 34 expected upstream warnings.
