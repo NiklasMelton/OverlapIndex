@@ -1,0 +1,464 @@
+{
+  "schema_version": 1,
+  "protocol_id": "m50_backbone_ranking_v1",
+  "frozen_before_outcomes": true,
+  "product_scope": {
+    "objective": "Rank backbone candidates for transfer learning from class-stratified labeled samples drawn from the same target distribution as downstream training and evaluation.",
+    "primary_claim": "A selector is viable only if it is competitive with the exact full linear probe for linearly separable reference heads, superior for each frozen nonlinear reference head, and competitive in end-to-end runtime.",
+    "out_of_scope": [
+      "deployment or covariate shift outside the sampled target distribution",
+      "generic overlap calibration as an end in itself",
+      "universal claims beyond the frozen tasks, backbones, heads, budgets, and class-stratified sampling design",
+      "unstratified natural-prevalence or severely class-imbalanced selector samples"
+    ],
+    "diagnostic_only": [
+      "shift-reversal stress tests",
+      "generic genuine-overlap AUROC/AUPRC/calibration",
+      "class-balanced pooling on the per-class-balanced Food panel"
+    ]
+  },
+  "repository": {
+    "original_develop_commit": "165fa344653a72dd2abc04a20387d90b891b9acc",
+    "followup_start_commit": "1faf2ea06878c47afdbb85d51b5cfe7cf3fd3742",
+    "branch": "codex/experiment-m50-backbone-ranking",
+    "public_api_changes_allowed": false,
+    "vertebrae_modification_allowed": false
+  },
+  "source_evidence": {
+    "food_bridge_driver": {
+      "path": "/Users/niklasmelton/code/vertabrae/examples/food101_nonlinear_backbone_bridge.py",
+      "sha256": "63f906f12070aaf697d88c193dd11dc2f430bc9fa6b0389756d556636ad85eae"
+    },
+    "food_source_result": {
+      "path": "/Users/niklasmelton/code/vertabrae/examples/output/food101_nonlinear_backbone_bridge_food101_k10_89095e3bc0db.json",
+      "sha256": "0826871de7a37d72ad6618e48a39b4895c74bb6ab30d9eb7521a2b767e483b55",
+      "configuration_sha256": "89095e3bc0db391235a71489fdb86013a8503a113673ce7a757989a27cd05529"
+    },
+    "food_source_cohort": {
+      "path": "/Users/niklasmelton/code/vertabrae/examples/output/food101_nonlinear_backbone_bridge_food101_k10_89095e3bc0db.cohorts.json",
+      "sha256": "038c5ecff1fa42b4a71bb235a35fb562d2a9542ce52caa336566be56d0f9d88d",
+      "row_count": 28480,
+      "sample_ids_sha256": "d17b3e8cf42d8af02a9761569bfdddb775153484c9b93c1f0eaa8611d7118f37",
+      "labels_sha256": "abdd53b66b50622113023a9f9b7810faeee667f80b781ec47cca521fc4fe7645"
+    },
+    "archived_selector_replay": {
+      "path": "/Users/niklasmelton/.codex/worktrees/a9b5/vertabrae/examples/research/selector_replay/artifacts/full/raw_results.json",
+      "sha256": "56d394e8c7f07a83e37cc14e0c33fd6188c2020c4011f3b5d635a2d13934586d"
+    },
+    "food_runtime_driver": {
+      "path": "/Users/niklasmelton/code/vertabrae/examples/food101_selector_runtime_scaling.py",
+      "sha256": "72a10f57681c27229572f885805b06c73ea20b7b0240e5477980dbef6103e7b9"
+    },
+    "archived_runtime_replay": {
+      "path": "/Users/niklasmelton/.codex/worktrees/a9b5/vertabrae/examples/research/selector_replay/artifacts/runtime/raw_results.json",
+      "sha256": "98ec1a8e2a76332478567a2a4ce801cfbf077bb5c8fd7e1f8ce090e2783bd3c3"
+    },
+    "heteroscedastic_protocol": {
+      "path": "experiments/heteroscedastic_distance_conditioning/protocol.json",
+      "sha256": "1e75e24b626531bafc65d597d6f7bc1d14f05030a6ffe7457665d5afd739d15e"
+    },
+    "canonical_m50_adapter": {
+      "path": "experiments/heteroscedastic_distance_conditioning/conditioning_adapter.py",
+      "sha256": "e4bde79e64973d8ec22882d279a8fa0faf5c374112d2968555a68e515329d9f6"
+    },
+    "heteroscedastic_erratum_report": {
+      "path": "artifacts/heteroscedastic_distance_conditioning/development/analysis_erratum_v1/report.md",
+      "sha256": "a47c553c43da2ec7b07abd409a8bc6bf75fb5510fc38be5fa01de98ea217a459"
+    },
+    "heteroscedastic_corrected_selector_metrics": {
+      "path": "artifacts/heteroscedastic_distance_conditioning/development/analysis_erratum_v1/corrected_selector_metrics.json",
+      "sha256": "d10157d9d925e8818863df2964f6d5cb311e617df8b6d821ac6f5a6c73c39e53",
+      "rank_auc_usable": false
+    },
+    "cache_identity": "all_ten_food101_cache_manifest_and_matrix_hashes_must_match_the_archived_selector_replay_frozen_inputs"
+  },
+  "candidates": [
+    {
+      "id": "A",
+      "geometry": "raw",
+      "prototype_refinement": false,
+      "constructor": "direct_upstream_overlap_index",
+      "role": "exact_control",
+      "promotable": false
+    },
+    {
+      "id": "B",
+      "geometry": "raw",
+      "prototype_refinement": true,
+      "constructor": "direct_upstream_overlap_index",
+      "role": "exact_refined_control",
+      "promotable": false
+    },
+    {
+      "id": "M0-SW",
+      "geometry": "pooled_within_class_mad_partial_diagonal",
+      "estimator": "pooled_mad",
+      "weighting": "sample_weighted_rows",
+      "gamma": 0.5,
+      "prototype_refinement": false,
+      "role": "primary_factorial_candidate",
+      "promotable": true
+    },
+    {
+      "id": "M1-SW",
+      "geometry": "pooled_within_class_mad_partial_diagonal",
+      "estimator": "pooled_mad",
+      "weighting": "sample_weighted_rows",
+      "gamma": 0.5,
+      "prototype_refinement": true,
+      "role": "prior_primary_candidate",
+      "promotable": true
+    },
+    {
+      "id": "M0-CB",
+      "geometry": "pooled_within_class_mad_partial_diagonal",
+      "estimator": "pooled_mad",
+      "weighting": "class_balanced",
+      "gamma": 0.5,
+      "prototype_refinement": false,
+      "role": "balanced_factorial_diagnostic",
+      "promotable": false
+    },
+    {
+      "id": "M1-CB",
+      "geometry": "pooled_within_class_mad_partial_diagonal",
+      "estimator": "pooled_mad",
+      "weighting": "class_balanced",
+      "gamma": 0.5,
+      "prototype_refinement": true,
+      "role": "balanced_factorial_diagnostic",
+      "promotable": false
+    },
+    {
+      "id": "LP-FULL",
+      "recipe": "five_fold_oof_normalizer_logistic_regression_C1_max_iter2000_n_jobs1",
+      "role": "full_linear_probe_comparator",
+      "promotable": false,
+      "must_be_executed_and_timed": true
+    },
+    {
+      "id": "LP-CAPPED-2048",
+      "recipe": "five_fold_oof_normalizer_logistic_regression_C1_max_iter2000_n_jobs1_capped_at_2048_panel_rows",
+      "role": "guardrail_runtime_primitive",
+      "promotable": false,
+      "must_be_executed_and_timed": true
+    },
+    {
+      "id": "F",
+      "recipe": "equal_fractional_midrank_fusion",
+      "role": "conditional_algorithmic_selector",
+      "promotable": true
+    },
+    {
+      "id": "G",
+      "recipe": "selective_capped_probe_policy",
+      "role": "product_policy_comparator",
+      "promotable_as_oi": false
+    }
+  ],
+  "conditioning": {
+    "center": "global_train_fold_mean",
+    "residuals": "row_minus_its_train_fold_class_mean",
+    "mad_consistency_constant": 1.4826,
+    "variance": "weighted_mad_squared",
+    "transform": "regularized_variance ** (-0.25)",
+    "condition_number_cap": 10000.0,
+    "relative_eigenvalue_floor": 1e-8,
+    "fit_rows": "training_fold_only",
+    "heldout_behavior": "apply_fitted_transform_then_score_fixed_without_refit",
+    "implementation": "elementwise_diagonal_scale_equivalent_to_frozen_dense_diagonal_transform",
+    "post_conditioning_normalization": false
+  },
+  "food101_development": {
+    "evidence_class": "retrospective_development",
+    "models": [
+      "dinov2-small",
+      "deit-tiny",
+      "convnext-tiny",
+      "mobilenetv3-large",
+      "openclip-vit-b-32",
+      "resnet50",
+      "efficientnet-b0",
+      "swin-tiny",
+      "vit-small-16",
+      "densenet121"
+    ],
+    "replicates": [0, 1, 2, 3, 4],
+    "arms": ["baseline", "nonlinearity_full", "nuisance_full"],
+    "budgets_per_class": [64, 68, 72, 80],
+    "heads": ["linear", "quadratic", "knn", "rbf"],
+    "cross_fit_folds": 5,
+    "k": 10,
+    "seed": 42,
+    "method_ids": ["A", "B", "M0-SW", "M1-SW", "M0-CB", "M1-CB", "LP-FULL"],
+    "expected_panels": 600,
+    "expected_method_rows": 4200,
+    "complete_panel_required": true,
+    "geometry_order": ["frozen_bridge_transform", "row_l2_normalization", "train_fold_conditioning_or_identity"],
+    "execution_order": "hash_seeded_cyclic_near_counterbalance_with_lp_full_in_the_same_schedule_and_per_position_count_imbalance_at_most_one",
+    "warmups": "one_per_method_excluded_from_all_scores_and_timings",
+    "deterministic_repeat_ids": ["A", "B", "M0-SW", "M1-SW", "M0-CB", "M1-CB", "LP-FULL", "LP-CAPPED-2048"],
+    "deterministic_repeat_scope": "exactly_one_clock_free_warmup_measured_comparison_per_ID_on_that_IDs_first_eligible_panel_in_the_frozen_full_execution_schedule; every_record_carries_the_canonical_panel_identity; resume_must_reuse_and_never_overwrite_it",
+    "probe_score_parity": "exact_against_archived_linear_probe_oof",
+    "raw_control_parity": "exact_against_archived_A_B_rows"
+  },
+  "statistics": {
+    "regret_unit": "accuracy_percentage_points",
+    "bootstrap_resamples": 10000,
+    "development_bootstrap_seed": 2026082701,
+    "development_bootstrap_unit": "complete_replicate_block_preserving_models_budgets_arms_heads",
+    "interval": "paired_two_sided_95_percent_percentile",
+    "rank_auc": "normalized_trapezoid_over_log2_budget_for_complete_budget_curve_only",
+    "rank_correlation": "spearman_with_undefined_constant_panels_reported_null",
+    "selection_rates": ["exact_best", "within_one_accuracy_point"],
+    "factorial": {
+      "primary_methods": ["A", "B", "M0-SW", "M1-SW"],
+      "raw_refinement_effect": "regret_B_minus_regret_A",
+      "conditioned_refinement_effect": "regret_M1_SW_minus_regret_M0_SW",
+      "interaction": "conditioned_refinement_effect_minus_raw_refinement_effect",
+      "cb_factorial": "diagnostic_only"
+    }
+  },
+  "development_gates": {
+    "baseline_linear": "upper95(candidate_regret_minus_lp_full_regret) <= 1.0",
+    "nuisance_linear": "upper95(candidate_regret_minus_lp_full_regret) <= 1.0",
+    "nonlinearity_quadratic": "upper95(candidate_regret_minus_lp_full_regret) < 0.0",
+    "nonlinearity_knn": "upper95(candidate_regret_minus_lp_full_regret) < 0.0",
+    "nonlinearity_rbf_pass": "upper95(candidate_regret_minus_lp_full_regret) < 0.0",
+    "nonlinearity_rbf_fusion_activation": "lower95 <= 0.0 and upper95 >= 0.0 and upper95 <= 1.0",
+    "nonlinearity_rbf_fail": "lower95 > 0.0 or upper95 > 1.0",
+    "no_other_arm_head_cells_are_promotion_gates": true
+  },
+  "refinement_lock": {
+    "eligible": ["M0-SW", "M1-SW"],
+    "eligibility_tier_precedence": [
+      "pure_gate_pass",
+      "fusion_required",
+      "guardrail_eligible"
+    ],
+    "tier_rule": "retain_only_the_highest_nonempty_eligibility_tier_then_apply_the_refinement_choice_within_that_tier; never_prefer_a_lower_tier_for_speed",
+    "if_only_one_remains_in_the_highest_tier": "lock_that_candidate_provisionally",
+    "if_both_remain_in_the_highest_tier": {
+      "prefer_M0_SW_only_if": [
+        "upper95(M0_SW_regret_minus_M1_SW_regret) <= 0.25 in both frozen linear strata and all three frozen nonlinear heads",
+        "within_each_of_baseline_nonlinearity_full_and_nuisance_full_the_paired_large_budget_median_total_runtime_M0_SW <= 0.95 * M1_SW"
+      ],
+      "otherwise": "M1-SW"
+    },
+    "cb_may_rescue": false,
+    "no_passing_sw": "no_pure_m50_lock",
+    "rule_status": "provisional_product_gate"
+  },
+  "fusion": {
+    "activation": "runtime_settled_m50_passes_linear_quadratic_knn_and_rbf_is_inconclusive",
+    "raw_view": "A_if_M0_SW_locked_else_B",
+    "conditioned_view": "provisional_locked_m50",
+    "per_view_score": "fractional_midrank_in_[0,1]_within_complete_backbone_panel_higher_is_better",
+    "tie_method": "average",
+    "tie_equality": "exact_float_equality_for_F_fractional_midranks; ordinary_selector_argmax_uses_the_archived_absolute_tolerance_1e-12",
+    "score": "0.5 * raw_fractional_midrank + 0.5 * conditioned_fractional_midrank",
+    "final_argmax_tie": "frozen_backbone_order",
+    "missing_view": "invalidate_complete_panel",
+    "tuning_allowed": false,
+    "must_pass_all_development_and_resource_gates": true
+  },
+  "guardrail": {
+    "role": "product_policy_only",
+    "activation": "algorithmic_chain_preserves_nonlinear_gates_but_needs_linear_protection",
+    "trigger": "any_backbone_B_refinement_activity_at_least_0.50_or_abs(B_score_minus_M1_SW_score)_at_least_0.05",
+    "trigger_inputs": "training_only_oi_diagnostics",
+    "forbidden_trigger_inputs": ["reference_accuracy", "regret", "backbone_identity", "head_identity"],
+    "panel_wide_trigger": true,
+    "triggered_selector": "if_any_backbone_triggers_then_rerank_all_backbones_in_that_complete_panel_with_the_five_fold_stratified_probe_capped_at_2048_panel_rows; never_mix_scores_per_backbone",
+    "untriggered_selector": "locked_M_or_F",
+    "tie_semantics": "triggered_LP-CAPPED-2048_and_untriggered_M_preserve_archived_absolute_tolerance_1e-12_tie_averaging; untriggered_F_preserves_F_exact_equality_and_frozen_order_winner",
+    "runtime_accounting": "all_B_M1_base_and_triggered_probe_components",
+    "cannot_rescue_nonlinear_failure_claim": true
+  },
+  "runtime": {
+    "models": "food101_development.models",
+    "arms": ["baseline", "nonlinearity_full", "nuisance_full"],
+    "budgets_per_class": [64, 128, 256, 512, 640],
+    "repeats": 5,
+    "expected_panels": 750,
+    "expected_method_rows": 4500,
+    "primitive_method_ids": [
+      "A",
+      "B",
+      "M0-SW",
+      "M1-SW",
+      "LP-FULL",
+      "LP-CAPPED-2048"
+    ],
+    "derived_method_ids_not_executed_as_estimators": ["F", "G"],
+    "scope_for_gates": "budgets_at_least_128",
+    "threads": 1,
+    "warmup_exclusion": "warmup_is_excluded_from_scores_wall_and_cpu_summaries; fresh_process_peak_RSS_conservatively_includes_the_warmup_by_design",
+    "order": "hash_seeded_cyclic_exact_counterbalance_across_750_panels_and_six_primitive_methods",
+    "primary_clock": "outer_end_to_end_wall_seconds_starting_after_hash_locked_subset_materialization_and_before_method_required_preprocessing_then_ending_after_the_oof_score; cache_io_and_subset_construction_excluded",
+    "secondary_clocks": ["cpu", "conditioning", "oi_fit_refinement", "score_fixed", "probe_fit", "probe_predict"],
+    "peak_memory": "fresh_process_per_cell",
+    "bootstrap_unit": "complete_timing_repeat_block_preserving_arm_model_and_budget",
+    "gate_aggregation": "apply_every_time_and_memory_gate_separately_to_baseline_nonlinearity_full_and_nuisance_full; all_three_arms_must_pass; pooled_and_scaling_summaries_are_descriptive_only",
+    "time_estimands": {
+      "per_backbone_call": "paired_candidate_over_comparator_outer_wall_ratio_for_each_backbone_arm_budget_repeat",
+      "full_ranking_panel": "within_each_arm_budget_repeat_sum_outer_wall_across_all_ten_backbones_for_the_candidate_chain_then_divide_by_the_corresponding_comparator_sum",
+      "promotion_rule": "both_per_backbone_call_and_full_ranking_panel_gates_must_pass_separately_in_every_arm_for_budgets_at_least_128"
+    },
+    "gates": {
+      "median_candidate_over_lp_full": "<= 1.0",
+      "upper95_candidate_over_lp_full": "<= 1.10",
+      "faster_claim": "descriptive_nonpromotion_status_established_per_arm_only_when_both_the_per_backbone_and_full_panel_candidate_over_lp_full_upper95_bounds_are_below_1.0; also_report_each_qualified_status_separately",
+      "median_candidate_over_B": "<= 1.10",
+      "p95_candidate_over_B": "<= 1.25",
+      "full_panel_median_candidate_over_lp_full": "<= 1.0",
+      "full_panel_upper95_candidate_over_lp_full": "<= 1.10",
+      "full_panel_median_candidate_over_B": "<= 1.10",
+      "full_panel_p95_candidate_over_B": "<= 1.25",
+      "median_memory_over_B": "<= 1.15",
+      "p95_memory_over_B": "<= 1.25",
+      "max_memory_over_B": "<= 1.50"
+    }
+  },
+  "final_lock_schema": {
+    "status": "locked_for_future_confirmation_for_a_passing_v1_development_resource_lock; this_is_not_a_confirmed_product_claim",
+    "selected_candidate": "exactly_one_of_M0-SW_or_M1-SW_and_always_names_the_conditioned_OI_base",
+    "selected_chain": "exactly_one_of_M0-SW_M1-SW_F_G_and_names_the_executable_chain",
+    "chain_kind": "pure_oi_for_M0_or_M1; oi_fusion_for_F; product_guardrail_for_G",
+    "status_combinations": {
+      "pure_oi": "selected_chain_equals_selected_candidate; algorithmic_oi_status=pass; product_policy_status=not_applicable",
+      "oi_fusion": "algorithmic_oi_status=pass; product_policy_status=not_applicable",
+      "product_guardrail": "algorithmic_oi_status=fail_linear_claim; product_policy_status=pass"
+    },
+    "resource_binding": "resource_candidate_id_must_equal_selected_chain_and_resource_summary_sha256_must_bind_the_exact_passing_resource_summary",
+    "recipe_binding": {
+      "lock_fields": [
+        "selected_chain_recipe_bindings",
+        "selected_chain_recipe_bindings_sha256"
+      ],
+      "sidecar": "selected_chain_recipe_bindings.json",
+      "schema": "closed_schema_version_1_binding_the_selected_base_executable_chain_guardrail_base_exact_primitive_component_recipe_family_hashes_derived_F_or_G_recipe_hashes_and_Food_and_runtime_seed_rules",
+      "integrity": "the_lock_hash_sidecar_canonical_content_hash_and_analysis_manifest_file_hash_must_match_exactly",
+      "future_v2": "must_hash_link_the_exact_v1_binding_and_sidecar_bytes_without_reselection_or_recipe_substitution"
+    },
+    "aliases_or_fallbacks": "forbidden"
+  },
+  "confirmation": {
+    "required": true,
+    "v1_terminal_semantics": "v1_can_issue_only_a_retrospective_development_resource_lock_with_status_locked_for_future_confirmation_and_never_a_confirmed_product_claim",
+    "registry_path": "experiments/m50_backbone_ranking/confirmation_registry.json",
+    "exact_dataset_count": 5,
+    "planned_datasets": [
+      {
+        "id": "torchvision_cifar10",
+        "version": "torchvision_dataset_definition_pinned_at_extraction",
+        "training_split": "train",
+        "evaluation_split": "test",
+        "minimum_training_examples_per_class": 64,
+        "minimum_evaluation_examples_per_class": 20
+      },
+      {
+        "id": "torchvision_stl10",
+        "version": "torchvision_dataset_definition_pinned_at_extraction",
+        "training_split": "train",
+        "evaluation_split": "test",
+        "minimum_training_examples_per_class": 64,
+        "minimum_evaluation_examples_per_class": 20
+      },
+      {
+        "id": "torchvision_gtsrb",
+        "version": "torchvision_dataset_definition_pinned_at_extraction",
+        "training_split": "train",
+        "evaluation_split": "test",
+        "minimum_training_examples_per_class": 64,
+        "minimum_evaluation_examples_per_class": 20
+      },
+      {
+        "id": "torchvision_fgvc_aircraft",
+        "version": "torchvision_dataset_definition_pinned_at_extraction",
+        "training_split": "trainval",
+        "evaluation_split": "test",
+        "minimum_training_examples_per_class": 64,
+        "minimum_evaluation_examples_per_class": 20
+      },
+      {
+        "id": "torchvision_dtd",
+        "version": "torchvision_dataset_definition_pinned_at_extraction",
+        "training_split": "train_plus_val_partition_1",
+        "evaluation_split": "test_partition_1",
+        "minimum_training_examples_per_class": 64,
+        "minimum_evaluation_examples_per_class": 20
+      }
+    ],
+    "backbones": "food101_development.models",
+    "known_panels_forbidden": ["food101", "cifar100_coarse", "oxford_iiit_pet", "prior_synthetic_panels"],
+    "budgets_per_class": [32, 64],
+    "replicates": [0, 1, 2, 3, 4],
+    "selector_rows": "sampled_target_training_only",
+    "reference_rows": "separate_same_distribution_evaluation_split",
+    "heads": ["linear", "quadratic", "knn", "rbf"],
+    "bootstrap_resamples": 10000,
+    "bootstrap_seed": 2026082702,
+    "bootstrap": "resample_datasets_then_complete_replicates_equal_dataset_then_budget_weight",
+    "future_v2_consumes_exact_v1_development_lock_without_reselection": true,
+    "gates": {
+      "linear": "pooled_upper95_regret_delta_vs_lp <= 1.0 and no_per_dataset_point_estimate_averaged_equally_over_the_frozen_replicates_and_budgets_exceeds_2.0",
+      "each_nonlinear_head": "pooled_upper95_regret_delta_vs_lp < 0.0 and_at_least_4_of_5_per_dataset_point_estimates_each_averaged_equally_over_the_frozen_replicates_and_budgets_favor_candidate",
+      "rank_auc": "complete_all_frozen_datasets_replicates_budgets_supporting_only",
+    "runtime": "inherit_the_exact_hash_bound_passed_development_resource_gate_from_the_immutable_lock_without_accepting_a_free_form_confirmation_status"
+    },
+    "current_status": "v1_terminally_blocked_from_confirmation; new_embeddings_and_an_audited_registry_must_be_consumed_only_by_the_hash_linked_future_v2_protocol",
+    "future_v2_lineage": "a_versioned_confirmation_protocol_with_its_own_code_identity_must_hash_link_the_exact_v1_development_lock_bytes_v1_analysis_manifest_v1_protocol_and_code_identities_selected_candidate_selected_chain_candidate_recipe_and_configuration_hashes_resource_summary_hash_and_status_and_planned_registry_hash; it_must_not_reselect_retune_or_reinterpret_the_v1_gates"
+  },
+  "stage_order": [
+    "focused_verification",
+    "protocol_and_source_freeze",
+    "independent_pre_outcome_review",
+    "structural_smoke",
+    "independent_smoke_artifact_review",
+    "food101_development",
+    "development_analysis_and_runtime_authorization",
+    "direct_runtime",
+    "runtime_refinement_choice_then_conditional_fusion_or_guardrail",
+    "immutable_development_lock",
+    "future_v2_untouched_confirmation_after_new_embeddings_exist",
+    "final_independent_review"
+  ],
+  "stop_rules": {
+    "immediate": [
+      "leakage",
+      "A_or_B_archived_parity_mismatch",
+      "LP_FULL_archived_score_parity_mismatch",
+      "nondeterminism",
+      "source_protocol_code_or_cache_hash_mismatch",
+      "malformed_duplicate_incomplete_or_nonfinite_required_panel"
+    ],
+    "runtime_failure": "finish_complete_counterbalanced_block_then_stop",
+    "noisy_single_regret_cell": "do_not_stop",
+    "confirmation": "no_interim_outcome_driven_stop_or_redesign",
+    "runner_up_after_lock": "forbidden"
+  },
+  "artifacts": {
+    "atomic": true,
+    "stage_separated": true,
+    "overwrite_completed_or_stopped": false,
+    "resume_requires_exact_identity": true,
+    "tables": "canonical_JSONL_with_count_and_sha256_manifest",
+    "output_roots_excluded_from_code_identity": true,
+    "required_metadata": [
+      "environment",
+      "package_versions",
+      "original_develop_commit",
+      "followup_start_commit",
+      "experiment_commit_and_dirty_status",
+      "protocol_sha256",
+      "explicit_source_hashes",
+      "code_identity_hash",
+      "seeds",
+      "execution_order",
+      "warmup_rows",
+      "deviations",
+      "prerequisite_decision_hashes"
+    ]
+  }
+}

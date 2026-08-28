@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "registry_id": "m50_backbone_ranking_confirmation_v1",
+  "status": "planned_unextracted",
+  "outcomes_inspected": false,
+  "known_panel_exclusion": [
+    "food101",
+    "cifar100_coarse",
+    "oxford_iiit_pet",
+    "prior_synthetic_panels"
+  ],
+  "datasets": [
+    {
+      "id": "torchvision_cifar10",
+      "version": "torchvision_dataset_definition_pinned_at_extraction",
+      "training_split": "train",
+      "evaluation_split": "test",
+      "minimum_training_examples_per_class": 64,
+      "minimum_evaluation_examples_per_class": 20,
+      "embedding_manifest": null
+    },
+    {
+      "id": "torchvision_stl10",
+      "version": "torchvision_dataset_definition_pinned_at_extraction",
+      "training_split": "train",
+      "evaluation_split": "test",
+      "minimum_training_examples_per_class": 64,
+      "minimum_evaluation_examples_per_class": 20,
+      "embedding_manifest": null
+    },
+    {
+      "id": "torchvision_gtsrb",
+      "version": "torchvision_dataset_definition_pinned_at_extraction",
+      "training_split": "train",
+      "evaluation_split": "test",
+      "minimum_training_examples_per_class": 64,
+      "minimum_evaluation_examples_per_class": 20,
+      "embedding_manifest": null
+    },
+    {
+      "id": "torchvision_fgvc_aircraft",
+      "version": "torchvision_dataset_definition_pinned_at_extraction",
+      "training_split": "trainval",
+      "evaluation_split": "test",
+      "minimum_training_examples_per_class": 64,
+      "minimum_evaluation_examples_per_class": 20,
+      "embedding_manifest": null
+    },
+    {
+      "id": "torchvision_dtd",
+      "version": "torchvision_dataset_definition_pinned_at_extraction",
+      "training_split": "train_plus_val_partition_1",
+      "evaluation_split": "test_partition_1",
+      "minimum_training_examples_per_class": 64,
+      "minimum_evaluation_examples_per_class": 20,
+      "embedding_manifest": null
+    }
+  ],
+  "backbones": [
+    "dinov2-small",
+    "deit-tiny",
+    "convnext-tiny",
+    "mobilenetv3-large",
+    "openclip-vit-b-32",
+    "resnet50",
+    "efficientnet-b0",
+    "swin-tiny",
+    "vit-small-16",
+    "densenet121"
+  ],
+  "weights_and_preprocessing": "must_match_the_hash_locked_Food_101_extractor_recipes_per_backbone",
+  "budgets_per_class": [32, 64],
+  "replicate_seeds": [2026082710, 2026082711, 2026082712, 2026082713, 2026082714],
+  "ready": false,
+  "blocking_reason": "No hash-locked embeddings or reference outcomes exist for these exact dataset/backbone panels."
+}
