@@ -58,6 +58,17 @@ def test_full_selection_rejects_subsets_and_smoke_is_declared() -> None:
     )[0] == food101.SMOKE_MODELS
 
 
+def test_archived_source_accepts_runtime_extraction_cache_surface() -> None:
+    if not food101.DEFAULT_RESULT.is_file() or not food101.DEFAULT_COHORT.is_file():
+        pytest.skip("archived Food source is unavailable in this checkout")
+    result = food101._read_json(food101.DEFAULT_RESULT)
+    cohort = food101._read_json(food101.DEFAULT_COHORT)
+    assert "frozen_inputs" not in result
+    assert isinstance(result.get("runtime"), dict)
+    assert isinstance(result["runtime"].get("extraction"), list)
+    food101._validate_sources(result, cohort)
+
+
 def test_documented_smoke_cli_defaults_to_structural_subset(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -430,20 +430,30 @@ def _validate_sources(result: Mapping[str, Any], cohort: Mapping[str, Any]) -> N
             "archived Food cohort label identity hash mismatch: "
             f"expected {LABELS_SHA256}, got {observed_label_hash}"
         )
-    frozen_inputs = result.get("frozen_inputs", {})
-    cache_identity = frozen_inputs.get("cache_identity") if isinstance(frozen_inputs, Mapping) else None
-    if not isinstance(cache_identity, Mapping) or not cache_identity:
-        raise ValueError("archived replay has no cache identity surface")
-    identity_hashes = {
-        str(value.get("identity_hash"))
-        for value in cache_identity.values()
-        if isinstance(value, Mapping)
-    }
-    if identity_hashes != {COMMON_CACHE_IDENTITY_HASH}:
+    # The archived bridge result predates this runner's ``frozen_inputs``
+    # envelope: its cache surface is the top-level ``runtime.extraction``
+    # metadata, while the authoritative per-cache identity and matrix hashes
+    # live in the ten Food cache manifests.  Keep this source check structural
+    # (no outcome rows) and validate those manifests separately before fitting.
+    runtime = result.get("runtime")
+    extraction = runtime.get("extraction") if isinstance(runtime, Mapping) else None
+    if not isinstance(extraction, Sequence) or isinstance(extraction, (str, bytes)):
+        raise ValueError("archived replay has no runtime cache metadata")
+    extraction_by_model: dict[str, Mapping[str, Any]] = {}
+    for entry in extraction:
+        if not isinstance(entry, Mapping) or not isinstance(entry.get("model"), str):
+            raise ValueError("archived replay runtime cache metadata is malformed")
+        model = str(entry["model"])
+        if model in extraction_by_model:
+            raise ValueError(f"archived replay runtime cache metadata duplicates {model}")
+        extraction_by_model[model] = entry
+    if tuple(extraction_by_model) != tuple(MODELS):
         raise ValueError(
-            "archived replay cache identity mismatch: "
-            f"expected {COMMON_CACHE_IDENTITY_HASH}, got {sorted(identity_hashes)!r}"
+            "archived replay runtime cache metadata has the wrong model set/order: "
+            f"expected {MODELS!r}, got {tuple(extraction_by_model)!r}"
         )
+    if any(type(entry.get("cached")) is not bool for entry in extraction_by_model.values()):
+        raise ValueError("archived replay runtime cache metadata has an invalid cached flag")
 
 
 def _load_archived_inputs(
@@ -552,6 +562,33 @@ def _load_cache(cache_dir: Path, model: str, expected_sample_ids_sha256: str) ->
         model=model,
         expected_sample_ids_sha256=expected_sample_ids_sha256,
     )
+
+
+def _validate_all_cache_manifests(
+    cache_dir: Path,
+    expected_sample_ids_sha256: str,
+) -> None:
+    """Validate every archived Food cache before any selector fitting.
+
+    The archived bridge result does not carry the cache manifest identities;
+    those identities are authoritative in the ten per-model manifest files.
+    Validate the complete set up front so a smoke/full run cannot fit earlier
+    models and only then discover a missing or mismatched later cache.
+    """
+
+    for model in MODELS:
+        matrix, payload = validate_cache_manifest(
+            cache_dir / f"food101_{model}_final.json",
+            model=model,
+            expected_sample_ids_sha256=expected_sample_ids_sha256,
+        )
+        del matrix
+        if payload.get("identity_hash") != COMMON_CACHE_IDENTITY_HASH:
+            raise ValueError(f"cache manifest identity surface is missing for {model}")
+        if payload.get("labels_sha256") != LABELS_SHA256:
+            raise ValueError(f"cache manifest label identity is missing for {model}")
+        if payload.get("row_count") != 28_480:
+            raise ValueError(f"cache manifest row count mismatch for {model}")
 
 
 def _row_l2(matrix: np.ndarray) -> np.ndarray:
@@ -2058,6 +2095,9 @@ def run_food101(
     if prior_replay is None:
         prior_replay = _read_json(source_paths["prior_replay"][0])
     _validate_sources(source_result, source_cohort)
+    sample_ids = [str(value) for value in source_cohort["extracted_sample_ids"]]
+    sample_hash = _sample_ids_hash(sample_ids)
+    _validate_all_cache_manifests(cache_dir, sample_hash)
     run_args = argparse.Namespace(
         models=models_t,
         replicates=replicates_t,
@@ -2078,8 +2118,6 @@ def run_food101(
         _clear_transient_bundle_surfaces(output_path)
     else:
         _atomic_write_json(output_path / "manifest.json", expected_running_manifest)
-    sample_ids = [str(value) for value in source_cohort["extracted_sample_ids"]]
-    sample_hash = _sample_ids_hash(sample_ids)
     labels = np.asarray([value.split("/")[2] for value in sample_ids], dtype=object)
     roles = {int(key): value for key, value in source_cohort["roles"].items()}
     checkpoints = output_path / "checkpoints"
