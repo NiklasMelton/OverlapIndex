@@ -58,6 +58,47 @@ def test_full_selection_rejects_subsets_and_smoke_is_declared() -> None:
     )[0] == food101.SMOKE_MODELS
 
 
+def test_documented_smoke_cli_defaults_to_structural_subset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_food101(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        food101.validate_run_selection(
+            kwargs["models"],  # type: ignore[arg-type]
+            kwargs["replicates"],  # type: ignore[arg-type]
+            kwargs["budgets"],  # type: ignore[arg-type]
+            kwargs["arms"],  # type: ignore[arg-type]
+            kwargs["methods"],  # type: ignore[arg-type]
+            smoke=kwargs["smoke"],  # type: ignore[arg-type]
+        )
+        return {}
+
+    monkeypatch.setattr(food101, "run_food101", fake_run_food101)
+    args = food101._parser().parse_args(
+        ["--smoke", "--output", str(tmp_path / "smoke")]
+    )
+    assert food101._run(args) == 0
+    assert captured["models"] == food101.SMOKE_MODELS
+    assert captured["replicates"] == food101.SMOKE_REPLICATES
+    assert captured["budgets"] == food101.SMOKE_BUDGETS
+    assert captured["arms"] == food101.SMOKE_ARMS
+    assert captured["methods"] == food101.METHODS
+
+    incompatible = food101._parser().parse_args(
+        [
+            "--smoke",
+            "--output",
+            str(tmp_path / "bad-smoke"),
+            "--budgets",
+            "64,68",
+        ]
+    )
+    with pytest.raises(ValueError, match="declared structural subset"):
+        food101._run(incompatible)
+
+
 def test_first_determinism_panels_follow_frozen_schedule() -> None:
     panels = tuple(
         manifest.FoodPanel(model, replicate, arm, budget)

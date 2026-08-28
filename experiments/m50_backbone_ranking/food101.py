@@ -372,11 +372,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--prior-replay", type=Path, default=DEFAULT_PRIOR)
     parser.add_argument("--runtime-source", type=Path, default=DEFAULT_RUNTIME_SOURCE)
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE)
-    parser.add_argument("--models", default=",".join(MODELS))
-    parser.add_argument("--replicates", default=",".join(str(value) for value in REPLICATES))
-    parser.add_argument("--budgets", default=",".join(str(value) for value in BUDGETS))
-    parser.add_argument("--arms", default=",".join(name for name, _, _ in ARMS))
-    parser.add_argument("--methods", default=",".join(METHODS))
+    # Keep selector arguments unset until ``_run`` knows whether this is a
+    # full run or the documented structural smoke.  A parser default of the
+    # full grid would make ``--smoke`` fail its exact-subset validation before
+    # the user had an opportunity to specify any selectors.
+    parser.add_argument("--models", default=None)
+    parser.add_argument("--replicates", default=None)
+    parser.add_argument("--budgets", default=None)
+    parser.add_argument("--arms", default=None)
+    parser.add_argument("--methods", default=None)
     parser.add_argument("--resume", action="store_true")
     parser.add_argument("--smoke", action="store_true")
     return parser
@@ -2426,11 +2430,27 @@ def run_food101(
 
 
 def _run(args: argparse.Namespace) -> int:
-    models = _parse_subset(args.models, MODELS)
-    replicates = _parse_subset(args.replicates, REPLICATES, int)
-    budgets = _parse_subset(args.budgets, BUDGETS, int)
-    arms = _parse_subset(args.arms, tuple(name for name, _, _ in ARMS))
-    methods = _parse_subset(args.methods, METHODS)
+    # ``None`` means the user omitted that selector.  Smoke then receives the
+    # exact declared structural subset; an explicit selector still goes
+    # through the same strict validation in ``run_food101``.
+    models_raw = args.models if args.models is not None else ",".join(
+        SMOKE_MODELS if args.smoke else MODELS
+    )
+    replicates_raw = args.replicates if args.replicates is not None else ",".join(
+        str(value) for value in (SMOKE_REPLICATES if args.smoke else REPLICATES)
+    )
+    budgets_raw = args.budgets if args.budgets is not None else ",".join(
+        str(value) for value in (SMOKE_BUDGETS if args.smoke else BUDGETS)
+    )
+    arms_raw = args.arms if args.arms is not None else ",".join(
+        SMOKE_ARMS if args.smoke else tuple(name for name, _, _ in ARMS)
+    )
+    methods_raw = args.methods if args.methods is not None else ",".join(METHODS)
+    models = _parse_subset(models_raw, MODELS)
+    replicates = _parse_subset(replicates_raw, REPLICATES, int)
+    budgets = _parse_subset(budgets_raw, BUDGETS, int)
+    arms = _parse_subset(arms_raw, tuple(name for name, _, _ in ARMS))
+    methods = _parse_subset(methods_raw, METHODS)
     run_food101(output=args.output, driver_path=args.driver, source_result_path=args.source_result, source_cohort_path=args.source_cohort, prior_replay_path=args.prior_replay, runtime_source_path=args.runtime_source, cache_dir=args.cache_dir, models=models, replicates=replicates, budgets=budgets, arms=arms, methods=methods, smoke=bool(args.smoke), resume=bool(args.resume))
     return 0
 
