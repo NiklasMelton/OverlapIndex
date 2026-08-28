@@ -216,6 +216,121 @@ def test_smoke_surface_redacts_outcomes_and_timing_values() -> None:
     assert "0.7" not in encoded and "1.2" not in encoded and "applied_count" not in encoded
 
 
+def test_completed_smoke_surface_validates_canonical_redacted_descriptors() -> None:
+    panel = manifest.FoodPanel(
+        food101.SMOKE_MODELS[0],
+        food101.SMOKE_REPLICATES[0],
+        food101.SMOKE_ARMS[0],
+        food101.SMOKE_BUDGETS[0],
+    )
+    schedule = manifest.planned_execution_order((panel,), food101.METHODS)
+
+    def raw_row(candidate_id: str, *, refinement: bool = False) -> dict[str, object]:
+        return {
+            "stage": "smoke",
+            "model": panel.model,
+            "backbone": panel.model,
+            "replicate": panel.replicate,
+            "arm": panel.arm,
+            "budget": panel.budget,
+            "candidate_id": candidate_id,
+            "candidate_name": candidate_id,
+            "prototype_refinement_enabled": refinement,
+            "execution_position": next(
+                int(item["execution_position"])
+                for item in schedule
+                if item["method_id"] == candidate_id
+            ) if candidate_id in food101.METHODS else None,
+            "execution_order": [item["method_id"] for item in schedule],
+            "status": "ok",
+            "warmup_excluded": True,
+            "score": 0.5,
+            "fit_wall_seconds": 0.1,
+            "fit_cpu_seconds": 0.1,
+            "score_fixed_wall_seconds": 0.1,
+            "score_fixed_cpu_seconds": 0.1,
+            "total_wall_seconds": 0.2,
+            "total_cpu_seconds": 0.2,
+            "prototype_refinement": {"applied_count": 1} if refinement else {},
+            "conditioning_diagnostics": {"mode": "none"},
+            "folds": [{"fold": 0, "score": 0.5}],
+        }
+
+    raw_rows = [
+        raw_row(method, refinement=method in {"B", "M1-SW", "M1-CB"})
+        for method in food101.METHODS
+    ]
+    raw_probe = raw_row("LP-FULL")
+    raw_capped = {**raw_row("LP-CAPPED-2048"), "execution_position": None}
+    raw_references = [
+        {
+            "model": panel.model,
+            "backbone": panel.model,
+            "replicate": panel.replicate,
+            "arm": panel.arm,
+            "head": head,
+            "test_accuracy": 0.5,
+        }
+        for head in ("linear", "quadratic", "knn", "rbf")
+    ]
+    raw_parity = [
+        {
+            "candidate_id": candidate_id,
+            "model": panel.model,
+            "replicate": panel.replicate,
+            "arm": panel.arm,
+            "budget": panel.budget,
+            "delta": 0.0,
+            "exact": True,
+        }
+        for candidate_id in ("A", "B", "LP-FULL")
+    ]
+    deterministic = {
+        candidate_id: food101._determinism_record(
+            {
+                "exact": True,
+                "first_signature_sha256": "a" * 64,
+                "second_signature_sha256": "a" * 64,
+                "runtime_fields_excluded": True,
+            },
+            candidate_id=candidate_id,
+            panel=panel,
+        )
+        for candidate_id in tuple(food101.METHODS) + ("LP-CAPPED-2048",)
+    }
+    redacted_rows = tuple(food101._smoke_redact_row(row) for row in raw_rows)
+    redacted_probe = (food101._smoke_redact_row(raw_probe),)
+    redacted_capped = (food101._smoke_redact_row(raw_capped),)
+    redacted_references = tuple(
+        food101._smoke_redact_reference(row) for row in raw_references
+    )
+    redacted_parity = tuple(food101._smoke_redact_parity(row) for row in raw_parity)
+    encoded = json.dumps(
+        {
+            "rows": redacted_rows,
+            "references": redacted_references,
+            "probe": redacted_probe,
+            "capped": redacted_capped,
+            "parity": redacted_parity,
+        }
+    )
+    assert "0.5" not in encoded and "applied_count" not in encoded
+    food101._validate_completed_surfaces(
+        rows=redacted_rows,
+        references=redacted_references,
+        probe_rows=redacted_probe,
+        capped_rows=redacted_capped,
+        parity_rows=redacted_parity,
+        deterministic=deterministic,
+        models=food101.SMOKE_MODELS,
+        replicates=food101.SMOKE_REPLICATES,
+        budgets=food101.SMOKE_BUDGETS,
+        arms=food101.SMOKE_ARMS,
+        methods=food101.METHODS,
+        smoke=True,
+    )
+
+
 def test_lp_full_parity_uses_archived_score_only_not_timing() -> None:
     prior = {
         "selector_rows": [

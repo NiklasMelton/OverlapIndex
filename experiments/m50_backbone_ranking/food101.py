@@ -2416,12 +2416,30 @@ def run_food101(
         raise
     parity_rows = _baseline_parity_rows(rows, prior_replay) + _probe_parity_rows(rows, prior_replay)
     try:
+        validation_rows: Sequence[Mapping[str, Any]] = (
+            tuple(_smoke_redact_row(row) for row in rows) if smoke else rows
+        )
+        validation_references: Sequence[Mapping[str, Any]] = (
+            tuple(_smoke_redact_reference(row) for row in reference_rows)
+            if smoke else reference_rows
+        )
+        validation_probe_rows: Sequence[Mapping[str, Any]] = (
+            tuple(_smoke_redact_row(row) for row in probe_rows) if smoke else probe_rows
+        )
+        validation_capped_rows: Sequence[Mapping[str, Any]] = (
+            tuple(_smoke_redact_row(row) for row in capped_probe_rows)
+            if smoke else capped_probe_rows
+        )
+        validation_parity_rows: Sequence[Mapping[str, Any]] = (
+            tuple(_smoke_redact_parity(row) for row in parity_rows)
+            if smoke else parity_rows
+        )
         _validate_completed_surfaces(
-            rows=rows,
-            references=reference_rows,
-            probe_rows=probe_rows,
-            capped_rows=capped_probe_rows,
-            parity_rows=parity_rows,
+            rows=validation_rows,
+            references=validation_references,
+            probe_rows=validation_probe_rows,
+            capped_rows=validation_capped_rows,
+            parity_rows=validation_parity_rows,
             deterministic=deterministic,
             models=models_t,
             replicates=replicates_t,
