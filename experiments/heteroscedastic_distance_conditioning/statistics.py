@@ -2012,8 +2012,15 @@ def _complete_selector_panels(
                 # The normalized runner schema has one spelling for each
                 # selector outcome.  Reject old nested/alias fields rather
                 # than silently choosing whichever spelling happens to be
-                # present in a row.
-                if any(alias in row for alias in ("score", "oi_score", "probe_score", "references", "linear_probe")):
+                # present in a row.  A normalized artifact may enrich a
+                # selector row with immutable case metadata; in that path,
+                # inspect only the original selector-child keys so a
+                # case-level ``linear_probe`` record is not mistaken for a
+                # selector alias.  Plain rows retain the strict all-keys
+                # check, including rejection of an actual raw alias.
+                raw_selector_keys = getattr(row, "_raw_selector_keys", None)
+                fields_to_check = raw_selector_keys if raw_selector_keys is not None else row
+                if any(alias in fields_to_check for alias in ("score", "oi_score", "probe_score", "references", "linear_probe")):
                     invalid = True
                 if _number(_lookup(row, "candidate_score")) is None:
                     invalid = True
@@ -2269,6 +2276,9 @@ def selector_panel_metrics(
             rank_pooled_values: Dict[Any, float] = {}
             for seed_key in set(rank_balance_seed["balanced"]) & set(rank_balance_seed["imbalanced"]):
                 rank_pooled_values[seed_key] = (rank_balance_seed["balanced"][seed_key] + rank_balance_seed["imbalanced"][seed_key]) / 2.0
+            expected_rank_seed_keys = _expected_frozen_seeds(expected_seed_count)
+            if expected_rank_seed_keys is not None and set(rank_pooled_values) != expected_rank_seed_keys:
+                rank_pooled_values = {}
             if rank_pooled_values:
                 metrics[candidate]["heads"][head]["rank_auc"] = complete_seed_bootstrap(
                     {candidate: rank_pooled_values}, n_resamples=n_resamples, seed=seed
@@ -2282,7 +2292,7 @@ def selector_panel_metrics(
                 metrics[candidate]["heads"][head]["rank_auc"] = {
                     **interval(None, [], n=0, n_blocks=0),
                     "status": "inconclusive",
-                    "reason": "both count levels and balances required; constant ranks are undefined",
+                    "reason": "both count levels, balances, and all expected seeds required; constant ranks are undefined",
                 }
     return {"status": "defined" if panels and not failures else ("inconclusive" if failures else "undefined"), "panels": panel_records, "n_complete_panels": len(panels), "failures": failures, "candidates": metrics, "subpanel": list(subpanel), "selector": selector}
 
@@ -3503,6 +3513,15 @@ def evaluate_confirmation(
 # ---------------------------------------------------------------------------
 
 
+class _EnrichedSelectorRow(dict):
+    """Selector row retaining the raw child-field identity during joins."""
+
+    def __init__(self, base: Mapping[str, Any], raw: Mapping[str, Any]) -> None:
+        super().__init__(base)
+        self._raw_selector_keys = frozenset(raw.keys())
+        self.update(raw)
+
+
 def _rows_by_table(artifact_or_rows: Any) -> Dict[str, List[Dict[str, Any]]]:
     if isinstance(artifact_or_rows, Mapping) and isinstance(artifact_or_rows.get("tables"), Mapping):
         tables = {str(key): flatten_rows(value) for key, value in artifact_or_rows["tables"].items()}
@@ -3525,8 +3544,14 @@ def _rows_by_table(artifact_or_rows: Any) -> Dict[str, List[Dict[str, Any]]]:
                 case = _lookup(row, "case_id")
                 candidate = candidate_id(_lookup(row, "candidate_id", "method_id", "candidate"))
                 base = identities.get((_freeze(case), candidate), {})
-                merged = dict(base)
-                merged.update(row)
+                merged: Dict[str, Any]
+                if table_name == "selector_panels.jsonl":
+                    # Preserve all immutable case metadata, while retaining
+                    # the raw selector key set for strict alias validation.
+                    merged = _EnrichedSelectorRow(base, row)
+                else:
+                    merged = dict(base)
+                    merged.update(row)
                 enriched.append(merged)
             tables[table_name] = enriched
         return tables

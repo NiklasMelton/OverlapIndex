@@ -344,6 +344,81 @@ def test_selector_rank_auc_requires_two_count_levels_and_exact_canonical_fields(
     assert selector_panel_metrics(rows[:-1] + [alias], candidates=("B", "P25"), n_resamples=16)["status"] == "inconclusive"
 
 
+def test_selector_rank_auc_does_not_report_partial_expected_seed_blocks() -> None:
+    rows: list[dict[str, object]] = []
+    for seed in (21000, 21001):
+        for balance, count_level, dimension, k, signal in itertools.product(
+            ("balanced", "imbalanced"), ("small", "large"), (4, 32), (2, 8),
+            ("linear_separated", "nonlinear_separated", "genuine_overlap_half"),
+        ):
+            for scenario_index, scenario in enumerate(("H1", "H2", "T", "C", "X", "ALL")):
+                rows.append({
+                    "seed": seed, "balance": balance, "count_level": count_level,
+                    "nuisance_dim": dimension, "k": k, "signal_state": signal,
+                    "scenario": scenario, "candidate_id": "B",
+                    "candidate_score": float(scenario_index) + seed / 100000.0,
+                    "linear_probe_score": float(scenario_index),
+                    "reference_accuracies": {
+                        head: float(scenario_index) for head in ("linear", "quadratic", "knn", "rbf")
+                    },
+                    "total_rows": 160 if count_level == "small" else 640,
+                })
+    result = selector_panel_metrics(
+        rows, candidates=("B",), n_resamples=16, expected_seed_count=12,
+    )
+    rank_auc = result["candidates"]["B"]["heads"]["linear"]["rank_auc"]
+    assert rank_auc["status"] == "inconclusive"
+    assert rank_auc["estimate"] is None
+    assert rank_auc["n_blocks"] == 0
+
+
+def test_selector_enrichment_checks_raw_child_aliases_only() -> None:
+    case_rows: list[dict[str, object]] = []
+    selector_rows: list[dict[str, object]] = []
+    references = {head: 0.5 for head in ("linear", "quadratic", "knn", "rbf")}
+    for scenario, score in (("H1", 0.1), ("H2", 0.2), ("T", 0.3)):
+        case_id = f"case-{scenario}"
+        case_rows.append({
+            "case_id": case_id, "candidate_id": "B", "seed": 0,
+            "balance": "balanced", "count_level": "small", "nuisance_dim": 4,
+            "k": 2, "signal_state": "linear_separated", "scenario": scenario,
+            # This is immutable case metadata, not a selector child field.
+            "linear_probe": {"score": 0.9},
+        })
+        selector_rows.append({
+            "case_id": case_id, "candidate_id": "B",
+            "candidate_score": score, "linear_probe_score": 0.2,
+            "reference_accuracies": references,
+        })
+
+    enriched = stats._rows_by_table({
+        "tables": {
+            "case_rows.jsonl": case_rows,
+            "selector_panels.jsonl": selector_rows,
+        }
+    })["selector_panels.jsonl"]
+    assert enriched[0]["linear_probe"] == {"score": 0.9}
+    result = selector_panel_metrics(
+        enriched, candidates=("B",), subpanel=("H1", "H2", "T"), n_resamples=16,
+    )
+    assert result["n_complete_panels"] == 1
+    assert result["status"] == "defined"
+
+    # An alias present in the raw selector child row remains a hard failure,
+    # even though the normalized join is allowed to carry case metadata.
+    bad_selector_rows = [dict(row) for row in selector_rows]
+    bad_selector_rows[0]["linear_probe"] = {"score": 0.9}
+    bad_enriched = stats._rows_by_table({
+        "tables": {
+            "case_rows.jsonl": case_rows,
+            "selector_panels.jsonl": bad_selector_rows,
+        }
+    })["selector_panels.jsonl"]
+    assert selector_panel_metrics(
+        bad_enriched, candidates=("B",), subpanel=("H1", "H2", "T"), n_resamples=16,
+    )["status"] == "inconclusive"
+
+
 def test_resource_rows_pair_by_resource_and_case_without_top_level_seed() -> None:
     rows: list[dict[str, object]] = []
     for resource_id in ("R0", "R1", "R2", "R3"):

@@ -233,7 +233,7 @@ def negative_control_rows(
             "status": _status(value),
             "estimate": _estimate(_lookup(value, "estimate")) if isinstance(value, Mapping) else _estimate(value),
             "upper": _estimate(_lookup(value, "upper")) if isinstance(value, Mapping) else None,
-            "threshold": _estimate(_lookup(value, "threshold")) if isinstance(value, Mapping) else 0.01,
+            "limit": _estimate(_lookup(value, "limit")) if isinstance(value, Mapping) else 0.01,
         })
     return rows
 
@@ -588,7 +588,7 @@ def render_report(summary: Mapping[str, Any], decision: Optional[Mapping[str, An
     lines.append(
         _table(
             ("Control", "Estimate", "Upper 95%", "Limit", "Status"),
-            [[row["control"], _fmt(row["estimate"]), _fmt(row["upper"]), _fmt(row["threshold"]), row["status"]] for row in controls],
+            [[row["control"], _fmt(row["estimate"]), _fmt(row["upper"]), _fmt(row["limit"]), row["status"]] for row in controls],
         )
         if controls
         else "No Q2/Q3/Q4 negative-control surface is available."

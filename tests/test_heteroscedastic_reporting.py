@@ -39,9 +39,9 @@ def _summary() -> dict:
         }}},
         "primary_claims": {"q1": {"estimate": 0.1, "lower": 0.05, "upper": 0.2, "status": "defined", "direction": "greater_than_zero"}},
         "negative_controls": {
-            "q2": {"estimate": -0.01, "lower": -0.02, "upper": 0.001, "status": "pass"},
-            "q3": {"estimate": 0.0, "lower": -0.01, "upper": 0.005, "status": "pass"},
-            "q4": {"estimate": -0.005, "lower": -0.01, "upper": 0.0, "status": "pass"},
+            "q2": {"estimate": -0.01, "lower": -0.02, "upper": 0.001, "limit": 0.01, "status": "pass"},
+            "q3": {"estimate": 0.0, "lower": -0.01, "upper": 0.005, "limit": 0.01, "status": "pass"},
+            "q4": {"estimate": -0.005, "lower": -0.01, "upper": 0.0, "limit": 0.01, "status": "pass"},
         },
         "genuine_overlap": {"pooled": {
             "B": {"auroc": {"estimate": 0.9}, "auprc": {"estimate": 0.8}, "fpr": {"estimate": 0.1}, "fnr": {"estimate": 0.1}, "brier": {"estimate": 0.1}, "ece": {"estimate": 0.1}},
@@ -157,6 +157,8 @@ def test_report_exposes_canonical_negative_control_statuses() -> None:
     rows = negative_control_rows(summary)
     assert [row["control"] for row in rows] == ["q2", "q3", "q4"]
     assert all(row["status"] == "pass" for row in rows)
+    assert all(row["limit"] == 0.01 for row in rows)
+    assert "| q2 | -0.01 | 0.001 | 0.01 | pass |" in render_report(summary)
     decision_rows_with_controls = negative_control_rows(summary, {
         "stage": "confirmation",
         "mechanism": {
