@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "study": "scalable_one_update_food101_screen",
+  "status": "frozen_before_outcomes",
+  "retrospective_development_only": true,
+  "question": "Does scalable one-update relevance KMeans retain OI's nonlinear ranking utility while becoming competitive with LP-FULL on linear ranking and runtime?",
+  "grid": {
+    "models": ["dinov2-small", "deit-tiny", "convnext-tiny", "mobilenetv3-large", "openclip-vit-b-32", "resnet50", "efficientnet-b0", "swin-tiny", "vit-small-16", "densenet121"],
+    "replicates": [0, 1, 2, 3, 4],
+    "arms": ["baseline", "nonlinearity_full", "nuisance_full"],
+    "budgets_per_class": [64, 68, 72, 80],
+    "folds": 5,
+    "k_per_class_max": 10,
+    "panel_count": 600,
+    "method_row_count": 2400,
+    "reference_row_count": 600
+  },
+  "methods": {
+    "A": "direct current unrefined OverlapIndex parity control",
+    "B": "direct current balanced-median refined OverlapIndex parity control",
+    "S": "scalable one-update relevance-weighted KMeans with 64 MiB tile budget and no prototype refinement",
+    "LP-FULL": "five-fold full linear probe with the archived Normalizer plus LogisticRegression recipe"
+  },
+  "execution": {
+    "panel_seed": "42 + replicate",
+    "fold_seed": "panel_seed + fold for A/B/S; panel_seed for LP-FULL",
+    "order": "deterministic cyclic rotation over A/B/S/LP-FULL; exactly balanced because 600 is divisible by 4",
+    "warmup": "one excluded exact structural repeat per method on its first frozen panel",
+    "checkpoint": "one complete paired four-method panel written atomically",
+    "resume": "identity-locked; no mixing across protocol, code, cache, panel, or subset hashes"
+  },
+  "statistics": {
+    "bootstrap_resamples": 10000,
+    "bootstrap_seed": 20260829,
+    "unit": "paired complete replicate block",
+    "selection_ties": "average downstream outcome across selector scores equal within atol=1e-12",
+    "interval": "paired percentile 95 percent",
+    "rank_auc": "normalized trapezoid AUC of per-budget Spearman over budgets 64,68,72,80"
+  },
+  "gates": {
+    "clean_linear_vs_probe": "upper95 paired regret difference S minus LP-FULL <= 1.0 accuracy point",
+    "nuisance_linear_vs_probe": "upper95 paired regret difference S minus LP-FULL <= 1.0 accuracy point",
+    "nonlinear_vs_probe": "for each quadratic, knn, rbf on nonlinearity_full, upper95 paired regret difference S minus LP-FULL <= 1.0 point",
+    "nonlinear_retention": "for each quadratic, knn, rbf on nonlinearity_full, upper95 paired regret difference S minus B <= 1.0 point",
+    "nonlinear_superiority_claim": "descriptive established only for a head when S-minus-LP regret upper95 < 0; not required for viability",
+    "runtime": "within each arm, median paired S/LP-FULL wall ratio <= 1.0 and replicate-block upper95 <= 1.10",
+    "parity": "A, B, and LP-FULL scores exactly equal all archived replay controls",
+    "determinism": "clock-free warmup and measured signatures exactly equal for all methods"
+  },
+  "stop_rules": ["source/cache/protocol identity mismatch", "A/B/LP parity mismatch", "nondeterminism", "candidate error or non-finite score", "incomplete paired panel"],
+  "claim_scope": "Food-101 retrospective development evidence under the frozen class-balanced selector sampling protocol; no untouched confirmation or public-product claim"
+}

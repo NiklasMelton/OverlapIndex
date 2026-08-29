@@ -1,0 +1,131 @@
+{
+  "study": "scalable_relevance_speed_food101",
+  "status": "frozen_corrective_amendment_before_valid_rerun",
+  "amendment_history": {
+    "invalid_preliminary_protocol_sha256": "f9873ab1e26e5f25a97a6a753ef17fb2877031c4a8c7eca2715058a6fd17dbb4",
+    "reason": "The written development model roster used stale display names while the runner used the archived Food-101 roster. The preliminary artifact and its decision are not eligible for authorization.",
+    "changed_fields": ["status", "amendment_history", "development.models"],
+    "unchanged_frozen_fields": ["variant_specs", "invariants", "development ranking gates", "development runtime gates", "promotion_precedence", "full gates", "stop_rules"],
+    "preliminary_outcomes_used_to_change_method_or_gate": false
+  },
+  "scope": "retrospective Food-101 implementation-speed experiment; no untouched confirmation or public API change",
+  "question": "Can implementation-focused simplifications preserve the v1 ranking result while making scalable relevance OI time-competitive with a full five-fold linear probe on every frozen Food-101 geometry?",
+  "variant_specs": {
+    "V1": {
+      "implementation": "v1",
+      "fast_scoring": false,
+      "margin_rows_per_class": null,
+      "lloyd_update": true
+    },
+    "F32": {
+      "implementation": "v2",
+      "fast_scoring": false,
+      "margin_rows_per_class": null,
+      "lloyd_update": true
+    },
+    "FAST": {
+      "implementation": "v2",
+      "fast_scoring": true,
+      "margin_rows_per_class": null,
+      "lloyd_update": true
+    },
+    "CAP32": {
+      "implementation": "v2",
+      "fast_scoring": true,
+      "margin_rows_per_class": 32,
+      "lloyd_update": true
+    },
+    "NOLLOYD": {
+      "implementation": "v2",
+      "fast_scoring": true,
+      "margin_rows_per_class": 32,
+      "lloyd_update": false
+    }
+  },
+  "invariants": {
+    "float32_candidate_geometry": true,
+    "same_transformed_geometry_for_fit_and_score": true,
+    "conditioning_fitted_on_training_fold_only": true,
+    "five_stratified_folds": true,
+    "same_fold_rows_seeds_k_and_order_within_panel": true,
+    "full_probe_rerun_in_same_process_environment": true,
+    "warmup_excluded_from_scores_and_clocks": true,
+    "exact_clock_free_deterministic_repeat": true,
+    "no_runner_up_reselection_after_full": true
+  },
+  "development": {
+    "models": [
+      "dinov2-small",
+      "deit-tiny",
+      "convnext-tiny",
+      "mobilenetv3-large",
+      "openclip-vit-b-32",
+      "resnet50",
+      "efficientnet-b0",
+      "swin-tiny",
+      "vit-small-16",
+      "densenet121"
+    ],
+    "replicates": [0],
+    "arms": ["baseline", "nonlinearity_full", "nuisance_full"],
+    "budgets_per_class": [80],
+    "panel_count": 30,
+    "methods": ["V1", "F32", "FAST", "CAP32", "NOLLOYD", "LP-FULL"],
+    "method_row_count": 180,
+    "order": "six-method cyclic counterbalance; each method occupies each position exactly five times",
+    "ranking_gates": {
+      "baseline_linear_candidate_minus_probe_regret_point_pp_max": 1.0,
+      "nuisance_linear_candidate_minus_probe_regret_point_pp_max": 1.0,
+      "nonlinearity_quadratic_knn_rbf_candidate_minus_v1_regret_point_pp_max_each": 1.0
+    },
+    "runtime_gate_each_arm": {
+      "median_candidate_over_probe_max": 1.0,
+      "backbone_bootstrap_upper95_max": 1.1,
+      "bootstrap_blocks": "ten_backbones",
+      "resamples": 10000
+    }
+  },
+  "promotion_precedence": ["FAST", "CAP32", "NOLLOYD"],
+  "diagnostic_only_variants": ["V1", "F32"],
+  "promotion_rule": "Lock the first eligible candidate in promotion_precedence. If none is eligible, stop. Never promote a runner-up after full results.",
+  "full": {
+    "authorization": "exact hash-valid development_lock with status locked_for_full_evaluation",
+    "models": "same ten",
+    "replicates": [0, 1, 2, 3, 4],
+    "arms": ["baseline", "nonlinearity_full", "nuisance_full"],
+    "budgets_per_class": [64, 68, 72, 80],
+    "panel_count": 600,
+    "methods": "locked candidate plus freshly measured LP-FULL",
+    "method_row_count": 1200,
+    "order": "two-method exact cyclic counterbalance",
+    "ranking_gates": {
+      "baseline_linear_candidate_minus_probe_regret_upper95_pp_max": 1.0,
+      "nuisance_linear_candidate_minus_probe_regret_upper95_pp_max": 1.0,
+      "nonlinearity_quadratic_knn_rbf_candidate_minus_probe_regret_upper95_pp_max_each": 1.0,
+      "nonlinearity_quadratic_knn_rbf_candidate_minus_frozen_v1_regret_upper95_pp_max_each": 1.0,
+      "bootstrap_blocks": "five_replicates_with_equal_budget_mean",
+      "resamples": 10000
+    },
+    "runtime_gate_each_arm": {
+      "median_candidate_over_probe_max": 1.0,
+      "replicate_bootstrap_upper95_max": 1.1,
+      "bootstrap_blocks": "five_replicates_with_model_budget_median",
+      "resamples": 10000
+    }
+  },
+  "candidate_interpretation": {
+    "FAST": "exact event-rule implementation optimization relative to F32: one score matmul per row tile",
+    "CAP32": "FAST plus deterministic maximum 32 relevance-estimation rows per class",
+    "NOLLOYD": "CAP32 without the final weighted Lloyd update",
+    "F32": "float32 attribution diagnostic using the v1 class-loop scorer",
+    "V1": "immutable prior scalable algorithm reference"
+  },
+  "stop_rules": [
+    "source_or_protocol_hash_mismatch",
+    "malformed_or_incomplete_grid",
+    "nondeterminism",
+    "nonfinite_score_or_clock",
+    "no_eligible_development_candidate",
+    "locked_candidate_full_gate_failure"
+  ]
+}

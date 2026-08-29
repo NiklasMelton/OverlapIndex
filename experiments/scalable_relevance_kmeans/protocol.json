@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "study": "scalable_one_update_relevance_kmeans",
+  "status": "frozen_before_real_shape_timing",
+  "kernel": {
+    "initial_fit": "one class-owned MiniBatchKMeans fit using the supplied fold recipe",
+    "margin_selection": "row-tiled ranking-equivalent float32 centroid scores; nearest correct and nearest wrong-class prototype",
+    "margin_accumulation": "gather only selected prototypes and accumulate float64 per-feature margin/residual vectors",
+    "weight_formula": "normalized[0.05+0.95*max(margin,0)/(max(margin,0)+correct_residual+epsilon)]",
+    "lloyd_update": "one class-local weighted assignment and arithmetic centroid update",
+    "heldout_scoring": "row-tiled strict current OI second-own versus best-target events",
+    "default_memory_budget_mb": 64,
+    "forbidden_allocation": "no row-by-prototype-by-feature tensor"
+  },
+  "synthetic_regression": {
+    "development_only": true,
+    "source": "frozen diagonal_metric_toy generator and downstream references",
+    "scenario": "nonlinear_nuisance",
+    "budget_per_class": 256,
+    "seed": 43,
+    "candidate_ids": ["bb0", "bb1", "bb2", "bb3", "bb4"],
+    "methods": ["raw_unrefined", "raw_refined", "scalable_one_update", "linear_probe"],
+    "purpose": "regression check that tiling preserves the previously observed one-update ranking benefit; no tuning or promotion"
+  },
+  "timing_anchor": {
+    "development_only": true,
+    "dataset": "archived Food-101 runtime cache",
+    "model": "resnet50",
+    "arm": "baseline",
+    "budgets_per_class": [128, 640],
+    "folds": 1,
+    "measured_methods": ["raw_unrefined_oi", "scalable_one_update", "linear_probe"],
+    "warmup": "one excluded call per method and cell",
+    "primary_clock": "outer method-required normalization plus fit plus heldout score",
+    "interpretation": "timing and finite-score anchor only; no ranking or promotion claim"
+  }
+}
