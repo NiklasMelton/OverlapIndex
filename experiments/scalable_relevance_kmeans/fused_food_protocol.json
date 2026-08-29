@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "study": "fused_class_prototypes_food101_screen",
+  "status": "frozen_before_food_outcomes",
+  "retrospective_development_only": true,
+  "question": "Can a fixed three-step class-owned prototype fitter preserve the scalable relevance selector's Food-101 ranking behavior while removing the repeated scikit-learn KMeans runtime floor?",
+  "candidate_specs": {
+    "NOLLOYD": {
+      "role": "immutable_current_reference",
+      "implementation": "FastScalableRelevanceKMeans",
+      "prototype_backend": "one_sklearn_minibatch_kmeans_per_class",
+      "margin_rows_per_class": 32,
+      "lloyd_update": false,
+      "weight_floor": 0.05,
+      "memory_budget_mb": 64
+    },
+    "LOOP3": {
+      "role": "promotable_candidate",
+      "implementation": "FusedFastRelevanceKMeans",
+      "prototype_backend": "looped_fixed_lloyd",
+      "prototype_iterations": 3,
+      "margin_rows_per_class": 32,
+      "lloyd_update": false,
+      "weight_floor": 0.05,
+      "memory_budget_mb": 64
+    },
+    "FUSED3": {
+      "role": "promotable_candidate",
+      "implementation": "FusedFastRelevanceKMeans",
+      "prototype_backend": "fused_fixed_lloyd",
+      "prototype_iterations": 3,
+      "margin_rows_per_class": 32,
+      "lloyd_update": false,
+      "weight_floor": 0.05,
+      "memory_budget_mb": 64
+    },
+    "LP-FULL": {
+      "role": "fresh_comparator",
+      "implementation": "five_fold_normalizer_logistic_regression",
+      "C": 1.0,
+      "max_iter": 2000,
+      "n_jobs": 1
+    }
+  },
+  "development_grid": {
+    "models": [
+      "dinov2-small",
+      "deit-tiny",
+      "convnext-tiny",
+      "mobilenetv3-large",
+      "openclip-vit-b-32",
+      "resnet50",
+      "efficientnet-b0",
+      "swin-tiny",
+      "vit-small-16",
+      "densenet121"
+    ],
+    "replicates": [0],
+    "arms": ["baseline", "nonlinearity_full", "nuisance_full"],
+    "budgets_per_class": [80],
+    "folds": 5,
+    "k_per_class_max": 10,
+    "panel_count": 30,
+    "methods": ["NOLLOYD", "LOOP3", "FUSED3", "LP-FULL"],
+    "method_row_count": 120,
+    "reference_row_count": 120
+  },
+  "execution": {
+    "panel_seed": "42 + replicate",
+    "fold_seed": "panel_seed + fold for NOLLOYD, LOOP3, and FUSED3; panel_seed for LP-FULL",
+    "normalization": "one row-L2 pass owned by each OI method; LP-FULL owns its frozen fold Normalizer",
+    "order": "deterministic cyclic near-counterbalance over four methods; every method-position count is seven or eight",
+    "warmup": "one excluded clock-free exact repeat per method on its first frozen panel",
+    "checkpoint": "one complete paired four-method panel written atomically",
+    "resume": "identity locked across protocol, code, cache, panel, subset, method, and determinism hashes",
+    "runtime": "outer wall and CPU clocks include all method-required preprocessing, five folds, fitting, and held-out scoring; cache loading and panel construction are excluded"
+  },
+  "invariants": {
+    "looped_fused_numerical_state": "centers, owner labels, feature weights, fold scores, and held-out score diagnostics must match exactly on every paired fold",
+    "current_reference_parity": "NOLLOYD and LP-FULL scores must exactly match the hash-frozen valid speed_development_v2 rows",
+    "train_only": true,
+    "score_fixed_no_refit": true,
+    "strict_scalar_labels": true,
+    "deterministic_repeats": true,
+    "no_dimension_specific_or_backbone_specific_hybrid": true
+  },
+  "statistics": {
+    "bootstrap_resamples": 10000,
+    "bootstrap_seed": 20260829,
+    "ranking_unit": "complete ten-backbone panel at replicate zero and budget 80",
+    "runtime_unit": "paired backbone within each arm",
+    "selection_ties": "average downstream outcome across selector scores equal within atol=1e-12",
+    "interval": "backbone-block percentile 95 percent for runtime; ranking gates use frozen development point contrasts"
+  },
+  "candidate_gates": {
+    "clean_linear_vs_probe": "candidate minus LP-FULL regret <= 1.0 accuracy point",
+    "nuisance_linear_vs_probe": "candidate minus LP-FULL regret <= 1.0 accuracy point",
+    "nonlinear_vs_probe": "for quadratic, knn, and rbf on nonlinearity_full, candidate minus LP-FULL regret <= 1.0 point each",
+    "nonlinear_retention": "for quadratic, knn, and rbf on nonlinearity_full, candidate minus NOLLOYD regret <= 1.0 point each",
+    "nonlinear_rank_retention": "for quadratic, knn, and rbf on nonlinearity_full, candidate Spearman minus NOLLOYD Spearman >= -0.10 each",
+    "runtime_each_arm": "median paired candidate/LP-FULL wall ratio <= 1.0 and backbone-bootstrap upper95 <= 1.10",
+    "exact_parity_and_determinism": true
+  },
+  "selection_rule": {
+    "eligible_candidates": ["FUSED3", "LOOP3"],
+    "rule": "discard any candidate failing a required gate; if one remains select it; if both remain select LOOP3 only when its pooled median wall time is at most 0.95 times FUSED3, otherwise select FUSED3",
+    "reason": "allow a materially faster simple loop without creating a post-outcome dimension or backbone hybrid",
+    "terminal_pass_status": "pass_for_full_food_design",
+    "terminal_fail_status": "stopped_no_eligible"
+  },
+  "source_evidence": {
+    "valid_speed_development_v2_raw_sha256": "82bb209046d756da79d49ce05c98e442e621e6cdbbde09480a161c78d2e3ce31",
+    "valid_speed_development_v2_manifest_sha256": "7c9c859628c6786161e5e660775a38caa62260404acdfaa7df7ef3b7dbce4af2",
+    "fused_toy_raw_sha256": "f52e8ef1a665f9289204c0c6295e666ca78a5f682801667d6bf0d757f6362f4e",
+    "fused_toy_manifest_sha256": "0b556faccf6b7ed21898ffa72066f78acde6e56fba755b9eae2deb44ef1ee571"
+  },
+  "stop_rules": [
+    "source_cache_protocol_or_prior_identity_mismatch",
+    "malformed_or_incomplete_grid",
+    "NOLLOYD_or_LP_FULL_prior_parity_failure",
+    "LOOP3_FUSED3_numerical_parity_failure",
+    "nondeterminism",
+    "nonfinite_score_or_clock",
+    "candidate_error"
+  ],
+  "claim_scope": "Food-101 retrospective development screen under the archived class-balanced selector sampling protocol. A pass authorizes design of a separately frozen full replay; it is not itself a product or confirmation claim."
+}
