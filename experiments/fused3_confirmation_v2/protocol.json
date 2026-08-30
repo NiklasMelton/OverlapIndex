@@ -95,7 +95,7 @@
   },
   "authorization_chain": {
     "lineage_status": "frozen_v2_design",
-    "order": "frozen protocol plus code plus exact V1 ancestry plus exact FUSED3 authority -> immutable lineage lock -> audited_complete registry binding that lock -> structural smoke -> full run",
+    "order": "frozen protocol plus code plus exact V1 ancestry plus exact FUSED3 authority -> immutable lineage lock -> audited_complete registry binding that lock -> structural smoke -> fresh-process outcome-blind resource preflight -> independent pre-outcome review -> full run",
     "readiness": "input readiness is represented only by audited_registry.status=audited_complete; the lineage lock never changes when inputs become available",
     "parent_registry": "audited registry parent_registry_sha256 must equal the lineage lock v1_confirmation_registry_sha256"
   },
@@ -107,7 +107,7 @@
     "warmup": "on the first frozen panel, execute one excluded warm-up first and record the second measured execution; compare their complete clock-free results including numeric outcomes exactly in memory, persist only exact=true, and persist matching hashes of an explicit outcome-free structural allowlist across resume",
     "preflight": "validate all 50 embedding matrices and manifests, every source/weight/cohort identity, protocol/code/lineage/registry hashes, and the exact scoring environment before computing the first selector or reference outcome",
     "smoke_storage": "structural smoke may compute one panel transiently but may persist only type/finite/identity descriptors and hashes of the explicit outcome-free structural allowlist; selector scores, reference accuracies, fold outcome values, timings, numeric checkpoints, rankings, and hashes derived from any such outcome are forbidden",
-    "resource_preflight": "outcome-redacted timing and memory only; it cannot change recipes datasets gates or execution",
+    "resource_preflight": "rerun the first frozen structural-smoke panel in one fresh child process under the exact frozen environment; persist only validated outcome-redacted structural smoke plus outer wall time child user and system CPU time and macOS /usr/bin/time -l peak RSS; the resource measurements include imports input validation excluded warmup and measured execution, are descriptive only with no threshold or promotion veto, and cannot change recipes datasets gates ordering candidate authority or execution",
     "no_interim_outcome_inspection": true
   },
   "statistics": {

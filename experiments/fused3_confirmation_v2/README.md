@@ -49,6 +49,7 @@ PYTHONPATH=. pytest -q \
   tests/test_fused3_confirmation_datasets.py \
   tests/test_fused3_confirmation_recipes.py \
   tests/test_fused3_confirmation_runner.py \
+  tests/test_fused3_confirmation_resource_preflight.py \
   tests/test_fused3_confirmation_statistics.py \
   tests/test_fused3_confirmation_analysis.py
 ```
@@ -94,8 +95,23 @@ PYTHONPATH=. python3 -m experiments.fused3_confirmation_v2.runner \
   --output artifacts/fused3_confirmation_v2/smoke --smoke
 ```
 
-Only after independent smoke review authorizes execution, run or resume the
-complete frozen panel:
+Run the distinct fresh-process, outcome-blind resource preflight. Its wall,
+CPU, and peak-RSS measurements include imports, validation, the excluded
+warm-up, and the measured structural call. They are descriptive only and
+cannot change any gate, recipe, candidate, or execution decision:
+
+```bash
+VECLIB_MAXIMUM_THREADS=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 LOKY_MAX_CPU_COUNT=1 \
+PYTHONPATH=. python3 -m experiments.fused3_confirmation_v2.resource_preflight \
+  --smoke artifacts/fused3_confirmation_v2/smoke \
+  --registry artifacts/fused3_confirmation_v2/inputs/audited_registry.json \
+  --lineage-lock artifacts/fused3_confirmation_v2/inputs/lineage_lock.json \
+  --output artifacts/fused3_confirmation_v2/resource_preflight
+```
+
+Only after an independent review validates both the smoke and resource
+preflight artifacts may the complete frozen panel be run or resumed:
 
 ```bash
 VECLIB_MAXIMUM_THREADS=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
