@@ -1078,6 +1078,7 @@ def _prepare_inputs_with_source_metadata(
     }
     if len(set(manifest_roots.values())) != 1:
         raise ValueError("source manifests must share one external manifest directory")
+    raw_roots = kwargs["raw_roots"]
     recomputed_source = source_metadata_from_roots(
         raw_roots,
         manifest_dir=next(iter(manifest_roots.values())),
@@ -1087,7 +1088,6 @@ def _prepare_inputs_with_source_metadata(
 
     # Avoid duplicating the extraction loop above: perform the same validated
     # work with source records and publish only after all caches are complete.
-    raw_roots = kwargs["raw_roots"]
     # Registry cache paths are absolute so copying the registry beside a run
     # cannot accidentally prepend its new parent to an already workspace-
     # relative path.

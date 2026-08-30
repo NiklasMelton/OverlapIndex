@@ -218,6 +218,36 @@ def test_source_manifests_hash_every_raw_byte_and_detect_mutation(tmp_path: Path
         extractors.source_metadata_from_roots(roots, manifest_dir=manifest_dir)
 
 
+def test_preparation_recomputes_sources_before_frozen_runtime_validation(
+    tmp_path: Path,
+) -> None:
+    roots = {}
+    for position, dataset_id in enumerate(datasets.DATASET_IDS):
+        root = tmp_path / "raw" / dataset_id
+        root.mkdir(parents=True)
+        (root / "payload.bin").write_bytes(f"dataset-{position}".encode())
+        roots[dataset_id] = root
+    source_metadata = extractors.source_metadata_from_roots(
+        roots, manifest_dir=tmp_path / "source_manifests"
+    )
+    valid_hash = "0" * 64
+    with pytest.raises(ValueError, match="batch_size=16"):
+        extractors.prepare_inputs(
+            raw_roots=roots,
+            output_dir=tmp_path / "embeddings",
+            registry_path=tmp_path / "audited_registry.json",
+            protocol_sha256=valid_hash,
+            lineage_lock_sha256=valid_hash,
+            parent_registry_sha256=valid_hash,
+            extraction_environment={},
+            model_weight_lock={},
+            backbone_specs={},
+            source_metadata=source_metadata,
+            batch_size=8,
+            device="cpu",
+        )
+
+
 def test_model_weight_lock_is_closed_and_derived_from_resolved_specs(tmp_path: Path) -> None:
     specs = {}
     for backbone in extractors.FOOD_BACKBONE_IDS:
