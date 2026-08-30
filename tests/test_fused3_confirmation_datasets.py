@@ -49,6 +49,17 @@ def test_exact_five_dataset_specs_and_frozen_splits() -> None:
         datasets.dataset_specs({"torchvision_cifar10": "/raw/cifar"})
 
 
+def test_gtsrb_sample_rows_expose_stable_labels_without_loading_images() -> None:
+    class GTSRBLike:
+        _samples = (
+            ("/raw/00000.ppm", 0),
+            ("/raw/00001.ppm", 2),
+            ("/raw/00002.ppm", 1),
+        )
+
+    assert datasets._dataset_targets(GTSRBLike()) == [0, 2, 1]
+
+
 def test_training_cohorts_are_nested_and_seed_deterministic() -> None:
     split = _split("torchvision_cifar10", "train", rows_per_class=64)
     first = datasets.build_training_cohorts(split)

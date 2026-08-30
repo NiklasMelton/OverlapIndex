@@ -446,6 +446,16 @@ def _dataset_targets(dataset: Any) -> list[Any]:
                 if hasattr(values, "tolist"):
                     values = values.tolist()
                 return list(values)
+    # torchvision 0.23's GTSRB keeps its stable, deterministic row order and
+    # scalar class labels together in ``_samples`` rather than exposing a
+    # separate targets/labels attribute.  Read only the labels here; the
+    # sample paths remain provider-owned inputs and are hashed separately.
+    if hasattr(dataset, "_samples"):
+        samples = getattr(dataset, "_samples")
+        if samples is not None:
+            rows = list(samples)
+            if all(isinstance(row, (tuple, list)) and len(row) == 2 for row in rows):
+                return [row[1] for row in rows]
     raise ValueError(f"dataset {type(dataset).__name__} exposes no stable labels")
 
 
