@@ -104,9 +104,9 @@
     "reference_order": ["linear", "quadratic", "knn", "rbf"],
     "checkpoint": "one complete paired two-selector plus four-reference-head backbone panel written atomically",
     "resume": "exact protocol code lineage registry environment cohort cache recipe and checkpoint identity only",
-    "warmup": "on the first frozen panel, execute one excluded warm-up first and record the second measured execution; their clock-free selector/head signatures must match exactly and persist across resume",
+    "warmup": "on the first frozen panel, execute one excluded warm-up first and record the second measured execution; compare their complete clock-free results including numeric outcomes exactly in memory, persist only exact=true, and persist matching hashes of an explicit outcome-free structural allowlist across resume",
     "preflight": "validate all 50 embedding matrices and manifests, every source/weight/cohort identity, protocol/code/lineage/registry hashes, and the exact scoring environment before computing the first selector or reference outcome",
-    "smoke_storage": "structural smoke may compute one panel transiently but may persist only type/finite/identity descriptors and signature hashes; no score, accuracy, numeric checkpoint, timing outcome, or ranking value may be stored",
+    "smoke_storage": "structural smoke may compute one panel transiently but may persist only type/finite/identity descriptors and hashes of the explicit outcome-free structural allowlist; selector scores, reference accuracies, fold outcome values, timings, numeric checkpoints, rankings, and hashes derived from any such outcome are forbidden",
     "resource_preflight": "outcome-redacted timing and memory only; it cannot change recipes datasets gates or execution",
     "no_interim_outcome_inspection": true
   },

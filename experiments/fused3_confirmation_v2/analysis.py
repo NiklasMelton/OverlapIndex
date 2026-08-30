@@ -175,10 +175,15 @@ def _validate_determinism(value: Any) -> None:
             "second_signature_sha256",
             "exact",
             "runtime_fields_excluded",
+            "outcome_fields_excluded",
             "panel_id",
         }:
             raise ValueError(f"determinism descriptor for {identity!r} has invalid keys")
-        if descriptor.get("exact") is not True or descriptor.get("runtime_fields_excluded") is not True:
+        if (
+            descriptor.get("exact") is not True
+            or descriptor.get("runtime_fields_excluded") is not True
+            or descriptor.get("outcome_fields_excluded") is not True
+        ):
             raise ValueError(f"determinism descriptor for {identity!r} is not exact")
         first = descriptor.get("first_signature_sha256")
         second = descriptor.get("second_signature_sha256")

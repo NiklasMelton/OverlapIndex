@@ -260,6 +260,7 @@ def _write_artifact(
         identity: {
             "exact": True,
             "runtime_fields_excluded": True,
+            "outcome_fields_excluded": True,
             "first_signature_sha256": _digest(f"determinism:{identity}"),
             "second_signature_sha256": _digest(f"determinism:{identity}"),
             "panel_id": first_panel_id,

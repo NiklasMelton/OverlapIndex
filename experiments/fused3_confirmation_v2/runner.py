@@ -197,8 +197,57 @@ def _clock_free(value: Any) -> Any:
     return value
 
 
-def _signature(value: Mapping[str, Any]) -> str:
-    return payload_sha256(_clock_free(value))
+_COMMON_STRUCTURAL_SIGNATURE_KEYS = (
+    "panel_id",
+    "dataset_id",
+    "backbone",
+    "replicate",
+    "replicate_seed",
+    "budget",
+    "training_cohort_sha256",
+    "evaluation_cohort_sha256",
+    "status",
+    "error",
+)
+_SELECTOR_STRUCTURAL_SIGNATURE_KEYS = _COMMON_STRUCTURAL_SIGNATURE_KEYS + (
+    "candidate_id",
+    "execution_position",
+    "execution_order",
+    "warmup_excluded",
+    "candidate_recipe_sha256",
+)
+_REFERENCE_STRUCTURAL_SIGNATURE_KEYS = _COMMON_STRUCTURAL_SIGNATURE_KEYS + (
+    "head",
+    "training_row_count",
+    "evaluation_row_count",
+    "recipe_sha256",
+)
+
+
+def _structural_signature(value: Mapping[str, Any], *, row_kind: str) -> str:
+    """Hash an explicit outcome-free structural row surface.
+
+    Selector scores, reference accuracies, fold outcomes, and every timing are
+    deliberately absent.  This makes a persisted smoke signature incapable of
+    committing to or revealing a numeric outcome by enumeration.
+    """
+
+    if row_kind == "selector":
+        keys = _SELECTOR_STRUCTURAL_SIGNATURE_KEYS
+    elif row_kind == "reference":
+        keys = _REFERENCE_STRUCTURAL_SIGNATURE_KEYS
+    else:
+        raise ValueError("row_kind must be 'selector' or 'reference'")
+    missing = [key for key in keys if key not in value]
+    if missing:
+        raise RuntimeError(f"structural signature row is missing keys: {missing!r}")
+    return payload_sha256({key: _clock_free(value[key]) for key in keys})
+
+
+def _repeat_exact(first: Mapping[str, Any], second: Mapping[str, Any]) -> bool:
+    """Compare complete clock-free results in memory without persisting them."""
+
+    return canonical_json(_clock_free(first)) == canonical_json(_clock_free(second))
 
 
 def _panel_id(dataset_id: str, backbone: str, replicate: int, budget: int) -> str:
@@ -501,6 +550,7 @@ def _validate_determinism(value: Mapping[str, Any]) -> dict[str, Any]:
         "second_signature_sha256",
         "exact",
         "runtime_fields_excluded",
+        "outcome_fields_excluded",
         "panel_id",
     }
     normalized: dict[str, Any] = {}
@@ -517,6 +567,7 @@ def _validate_determinism(value: Mapping[str, Any]) -> dict[str, Any]:
             or second != first
             or descriptor["exact"] is not True
             or descriptor["runtime_fields_excluded"] is not True
+            or descriptor["outcome_fields_excluded"] is not True
             or descriptor["panel_id"] != first_panel
         ):
             raise RuntimeError("confirmation deterministic repeat did not match exactly")
@@ -728,23 +779,27 @@ def run_confirmation(
             for candidate in recipes.SELECTORS:
                 first = next(row for row in warmup["selector_rows"] if row["candidate_id"] == candidate)
                 second = next(row for row in result["selector_rows"] if row["candidate_id"] == candidate)
-                first_sha, second_sha = _signature(first), _signature(second)
+                first_sha = _structural_signature(first, row_kind="selector")
+                second_sha = _structural_signature(second, row_kind="selector")
                 determinism[candidate] = {
                     "first_signature_sha256": first_sha,
                     "second_signature_sha256": second_sha,
-                    "exact": first_sha == second_sha,
+                    "exact": _repeat_exact(first, second) and first_sha == second_sha,
                     "runtime_fields_excluded": True,
+                    "outcome_fields_excluded": True,
                     "panel_id": identity["panel_id"],
                 }
             for head in recipes.HEADS:
                 first = next(row for row in warmup["reference_rows"] if row["head"] == head)
                 second = next(row for row in result["reference_rows"] if row["head"] == head)
-                first_sha, second_sha = _signature(first), _signature(second)
+                first_sha = _structural_signature(first, row_kind="reference")
+                second_sha = _structural_signature(second, row_kind="reference")
                 determinism[f"HEAD:{head}"] = {
                     "first_signature_sha256": first_sha,
                     "second_signature_sha256": second_sha,
-                    "exact": first_sha == second_sha,
+                    "exact": _repeat_exact(first, second) and first_sha == second_sha,
                     "runtime_fields_excluded": True,
+                    "outcome_fields_excluded": True,
                     "panel_id": identity["panel_id"],
                 }
             if not all(value["exact"] for value in determinism.values()):

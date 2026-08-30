@@ -121,6 +121,37 @@ def test_structural_smoke_redacts_every_numeric_outcome() -> None:
     assert all(row["outcomes_redacted"] for row in redacted["reference_rows"])
 
 
+def test_determinism_signatures_exclude_all_numeric_outcomes() -> None:
+    result = runner.execute_panel(
+        _identity(),
+        _panel(),
+        selector_executor=_selector,
+        reference_executor=_reference,
+    )
+    selector = result["selector_rows"][0]
+    changed_selector = {
+        **selector,
+        "score": float(selector["score"]) + 0.125,
+        "folds": [{"fold": 0, "score": 0.999}],
+        "total_wall_seconds": 999.0,
+    }
+    assert runner._structural_signature(
+        selector, row_kind="selector"
+    ) == runner._structural_signature(changed_selector, row_kind="selector")
+    assert runner._repeat_exact(selector, changed_selector) is False
+
+    reference = result["reference_rows"][0]
+    changed_reference = {
+        **reference,
+        "test_accuracy": float(reference["test_accuracy"]) - 0.25,
+        "total_cpu_seconds": 999.0,
+    }
+    assert runner._structural_signature(
+        reference, row_kind="reference"
+    ) == runner._structural_signature(changed_reference, row_kind="reference")
+    assert runner._repeat_exact(reference, changed_reference) is False
+
+
 def test_panel_rejects_misalignment_and_nonbalanced_budget() -> None:
     panel = _panel()
     panel["training_labels"] = np.asarray(panel["training_labels"])[:-1]
@@ -236,3 +267,9 @@ def test_run_smoke_persists_no_numeric_checkpoint(
         text = path.read_text(encoding="utf-8")
         assert '"score":' not in text
         assert '"test_accuracy":' not in text
+        assert '"folds":' not in text
+    raw = json.loads((output / "raw_results.json").read_text(encoding="utf-8"))
+    for descriptor in raw["determinism_verification"].values():
+        assert descriptor["exact"] is True
+        assert descriptor["runtime_fields_excluded"] is True
+        assert descriptor["outcome_fields_excluded"] is True
