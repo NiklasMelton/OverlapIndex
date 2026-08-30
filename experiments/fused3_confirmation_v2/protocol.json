@@ -1,0 +1,144 @@
+{
+  "schema_version": 1,
+  "study": "fused3_backbone_ranking_confirmation_v2",
+  "status": "frozen_before_confirmation_outcomes",
+  "question": "Does the development-locked FUSED3 selector remain linear-probe competitive for linear downstream transfer and strictly lower-regret for quadratic, kNN, and RBF transfer on five predeclared, previously uninspected backbone panels?",
+  "design_ancestry": {
+    "commit": "7a40e589dad34996d35626edaef739c69f317f22",
+    "m50_protocol_sha256": "8634909b99e6c63d9a1f8d39980658884ec3010cc1fd4701efed5044701c61f8",
+    "planned_registry_sha256": "ed9ec2e54cd4316dd8da5841b1d56d2f7599b5f689bdc545852a38723d77f3b9",
+    "role": "panel_dataset_backbone_budget_replicate_head_and_gate_ancestry_only",
+    "m50_lock_authorizes_confirmation": false,
+    "m50_terminal_status": "stopped_guardrail_failure"
+  },
+  "candidate_authority": {
+    "selected_candidate": "FUSED3",
+    "runner_up_reselection_allowed": false,
+    "screen_commit": "8b01ae315e391cf41e825f369808f8d93d9a6f39",
+    "full_execution_commit": "de14fb0e35f1543ed60966d382efe557a141b166",
+    "full_protocol_sha256": "58943c711ac19f2bc4e1ef8a117e625b7d1c3730f328fd5b1736e8b1d3289135",
+    "full_code_identity_sha256": "f2449c8528e0b719086069c4422b8897e03727def037d5c405943f2027c6b26c",
+    "full_run_identity_sha256": "6a7bdbf553f49e416f8d183de83fe68427aa5de5381ebf5f2e43ad856eda1666",
+    "full_raw_results_sha256": "079929a9dffd9a5b961e8023377f090647cafc9c0bc45de3e1b8b90d95a8b686",
+    "full_run_manifest_sha256": "957a1a1394e60098d90a6075dbc681642e2d3f14d07860e14c765d6fc8474889",
+    "full_analysis_summary_sha256": "2d310be5cb15dad1b8cd61eb449299c1887168061ff0e2e1e19695ef283ad9bb",
+    "full_decision_sha256": "90ff8eaafa6b680ff7d08d9720e9afa904d286f0073bc0a11147e2d38fe14eb5",
+    "full_analysis_manifest_sha256": "277472b5e7f4d235bb757aa4c34e115c9733fade2962556f935f093284ec47c8",
+    "required_decision_status": "pass_full_retrospective"
+  },
+  "panel": {
+    "datasets": [
+      {"id": "torchvision_cifar10", "training_split": "train", "evaluation_split": "test", "classes": 10},
+      {"id": "torchvision_stl10", "training_split": "train", "evaluation_split": "test", "classes": 10},
+      {"id": "torchvision_gtsrb", "training_split": "train", "evaluation_split": "test", "classes": 43},
+      {"id": "torchvision_fgvc_aircraft", "training_split": "trainval", "evaluation_split": "test", "classes": 100},
+      {"id": "torchvision_dtd", "training_split": "train_plus_val_partition_1", "evaluation_split": "test_partition_1", "classes": 47}
+    ],
+    "backbones": ["dinov2-small", "deit-tiny", "convnext-tiny", "mobilenetv3-large", "openclip-vit-b-32", "resnet50", "efficientnet-b0", "swin-tiny", "vit-small-16", "densenet121"],
+    "budgets_per_class": [32, 64],
+    "replicate_seeds": [2026082710, 2026082711, 2026082712, 2026082713, 2026082714],
+    "heads": ["linear", "quadratic", "knn", "rbf"],
+    "ranking_panel_count": 50,
+    "backbone_panel_count": 500,
+    "selector_row_count": 1000,
+    "reference_row_count": 2000
+  },
+  "sampling": {
+    "training": "within each dataset replicate and class, a deterministic class-specific permutation from the frozen replicate seed; budget 32 is the exact prefix of budget 64",
+    "training_role": "the same sampled target-training cohort is used for FUSED3 and LP-FULL OOF scoring and for fitting all four downstream reference heads",
+    "evaluation": "exactly 20 deterministic rows per class from the official evaluation split using seed 2026082709, fixed across budgets and replicates",
+    "evaluation_seed": 2026082709,
+    "leakage_rule": "no evaluation row or statistic may enter selector fitting, LP fitting, FUSED3 relevance/prototype fitting, or conditioning",
+    "replicate_interpretation": "sampling-seed stability with possible overlap, not independent cohorts",
+    "no_distribution_shift": true
+  },
+  "selectors": {
+    "FUSED3": {
+      "source": "experiments.scalable_relevance_kmeans.fused_food_screen.cross_fitted_candidate",
+      "input": "float32 row-L2 normalized once before five stratified folds",
+      "fold_seed": "replicate_seed + fold_index",
+      "k_per_class": "min(10,max(1,train_fold_class_count//5),train_fold_class_count)",
+      "prototype_iterations": 3,
+      "prototype_backend": "fused",
+      "margin_rows_per_class": 32,
+      "weight_floor": 0.05,
+      "memory_budget_mb": 64,
+      "score": "mean of five held-out fixed OI scores",
+      "state_rule": "centers owners and weights must be bit-exact before and after score_fixed"
+    },
+    "LP-FULL": {
+      "folds": "five shuffled stratified folds with random_state equal to replicate_seed",
+      "pipeline": "Normalizer(l2) then LogisticRegression(C=1,max_iter=2000,random_state=replicate_seed,n_jobs=1)",
+      "score": "out-of-fold accuracy"
+    }
+  },
+  "reference_heads": {
+    "training": "fit separately for each dataset backbone replicate and budget on exactly the sampled target-training cohort",
+    "evaluation": "accuracy on the fixed 20-per-class official evaluation cohort",
+    "linear": "Normalizer(l2) + LogisticRegression(C=1,max_iter=2000,n_jobs=1)",
+    "quadratic": "Normalizer(l2) + SVC(kernel=poly,degree=2,C=1,gamma=scale,coef0=1)",
+    "knn": "Normalizer(l2) + KNeighborsClassifier(n_neighbors=15,weights=distance,metric=cosine,n_jobs=1)",
+    "rbf": "Normalizer(l2) + SVC(kernel=rbf,C=1,gamma=scale)",
+    "head_seed": "replicate_seed + head_index"
+  },
+  "embedding_extraction": {
+    "recipes": "exact Food-101 ten-backbone final-output recipes",
+    "input": "only the union of the frozen training and evaluation cohorts selected before extraction",
+    "output": "float32 final embeddings",
+    "identity": "dataset source implementation archive split sample IDs labels extractor dependency versions provider recipes model checkpoint bytes processor/preprocessing bytes matrix bytes shape and dtype must be hash-bound",
+    "audited_registry": "separate immutable input artifact outside code identity and required before any outcome run",
+    "missing_revision_policy": "resolve cached files to exact content hashes; network model resolution after lineage freeze is forbidden",
+    "environment": "Python 3.9.6, NumPy 2.0.2, torch 2.8.0, torchvision 0.23.0, timm 1.0.27, transformers 4.57.6, open_clip 2.32.0, Pillow 11.3.0, Vertebrae 1.0.0; CPU batch size 16 with HF_HUB_OFFLINE=1 and TRANSFORMERS_OFFLINE=1",
+    "source_identity": "one external canonical source manifest per dataset containing every sorted relative path, byte size, and file SHA-256; the manifests are outside raw roots and hash-bound by the audited registry",
+    "model_lock": "one closed ten-backbone mapping binds provider version, archived driver model ID, cached snapshot revision, checkpoint bytes, preprocessing package/config bytes, recipe hash, dimension, and dtype; every embedding record must match it exactly",
+    "image_loader": "the code-owned load_union_images implementation validates each sample ID and label before returning raw images in the frozen union order; no injected production loader is allowed"
+  },
+  "authorization_chain": {
+    "lineage_status": "frozen_v2_design",
+    "order": "frozen protocol plus code plus exact V1 ancestry plus exact FUSED3 authority -> immutable lineage lock -> audited_complete registry binding that lock -> structural smoke -> full run",
+    "readiness": "input readiness is represented only by audited_registry.status=audited_complete; the lineage lock never changes when inputs become available",
+    "parent_registry": "audited registry parent_registry_sha256 must equal the lineage lock v1_confirmation_registry_sha256"
+  },
+  "execution": {
+    "selector_order": "two-method cyclic exact counterbalance; each method appears in each position 250 times",
+    "reference_order": ["linear", "quadratic", "knn", "rbf"],
+    "checkpoint": "one complete paired two-selector plus four-reference-head backbone panel written atomically",
+    "resume": "exact protocol code lineage registry environment cohort cache recipe and checkpoint identity only",
+    "warmup": "on the first frozen panel, execute one excluded warm-up first and record the second measured execution; their clock-free selector/head signatures must match exactly and persist across resume",
+    "preflight": "validate all 50 embedding matrices and manifests, every source/weight/cohort identity, protocol/code/lineage/registry hashes, and the exact scoring environment before computing the first selector or reference outcome",
+    "smoke_storage": "structural smoke may compute one panel transiently but may persist only type/finite/identity descriptors and signature hashes; no score, accuracy, numeric checkpoint, timing outcome, or ranking value may be stored",
+    "resource_preflight": "outcome-redacted timing and memory only; it cannot change recipes datasets gates or execution",
+    "no_interim_outcome_inspection": true
+  },
+  "statistics": {
+    "regret_unit": "accuracy percentage points",
+    "selection_ties": "average downstream outcomes for all selector maxima equal within atol=1e-12",
+    "rank": "Spearman with constant input represented as null undefined",
+    "rank_auc": "two-budget normalized trapezoid over log2 budget; complete support only and supporting evidence only",
+    "bootstrap_resamples": 10000,
+    "bootstrap_seed": 2026082702,
+    "bootstrap": "resample datasets then complete replicate blocks; equal dataset equal replicate and equal budget weight; shared draws for all gates",
+    "interval": "paired percentile 95 percent"
+  },
+  "confirmation_gates": {
+    "linear": "pooled upper95 FUSED3 minus LP-FULL regret <= 1.0 pp and no per-dataset point estimate averaged equally across frozen replicates and budgets > 2.0 pp",
+    "quadratic": "pooled upper95 FUSED3 minus LP-FULL regret < 0 and at least 4 of 5 per-dataset point estimates averaged equally across replicates and budgets strictly favor FUSED3",
+    "knn": "same as quadratic",
+    "rbf": "same as quadratic",
+    "rank_auc": "supporting evidence only; constant-score or constant-outcome Spearman is stored as null/undefined, incomplete rank support is disclosed, and neither condition vetoes or changes the primary regret gates",
+    "runtime": "inherit exact hash-bound passed FUSED3 full-Food per-call and full-panel resource gates; confirmation clocks are descriptive only"
+  },
+  "decision": {
+    "pass": "pass_confirmed when every primary gate passes",
+    "fail": "fail_locked_candidate when any primary gate fails",
+    "no_reselection": true,
+    "no_recipe_or_gate_change": true,
+    "no_added_dataset_seed_budget_head_or_backbone": true
+  },
+  "stop_rules": {
+    "structural": ["leakage", "source_protocol_code_recipe_environment_or_hash_mismatch", "nondeterminism", "fitted_state_mutation", "malformed_duplicate_incomplete_or_nonfinite_panel", "candidate_failure", "missing_dataset", "inadequate_class_count"],
+    "statistical": "never stop early or redesign from interim confirmation outcomes; complete the frozen panel, then evaluate once",
+    "failure": "no runner-up fallback fusion retuning dataset substitution exclusion added seed or reinterpretation"
+  },
+  "claim_scope": "Untouched confirmation for the exact class-stratified same-distribution five-dataset ten-backbone budgets-32-and-64 panel and four frozen downstream heads. It is not a distribution-shift claim or a universal backbone-ranking guarantee."
+}

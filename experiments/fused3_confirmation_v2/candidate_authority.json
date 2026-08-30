@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "lock_id": "fused3_confirmation_v2_candidate_lock",
+  "status": "locked_for_untouched_confirmation",
+  "selected_candidate": "FUSED3",
+  "selected_candidate_recipe_sha256": "82e23fff680c1bd74363809a19d822b9dee8797acfe30915b929e3b8ba073749",
+  "runner_up_reselection_allowed": false,
+  "design_ancestry": {
+    "commit": "7a40e589dad34996d35626edaef739c69f317f22",
+    "protocol_sha256": "8634909b99e6c63d9a1f8d39980658884ec3010cc1fd4701efed5044701c61f8",
+    "planned_registry_sha256": "ed9ec2e54cd4316dd8da5841b1d56d2f7599b5f689bdc545852a38723d77f3b9",
+    "candidate_authority": false
+  },
+  "failed_m50_lock": {
+    "development_lock_sha256": "fade0a84de3d678f2247f486bd956e392be447eaa5e7d955e91a297585d052a3",
+    "status": "stopped_guardrail_failure",
+    "selected_chain": null,
+    "candidate_authority": false
+  },
+  "fused3_screen": {
+    "commit": "8b01ae315e391cf41e825f369808f8d93d9a6f39",
+    "protocol_sha256": "2b4289636157fcdcd552c688cd3212c6311a8fddf128766d48fe126ab03d1069",
+    "raw_results_sha256": "aa34175fa1d06ea4721561a0b1011c5a97267e5838b0ce044749922f3524f2a1",
+    "run_manifest_sha256": "e3f6d06c4094aa05c5ff0fefd4def96ecebcc32e63b39551aee715daa809a86e",
+    "analysis_summary_sha256": "19fff8bb9874a871d0c1c14b483e718dd50d90408b6ace93e699c874c0c451ba",
+    "analysis_decision_sha256": "612f120b7ec09a4c00a7450c39a2c8e0466433b09e66ff1d175ec8c09eff6b15",
+    "analysis_manifest_sha256": "a2476dcc2b112321be8ca76d6569bd4b25091ca7249a931d0364402833511a02",
+    "decision_status": "pass_for_full_food_design"
+  },
+  "fused3_full": {
+    "execution_commit": "de14fb0e35f1543ed60966d382efe557a141b166",
+    "protocol_sha256": "58943c711ac19f2bc4e1ef8a117e625b7d1c3730f328fd5b1736e8b1d3289135",
+    "code_identity_sha256": "f2449c8528e0b719086069c4422b8897e03727def037d5c405943f2027c6b26c",
+    "run_identity_sha256": "6a7bdbf553f49e416f8d183de83fe68427aa5de5381ebf5f2e43ad856eda1666",
+    "raw_results_sha256": "079929a9dffd9a5b961e8023377f090647cafc9c0bc45de3e1b8b90d95a8b686",
+    "run_manifest_sha256": "957a1a1394e60098d90a6075dbc681642e2d3f14d07860e14c765d6fc8474889",
+    "analysis_summary_sha256": "2d310be5cb15dad1b8cd61eb449299c1887168061ff0e2e1e19695ef283ad9bb",
+    "analysis_decision_sha256": "90ff8eaafa6b680ff7d08d9720e9afa904d286f0073bc0a11147e2d38fe14eb5",
+    "analysis_report_sha256": "8b8e498a48781bd6b0dfdaeb0b6b25c71b28baa99f73f851d2309cd7de7566ac",
+    "analysis_manifest_sha256": "277472b5e7f4d235bb757aa4c34e115c9733fade2962556f935f093284ec47c8",
+    "decision_status": "pass_full_retrospective",
+    "failed_required_gate_count": 0,
+    "resource_status": "passed_all_per_call_and_full_panel_gates_in_all_three_food_arms"
+  },
+  "confirmation_constraints": {
+    "candidate_ids": ["FUSED3", "LP-FULL"],
+    "promotable_candidate_ids": ["FUSED3"],
+    "no_reselection": true,
+    "no_recipe_change": true,
+    "no_gate_change": true,
+    "runtime_inheritance": "fused3_full",
+    "confirmation_runtime": "descriptive_only"
+  }
+}
