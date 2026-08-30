@@ -1096,6 +1096,8 @@ def _prepare_inputs_with_source_metadata(
     resume = kwargs.get("resume", False)
     if type(resume) is not bool:
         raise TypeError("resume must be a strict bool")
+    if kwargs.get("batch_size", 16) != 16 or kwargs.get("device") != "cpu":
+        raise ValueError("input extraction is frozen to batch_size=16 and device='cpu'")
     if registry_file.exists():
         if not resume:
             raise FileExistsError("audited input registry exists; pass resume=True to validate it")
@@ -1148,28 +1150,47 @@ def _prepare_inputs_with_source_metadata(
             tuple(training) + (evaluation,),
             source_split_ids=(bundle.training.split, bundle.evaluation.split),
         )
-        images = load_union_images(bundle, union)
-        if len(images) != union.row_count:
-            raise ValueError("code-owned image materialization differs from the frozen union")
+        images: Optional[list[Any]] = None
         records: dict[str, dict[str, Any]] = {}
         for backbone in FOOD_BACKBONE_IDS:
+            cache_dir = output_root / dataset_id
+            matrix_path = cache_dir / f"{backbone}.npy"
+            manifest_path = cache_dir / f"{backbone}.json"
+            if resume and (matrix_path.exists() or manifest_path.exists()):
+                loaded, record = load_embedding_cache(
+                    matrix_path,
+                    manifest_path=manifest_path,
+                    dataset_id=dataset_id,
+                    sample_ids=union.sample_ids,
+                    labels=union.labels,
+                    backbone_spec=resolved_specs[backbone],
+                )
+                del loaded
+                records[backbone] = record
+                continue
+            if images is None:
+                images = load_union_images(bundle, union)
+                if len(images) != union.row_count:
+                    raise ValueError(
+                        "code-owned image materialization differs from the frozen union"
+                    )
             matrix = extract_union_embeddings(
                 images,
                 union,
                 backbone_id=backbone,
                 extractor_factory=factory,
-                batch_size=kwargs.get("batch_size", 16),
-                device=kwargs.get("device"),
+                batch_size=16,
+                device="cpu",
             )
-            cache_dir = output_root / dataset_id
             records[backbone] = write_embedding_cache(
-                cache_dir / f"{backbone}.npy",
+                matrix_path,
                 matrix,
-                manifest_path=cache_dir / f"{backbone}.json",
+                manifest_path=manifest_path,
                 dataset_id=dataset_id,
                 sample_ids=union.sample_ids,
                 labels=union.labels,
                 backbone_spec=resolved_specs[backbone],
+                resume=False,
             )
         source = normalized_source[dataset_id]
         dataset_records.append(
