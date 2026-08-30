@@ -1088,8 +1088,11 @@ def _prepare_inputs_with_source_metadata(
     # Avoid duplicating the extraction loop above: perform the same validated
     # work with source records and publish only after all caches are complete.
     raw_roots = kwargs["raw_roots"]
-    output_root = Path(kwargs["output_dir"])
-    registry_file = Path(kwargs["registry_path"])
+    # Registry cache paths are absolute so copying the registry beside a run
+    # cannot accidentally prepend its new parent to an already workspace-
+    # relative path.
+    output_root = Path(kwargs["output_dir"]).resolve()
+    registry_file = Path(kwargs["registry_path"]).resolve()
     resume = kwargs.get("resume", False)
     if type(resume) is not bool:
         raise TypeError("resume must be a strict bool")
