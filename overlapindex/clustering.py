@@ -665,6 +665,7 @@ class _FusedKMeansManyToOne(_BaseCentroidManyToOne):
         self,
         k: Union[int, Dict[Any, int]] = 8,
         fused_kwargs: Optional[dict] = None,
+        label_distances: Optional[Dict[Tuple[Any, Any], float]] = None,
     ) -> None:
         if fused_kwargs is not None and not isinstance(fused_kwargs, dict):
             raise TypeError("fused_kmeans_kwargs must be a dict or None.")
@@ -699,6 +700,9 @@ class _FusedKMeansManyToOne(_BaseCentroidManyToOne):
             prototype_refinement=False,
         )
         self._fused_kwargs = resolved
+        self._label_distances = (
+            None if label_distances is None else dict(label_distances)
+        )
         self._feature_weights: Optional[np.ndarray] = None
         self._scaled_centers: Optional[np.ndarray] = None
         self._scaled_center_norms: Optional[np.ndarray] = None
@@ -723,6 +727,7 @@ class _FusedKMeansManyToOne(_BaseCentroidManyToOne):
             relevance_weighting=self._fused_kwargs["relevance_weighting"],
             margin_rows_per_class=self._fused_kwargs["margin_rows_per_class"],
             weight_floor=self._fused_kwargs["weight_floor"],
+            label_distances=self._label_distances,
         )
         self._models = {}
         self._centers = np.array(fit.centers, dtype=np.float32, copy=True)

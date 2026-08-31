@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Union
+from typing import Any, Mapping, Optional, Union
 
 import numpy as np
 
@@ -175,6 +175,7 @@ def _relevance_weights(
     margin_rows_per_class: int,
     weight_floor: float,
     random_state: int,
+    label_distances: Optional[Mapping[tuple[Any, Any], float]] = None,
 ) -> tuple[np.ndarray, int, int]:
     if len(labels) < 2:
         return np.ones(X.shape[1], dtype=np.float64), 0, 0
@@ -200,12 +201,42 @@ def _relevance_weights(
     for label in labels:
         local = np.flatnonzero(margin_y == label)
         own_ids = ids_by_class[label]
-        wrong_ids = np.flatnonzero(owners != label)
         own_choice = own_ids[np.argmax(scores[local][:, own_ids], axis=1)]
-        wrong_choice = wrong_ids[np.argmax(scores[local][:, wrong_ids], axis=1)]
         selected = margin_X[local]
         own_residual = np.square(selected - centers[own_choice], dtype=np.float32)
-        wrong_residual = np.square(selected - centers[wrong_choice], dtype=np.float32)
+        if label_distances is None:
+            wrong_ids = np.flatnonzero(owners != label)
+            wrong_choice = wrong_ids[np.argmax(scores[local][:, wrong_ids], axis=1)]
+            wrong_residual = np.square(
+                selected - centers[wrong_choice],
+                dtype=np.float32,
+            )
+        else:
+            competitors = [other for other in labels if other != label]
+            target_weights = np.asarray(
+                [label_distances[(label, other)] for other in competitors],
+                dtype=np.float64,
+            )
+            total_weight = float(np.sum(target_weights))
+            if total_weight <= np.finfo(float).eps:
+                target_weights = np.full(
+                    len(competitors),
+                    1.0 / float(len(competitors)),
+                    dtype=np.float64,
+                )
+            else:
+                target_weights /= total_weight
+            wrong_residual = np.zeros_like(own_residual, dtype=np.float64)
+            for other, target_weight in zip(competitors, target_weights):
+                wrong_ids = ids_by_class[other]
+                wrong_choice = wrong_ids[
+                    np.argmax(scores[local][:, wrong_ids], axis=1)
+                ]
+                residual = np.square(
+                    selected - centers[wrong_choice],
+                    dtype=np.float32,
+                )
+                wrong_residual += float(target_weight) * residual.astype(np.float64)
         margin_sum += np.sum(
             wrong_residual.astype(np.float64) - own_residual.astype(np.float64),
             axis=0,
@@ -222,6 +253,43 @@ def _relevance_weights(
     return weights, int(len(chosen)), int(np.count_nonzero(positive_margin))
 
 
+def _validate_label_distances(
+    labels: tuple[Any, ...],
+    label_distances: Optional[Mapping[tuple[Any, Any], float]],
+) -> Optional[dict[tuple[Any, Any], float]]:
+    """Validate a complete directed target-distance mapping."""
+    if label_distances is None:
+        return None
+    if not isinstance(label_distances, Mapping):
+        raise TypeError("FusedKMeans label_distances must be a mapping or None")
+    expected = {
+        (source, target)
+        for source in labels
+        for target in labels
+        if source != target
+    }
+    if set(label_distances) != expected:
+        raise ValueError(
+            "FusedKMeans label_distances must contain every directed "
+            "non-diagonal label pair exactly once"
+        )
+    resolved: dict[tuple[Any, Any], float] = {}
+    for pair in expected:
+        value = label_distances[pair]
+        if isinstance(value, (bool, np.bool_)) or not np.isscalar(value):
+            raise TypeError("FusedKMeans label distances must be real scalars")
+        distance = float(value)
+        if not np.isfinite(distance) or distance < 0.0:
+            raise ValueError(
+                "FusedKMeans label distances must be finite and nonnegative"
+            )
+        reverse = float(label_distances[(pair[1], pair[0])])
+        if not np.isclose(distance, reverse, atol=1.0e-12, rtol=1.0e-12):
+            raise ValueError("FusedKMeans label_distances must be symmetric")
+        resolved[pair] = distance
+    return resolved
+
+
 def fit_fused_kmeans(
     X: Any,
     y: Any,
@@ -233,6 +301,7 @@ def fit_fused_kmeans(
     relevance_weighting: bool,
     margin_rows_per_class: int,
     weight_floor: float,
+    label_distances: Optional[Mapping[tuple[Any, Any], float]] = None,
 ) -> FusedKMeansFit:
     """Fit fixed-iteration class-owned prototypes and optional relevance weights."""
 
@@ -267,6 +336,10 @@ def fit_fused_kmeans(
         random_state=random_state,
         min_samples_per_prototype=min_samples_per_prototype,
     )
+    resolved_label_distances = _validate_label_distances(
+        packed.labels,
+        label_distances,
+    )
     packed_centers, counts = _fixed_lloyd(packed, iterations=iterations)
     centers, owners = _flatten(packed, packed_centers)
     if relevance_weighting:
@@ -279,6 +352,7 @@ def fit_fused_kmeans(
             margin_rows_per_class=margin_rows_per_class,
             weight_floor=weight_floor,
             random_state=random_state,
+            label_distances=resolved_label_distances,
         )
     else:
         weights = np.ones(values.shape[1], dtype=np.float64)
@@ -304,6 +378,8 @@ def fit_fused_kmeans(
         ),
         "weighted_lloyd_update_count": 0,
     }
+    if resolved_label_distances is not None:
+        diagnostics["relevance_mode"] = "target_distance_weighted"
     for array in (centers, owners, weights):
         array.setflags(write=False)
     return FusedKMeansFit(

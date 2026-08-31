@@ -491,8 +491,9 @@ sweeps practical to reproduce. Increase `n_null_permutations` in the scripts
 when adapting them for final quantitative reporting.
 
 Version 1 is offline-first and supports `model_type="MiniBatchKMeans"`,
-`model_type="KMeans"`, and `model_type="BallCover"`. ARTMAP online support is
-intentionally deferred for continuous targets.
+`model_type="KMeans"`, `model_type="FusedKMeans"`, and
+`model_type="BallCover"`. ARTMAP online support is intentionally deferred for
+continuous targets.
 
 ```python
 from sklearn.preprocessing import MinMaxScaler
@@ -516,6 +517,30 @@ coi = ContinuousOverlapIndex(
 coi.fit(X, y_regression)
 score = coi.index
 ```
+
+For dense embedding comparisons, the opt-in continuous target-aware stack is:
+
+```python
+coi = ContinuousOverlapIndex(
+    model_type="FusedKMeans",
+    kmeans_k=4,
+    fused_kmeans_kwargs={
+        "random_state": 0,
+        "relevance_weighting": True,
+    },
+    feature_normalization="l2",
+    feature_transform="shared_fisher",
+    fisher_rank=16,
+    n_target_cells=8,
+    null_mode="refit_permutation",
+    random_state=0,
+)
+score = coi.cross_fit_score(X, y_regression, n_splits=5, random_state=0)
+```
+
+Here shared Fisher uses target cells for within-cell residual correction, and
+FusedKMeans weights feature relevance by continuous target-cell distance.
+Cross-fitting keeps every target-derived transform and prototype train-only.
 
 `ContinuousOverlapIndex.random_state` seeds target-cell construction,
 projection directions, permutation sampling, and the selected feature backend.

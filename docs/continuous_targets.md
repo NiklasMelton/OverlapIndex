@@ -24,13 +24,14 @@ print(coi.index)
 print(coi.actual_loss_, coi.null_loss_)
 ```
 
-The estimator is offline-first. MiniBatchKMeans, KMeans, and BallCover are
-supported; `partial_fit` refits on the supplied batch and does not retain
-continuous-target state across calls.
+The estimator is offline-first. MiniBatchKMeans, KMeans, FusedKMeans, and
+BallCover are supported; `partial_fit` refits on the supplied batch and does
+not retain continuous-target state across calls.
 
 KMeans and MiniBatchKMeans also accept SciPy sparse feature matrices. Sparse
 inputs remain in CSR form through prototype fitting, adjacency scoring, and
 permutation-null refits; continuous targets remain dense numeric arrays.
+FusedKMeans and shared Fisher require dense feature matrices.
 
 `random_state` seeds target-cell construction, projection directions,
 permutation sampling, and the selected feature backend. An explicit
@@ -41,11 +42,12 @@ for that backend.
 
 1. Scale the continuous target columns according to `target_scaling`.
 2. Partition target space into pseudo-label cells.
-3. Fit label-owned feature prototypes using those cells.
-4. Build prototype adjacency in feature space.
-5. Measure disagreement between empirical target distributions on adjacent
+3. Apply any opt-in train-only feature normalization and target-cell metric.
+4. Fit label-owned feature prototypes using those cells.
+5. Build prototype adjacency in feature space.
+6. Measure disagreement between empirical target distributions on adjacent
    prototypes.
-6. Compare actual loss with a permutation-null loss and aggregate local
+7. Compare actual loss with a permutation-null loss and aggregate local
    prototype indices.
 
 The support-weighted calibration follows
@@ -91,6 +93,45 @@ Use `adjacency_mode="hard_top1"` for strict single-competitor scoring or
 backwards comparisons. Keep adjacency settings constant when comparing
 representations.
 
+## Opt-in target-aware FusedKMeans
+
+Continuous OI can reuse the scalable embedding geometry from discrete OI
+without pretending that target cells are unrelated classes:
+
+```python
+coi = ContinuousOverlapIndex(
+    model_type="FusedKMeans",
+    kmeans_k=4,
+    fused_kmeans_kwargs={
+        "random_state": 0,
+        "relevance_weighting": True,
+    },
+    feature_normalization="l2",
+    feature_transform="shared_fisher",
+    fisher_rank=16,
+    n_target_cells=8,
+    null_mode="refit_permutation",
+    random_state=0,
+)
+
+score = coi.cross_fit_score(X, y, n_splits=5, random_state=0)
+```
+
+The shared-Fisher transform treats target cells as the supervised partition
+for pooled within-cell scaling and low-rank correlated-nuisance correction.
+FusedKMeans still fits cell-owned prototypes in one class-batched operation,
+but its feature relevance is continuous-specific: confusion with a target cell
+is weighted by the empirical Wasserstein or sliced-Wasserstein distance to that
+cell. Mixing nearby target values therefore costs less than mixing distant
+ones.
+
+Use `cross_fit_score` for representation comparison. Each fold learns target
+scaling, cover boundaries, feature geometry, prototypes, and relevance weights
+only from its training rows. `score_fixed` applies that fitted state to a
+holdout without refitting. Because this geometry is target-learned,
+`null_mode="auto"` resolves to exact refit permutations; the approximate
+fixed-structure null is rejected for this opt-in stack.
+
 ## Continuous behavior gallery
 
 The main synthetic gallery follows three genuinely continuous regression
@@ -131,7 +172,8 @@ them for final quantitative reporting.
   and shuffles targets across it. It is substantially faster but approximate.
 - `null_mode="auto"` uses the refit mode when
   `n_samples * n_null_permutations < auto_null_work_threshold`, otherwise the
-  fixed-structure mode. The default threshold is `100_000`.
+  fixed-structure mode. The default threshold is `100_000`. Target-learned
+  shared-Fisher or relevance geometry always resolves auto mode to refit.
 
 Inspect `null_mode_` after fitting to see which mode actually ran. Increase
 `n_null_permutations` for a more stable null estimate, trading off runtime.
@@ -156,6 +198,11 @@ Useful fitted attributes include:
   neighborhood graph.
 - `target_cell_ids_`, `target_cover_`, and `target_distance_` for resolved
   target-space choices.
+- `fisher_diagnostics_`, `fused_kmeans_diagnostics_`, and `feature_weights_`
+  for the opt-in target-aware feature metric.
+- `target_cell_distances_` for the directed Wasserstein weights supplied to
+  continuous relevance.
+- `cross_fit_scores_` and `cross_fit_score_` after leakage-safe cross-fitting.
 
 The prototype target attributes retain empirical target measures rather than
 reducing every prototype to only a mean or variance. This is what allows the

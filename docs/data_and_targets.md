@@ -90,7 +90,8 @@ coi.fit(X, y_regression)                  # shape (n_samples,)
 coi.fit(X, Y_multivariate_regression)     # shape (n_samples, n_targets)
 ```
 
-The continuous estimator currently supports only the three offline backends.
+The continuous estimator supports MiniBatchKMeans, KMeans, FusedKMeans, and
+BallCover. The target-aware FusedKMeans/shared-Fisher path requires dense X.
 See {doc}`continuous_targets` for target scaling, target cells, and null
 calibration.
 

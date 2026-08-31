@@ -10,6 +10,8 @@ import numpy as np
 from scipy import sparse
 from scipy.stats import wasserstein_distance
 from sklearn.cluster import KMeans
+from sklearn.base import clone
+from sklearn.model_selection import KFold
 
 try:
     from sklearn.base import BaseEstimator
@@ -22,8 +24,14 @@ except ImportError:  # pragma: no cover - scikit-learn is a required dependency
 from overlapindex.clustering import (
     _BallCoverManyToOne,
     _BaseManyToOneClusteringModel,
+    _FusedKMeansManyToOne,
     _KMeansManyToOne,
     _MiniBatchKMeansManyToOne,
+)
+from overlapindex._shared_fisher import (
+    FisherRank,
+    SharedFisherTransform,
+    fit_shared_fisher,
 )
 from overlapindex.utils import (
     _validate_feature_matrix,
@@ -32,7 +40,14 @@ from overlapindex.utils import (
 )
 
 
-ModelType = Literal["KMeans", "MiniBatchKMeans", "BallCover", "Fuzzy", "Hypersphere"]
+ModelType = Literal[
+    "KMeans",
+    "MiniBatchKMeans",
+    "FusedKMeans",
+    "BallCover",
+    "Fuzzy",
+    "Hypersphere",
+]
 TargetCover = Literal["auto", "quantile", "kmeans"]
 TargetDistance = Literal["auto", "wasserstein", "sliced_wasserstein"]
 TargetScaling = Literal["standard", "none", "minmax", "robust"]
@@ -81,6 +96,12 @@ class ContinuousOverlapIndex(BaseEstimator):
         target_scaling: TargetScaling = "standard",
         n_projections: int = 64,
         random_state: Optional[int] = None,
+        *,
+        fused_kmeans_kwargs: Optional[dict] = None,
+        feature_normalization: Optional[Literal["l2"]] = None,
+        feature_transform: Optional[Literal["shared_fisher"]] = None,
+        fisher_rank: FisherRank = 32,
+        fisher_random_state: Optional[int] = None,
     ) -> None:
         """Initialize the continuous-target overlap estimator.
 
@@ -91,7 +112,7 @@ class ContinuousOverlapIndex(BaseEstimator):
             backends are not supported in the current offline implementation.
         r_hat : float, default=np.inf
             Reserved Hypersphere ARTMAP radius constraint.
-        model_type : {"KMeans", "MiniBatchKMeans", "BallCover"}, default="MiniBatchKMeans"
+        model_type : {"KMeans", "MiniBatchKMeans", "FusedKMeans", "BallCover"}, default="MiniBatchKMeans"
             Offline backend used to build feature-space prototypes. ``"Fuzzy"``
             and ``"Hypersphere"`` are accepted by the type signature for API
             consistency but raise ``NotImplementedError`` during fitting.
@@ -104,6 +125,12 @@ class ContinuousOverlapIndex(BaseEstimator):
             Keyword arguments forwarded to the selected scikit-learn centroid
             backend. An explicit ``random_state`` here overrides the top-level
             seed for feature-prototype fitting.
+        fused_kmeans_kwargs : dict, optional
+            Closed options for ``model_type="FusedKMeans"``: ``random_state``,
+            ``n_iter``, ``min_samples_per_prototype``,
+            ``relevance_weighting``, ``margin_rows_per_class``, and
+            ``weight_floor``. When relevance is enabled, feature margins are
+            weighted by empirical distances between continuous target cells.
         ballcover_k : int, dict, or "auto", default="auto"
             Number of balls per target cell, cell-specific counts, or ``"auto"``
             for greedy fixed-radius covering.
@@ -117,6 +144,19 @@ class ContinuousOverlapIndex(BaseEstimator):
         offline_chunk_size : int or None, default=10000
             Maximum row block used for feature-prototype adjacency scoring.
             ``None`` scores each available row block at once.
+        feature_normalization : {None, "l2"}, default=None
+            Optional stateless row-L2 normalization before feature fitting and
+            scoring.
+        feature_transform : {None, "shared_fisher"}, default=None
+            Optional target-cell shared-Fisher transform. It applies pooled
+            within-cell scaling, optional low-rank residual deflation, and a
+            target-cell contrast projection learned from training rows only.
+        fisher_rank : nonnegative int or "full", default=32
+            Rank of the scalable residual correction. ``0`` retains diagonal
+            within-cell scaling; ``"full"`` uses the full Fisher solver.
+        fisher_random_state : int, optional
+            Seed for randomized low-rank Fisher fitting. The top-level
+            ``random_state`` is used when this is omitted.
         target_cover : {"auto", "quantile", "kmeans"}, default="auto"
             Target-space cell construction. Auto selects quantiles for a
             univariate target and KMeans for multivariate targets.
@@ -167,10 +207,15 @@ class ContinuousOverlapIndex(BaseEstimator):
         self.match_tracking = match_tracking
         self.kmeans_k = kmeans_k
         self.kmeans_kwargs = kmeans_kwargs
+        self.fused_kmeans_kwargs = fused_kmeans_kwargs
         self.ballcover_k = ballcover_k
         self.ballcover_radius = ballcover_radius
         self.ballcover_kwargs = ballcover_kwargs
         self.offline_chunk_size = offline_chunk_size
+        self.feature_normalization = feature_normalization
+        self.feature_transform = feature_transform
+        self.fisher_rank = fisher_rank
+        self.fisher_random_state = fisher_random_state
         self.target_cover = target_cover
         self.n_target_cells = n_target_cells
         self.target_cover_kwargs = target_cover_kwargs
@@ -215,18 +260,29 @@ class ContinuousOverlapIndex(BaseEstimator):
         self.target_cell_to_prototypes_ = defaultdict(set)
         self.prototype_to_target_cell_ = {}
         self.target_cell_ids_ = None
+        self.target_cell_edges_ = None
+        self.target_cover_model_ = None
         self.target_cover_ = None
         self.target_distance_ = None
         self.target_center_ = None
         self.target_scale_ = None
         self.target_directions_ = None
+        self.target_cell_distances_ = {}
         self.Y_train_ = None
         self.Y_scaled_ = None
         self.own_prototype_ids_ = None
+        self.feature_transform_: Optional[SharedFisherTransform] = None
+        self.fisher_diagnostics_ = {"status": "not_applied"}
+        self.fused_kmeans_diagnostics_ = {"status": "not_applied"}
+        self.feature_weights_ = None
+        self.evaluation_support_ = {}
+        self.evaluation_null_mode_ = None
         self._rows_by_prototype_ = {}
         self._model: Optional[_BaseManyToOneClusteringModel] = None
         if hasattr(self, "n_features_in_"):
             del self.n_features_in_
+        if hasattr(self, "n_features_out_"):
+            del self.n_features_out_
 
     @property
     def weighted_index(self) -> float:
@@ -273,6 +329,186 @@ class ContinuousOverlapIndex(BaseEstimator):
             raise ValueError("score expects both X and Y, or neither.")
         return float(self.fit_offline(X, Y, reset_state=True))
 
+    def cross_fit_score(
+        self,
+        X: np.ndarray,
+        Y: np.ndarray,
+        *,
+        n_splits: int = 5,
+        random_state: Optional[int] = 0,
+    ) -> float:
+        """Return a leakage-safe cross-fitted continuous OI score.
+
+        Every fold fits target scaling, target cells, feature geometry,
+        prototypes, and relevance weights using training rows only. The
+        held-out fold is evaluated with :meth:`score_fixed`; ``self`` is not
+        fit by this method.
+        """
+        if type(n_splits) is not int or n_splits < 2:
+            raise ValueError("n_splits must be an integer greater than one.")
+        if random_state is not None and (
+            type(random_state) is not int or random_state < 0
+        ):
+            raise ValueError("random_state must be None or a nonnegative int.")
+        self._validate_sparse_backend(X)
+        X_values = self._validate_X(X)
+        Y_values = self._validate_Y(Y)
+        if X_values.shape[0] != Y_values.shape[0]:
+            raise ValueError(
+                "X and Y must have the same number of rows; got "
+                f"{X_values.shape[0]} and {Y_values.shape[0]}."
+            )
+        if X_values.shape[0] < n_splits:
+            raise ValueError("cross_fit_score requires at least n_splits rows.")
+        splitter = KFold(
+            n_splits=n_splits,
+            shuffle=True,
+            random_state=random_state,
+        )
+        fold_scores: list[float] = []
+        for fold, (train, holdout) in enumerate(splitter.split(X_values)):
+            estimator = clone(self)
+            if random_state is not None:
+                fold_seed = int(random_state) + int(fold)
+                updates: Dict[str, Any] = {
+                    "random_state": fold_seed,
+                }
+                if estimator.feature_transform == "shared_fisher":
+                    updates["fisher_random_state"] = fold_seed
+                if estimator.model_type in {"KMeans", "MiniBatchKMeans"}:
+                    kwargs = dict(estimator.kmeans_kwargs or {})
+                    kwargs["random_state"] = fold_seed
+                    updates["kmeans_kwargs"] = kwargs
+                elif estimator.model_type == "FusedKMeans":
+                    kwargs = dict(estimator.fused_kmeans_kwargs or {})
+                    kwargs["random_state"] = fold_seed
+                    updates["fused_kmeans_kwargs"] = kwargs
+                if estimator.target_cover in {"auto", "kmeans"}:
+                    kwargs = dict(estimator.target_cover_kwargs or {})
+                    kwargs["random_state"] = fold_seed
+                    updates["target_cover_kwargs"] = kwargs
+                estimator.set_params(**updates)
+            estimator._fit_geometry_only(X_values[train], Y_values[train])
+            fold_scores.append(
+                float(
+                    estimator.score_fixed(
+                        X_values[holdout],
+                        Y_values[holdout],
+                    )
+                )
+            )
+        scores = np.asarray(fold_scores, dtype=float)
+        scores.setflags(write=False)
+        self.cross_fit_scores_ = scores
+        self.cross_fit_score_ = float(np.mean(scores))
+        return self.cross_fit_score_
+
+    def score_fixed(self, X: np.ndarray, Y: np.ndarray) -> float:
+        """Score held-out rows against fitted continuous feature geometry.
+
+        Target scaling, target-cover boundaries, the optional shared-Fisher
+        transform, prototypes, and relevance weights remain fixed. The
+        evaluation permutation null reassigns held-out targets through the
+        fitted target cover but never refits learned state.
+        """
+        if self._model is None or self._model.n_clusters_total <= 0:
+            raise ValueError("This ContinuousOverlapIndex instance is not fit yet.")
+        X_arr = self._validate_X(X)
+        Y_arr = self._validate_Y(Y)
+        if X_arr.shape[0] != Y_arr.shape[0]:
+            raise ValueError(
+                "X and Y must have the same number of rows; got "
+                f"{X_arr.shape[0]} and {Y_arr.shape[0]}."
+            )
+        if X_arr.shape[1] != self.n_features_in_:
+            raise ValueError(
+                f"X has {X_arr.shape[1]} features, but this "
+                f"ContinuousOverlapIndex instance was fit with "
+                f"{self.n_features_in_} features."
+            )
+        if X_arr.shape[0] == 0:
+            self._warn_empty_input()
+            return float(self.index)
+        X_prepared = self._prep_X(X_arr)
+        Y_scaled = self._transform_targets(Y_arr)
+        actual_loss, local_loss, support = self._fixed_model_loss(
+            X_prepared,
+            Y_scaled,
+        )
+        rng = np.random.default_rng(self.random_state)
+        null_samples = []
+        for _ in range(int(self.n_null_permutations)):
+            permuted = Y_scaled[rng.permutation(Y_scaled.shape[0])]
+            null_loss, _local, _support = self._fixed_model_loss(
+                X_prepared,
+                permuted,
+            )
+            null_samples.append(float(null_loss))
+        null_loss = float(np.mean(null_samples)) if null_samples else 0.0
+        self.actual_loss_ = float(actual_loss)
+        self.null_loss_ = null_loss
+        self.null_loss_samples_ = null_samples
+        self.loss_ratio_ = (
+            np.inf
+            if null_loss <= np.finfo(float).eps and actual_loss > 0.0
+            else (
+                0.0
+                if null_loss <= np.finfo(float).eps
+                else float(actual_loss / null_loss)
+            )
+        )
+        self.prototype_loss_ = dict(local_loss)
+        self.prototype_null_loss_ = {
+            pid: null_loss
+            for pid in support
+        }
+        self.prototype_index_ = {
+            pid: self._index_from_losses(local_loss.get(pid, 0.0), null_loss)
+            for pid in support
+        }
+        self.evaluation_support_ = dict(support)
+        self.evaluation_null_mode_ = "fixed_model_permutation"
+        self.macro_index_ = (
+            float(np.mean(list(self.prototype_index_.values())))
+            if self.prototype_index_
+            else self._index_from_losses(actual_loss, null_loss)
+        )
+        if self.aggregation == "macro":
+            self.index = float(self.macro_index_)
+        else:
+            self.index = self._index_from_losses(actual_loss, null_loss)
+        return float(self.index)
+
+    def _fixed_model_loss(
+        self,
+        X_prepared: np.ndarray,
+        Y_scaled: np.ndarray,
+    ) -> Tuple[float, Dict[int, float], Dict[int, int]]:
+        """Return loss components using the already fitted backend."""
+        target_cell_ids = self._assign_target_cells(Y_scaled)
+        own_proto = self._model.bmu_for_class_batch(
+            X_prepared,
+            target_cell_ids,
+        )
+        _counts, adjacency = self._adjacency_for_model(
+            X_prepared,
+            own_proto,
+            self._model,
+        )
+        values_by_proto: Dict[int, np.ndarray] = {}
+        support: Dict[int, int] = {}
+        for pid in np.unique(own_proto):
+            rows = np.flatnonzero(own_proto == pid)
+            pid_int = int(pid)
+            values_by_proto[pid_int] = Y_scaled[rows]
+            support[pid_int] = int(rows.size)
+        loss, local = self._loss_for_components(
+            values_by_proto,
+            support,
+            adjacency,
+        )
+        return float(loss), local, support
+
     def predict(self, X: np.ndarray) -> np.ndarray:
         """Return the highest-scoring global prototype id for each sample."""
         if self._model is None or self._model.n_clusters_total <= 0:
@@ -285,8 +521,9 @@ class ContinuousOverlapIndex(BaseEstimator):
                 f"ContinuousOverlapIndex instance was fit with "
                 f"{self.n_features_in_} features."
             )
-        result = np.empty(X_arr.shape[0], dtype=int)
-        for i, x in enumerate(X_arr):
+        X_prepared = self._prep_X(X_arr)
+        result = np.empty(X_prepared.shape[0], dtype=int)
+        for i, x in enumerate(X_prepared):
             ids, _ = self._model.topk(x, k=1)
             if ids.size == 0:
                 raise ValueError("The backend did not return any prototype ids for prediction.")
@@ -300,6 +537,31 @@ class ContinuousOverlapIndex(BaseEstimator):
 
     def fit_offline(self, X: np.ndarray, Y: np.ndarray, reset_state: bool = True) -> float:
         """Fit the backend on a complete regression dataset and compute COI."""
+        return self._fit_complete(
+            X,
+            Y,
+            reset_state=reset_state,
+            compute_index=True,
+        )
+
+    def _fit_geometry_only(self, X: np.ndarray, Y: np.ndarray) -> None:
+        """Fit learned state for held-out scoring without a discarded null."""
+        self._fit_complete(
+            X,
+            Y,
+            reset_state=True,
+            compute_index=False,
+        )
+
+    def _fit_complete(
+        self,
+        X: np.ndarray,
+        Y: np.ndarray,
+        *,
+        reset_state: bool,
+        compute_index: bool,
+    ) -> float:
+        """Fit continuous geometry and optionally calibrate its training score."""
         if not reset_state:
             raise ValueError(
                 "reset_state=False is not supported by ContinuousOverlapIndex; "
@@ -325,12 +587,22 @@ class ContinuousOverlapIndex(BaseEstimator):
         target_cell_ids = self._build_target_cells(Y_scaled)
         unique_cells = np.unique(target_cell_ids)
 
-        self._model = self._build_model()
-        self._model.fit_offline(X_arr, target_cell_ids)
-
-        own_proto = self._model.bmu_for_class_batch(X_arr, target_cell_ids)
-        self.n_features_in_ = int(X_arr.shape[1])
         self._store_training_targets(Y_arr, Y_scaled, target_cell_ids)
+        X_prepared = self._fit_feature_geometry(X_arr, target_cell_ids)
+        label_distances = self._target_cell_distances(
+            Y_scaled,
+            target_cell_ids,
+        )
+        self.target_cell_distances_ = (
+            {} if label_distances is None else dict(label_distances)
+        )
+        self._model = self._build_model(label_distances=label_distances)
+        self._model.fit_offline(X_prepared, target_cell_ids)
+        self._store_backend_diagnostics()
+
+        own_proto = self._model.bmu_for_class_batch(X_prepared, target_cell_ids)
+        self.n_features_in_ = int(X_arr.shape[1])
+        self.n_features_out_ = int(X_prepared.shape[1])
         self.own_prototype_ids_ = own_proto
         self._sync_prototype_bookkeeping(target_cell_ids, own_proto)
 
@@ -342,8 +614,9 @@ class ContinuousOverlapIndex(BaseEstimator):
             self._warn_single_prototype()
             return self.index
 
-        self._build_prototype_adjacency(X_arr, own_proto)
-        self._compute_index_from_current_state(X_arr, Y_scaled)
+        self._build_prototype_adjacency(X_prepared, own_proto)
+        if compute_index:
+            self._compute_index_from_current_state(X_arr, Y_scaled)
         return float(self.index)
 
     def _validate_params(self) -> None:
@@ -351,11 +624,53 @@ class ContinuousOverlapIndex(BaseEstimator):
         if self.model_type in {"Fuzzy", "Hypersphere"}:
             raise NotImplementedError(
                 "ContinuousOverlapIndex V1 supports only offline backends: "
-                "'KMeans', 'MiniBatchKMeans', and 'BallCover'."
+                "'KMeans', 'MiniBatchKMeans', 'FusedKMeans', and 'BallCover'."
             )
-        if self.model_type not in {"KMeans", "MiniBatchKMeans", "BallCover"}:
+        if self.model_type not in {
+            "KMeans",
+            "MiniBatchKMeans",
+            "FusedKMeans",
+            "BallCover",
+        }:
             raise ValueError(
-                "model_type must be one of {'KMeans', 'MiniBatchKMeans', 'BallCover', 'Fuzzy', 'Hypersphere'}."
+                "model_type must be one of {'KMeans', 'MiniBatchKMeans', "
+                "'FusedKMeans', 'BallCover', 'Fuzzy', 'Hypersphere'}."
+            )
+        if self.feature_normalization not in {None, "l2"}:
+            raise ValueError("feature_normalization must be None or 'l2'.")
+        if self.feature_transform not in {None, "shared_fisher"}:
+            raise ValueError("feature_transform must be None or 'shared_fisher'.")
+        if self.fused_kmeans_kwargs is not None and not isinstance(
+            self.fused_kmeans_kwargs,
+            dict,
+        ):
+            raise TypeError("fused_kmeans_kwargs must be a dict or None.")
+        if self.fisher_rank != "full" and (
+            type(self.fisher_rank) is not int or self.fisher_rank < 0
+        ):
+            raise ValueError("fisher_rank must be a nonnegative int or 'full'.")
+        if self.fisher_random_state is not None and (
+            type(self.fisher_random_state) is not int
+            or self.fisher_random_state < 0
+        ):
+            raise ValueError(
+                "fisher_random_state must be None or a nonnegative int."
+            )
+        if self.feature_transform is not None and self.model_type not in {
+            "KMeans",
+            "MiniBatchKMeans",
+            "FusedKMeans",
+        }:
+            raise ValueError(
+                "feature_transform='shared_fisher' requires model_type "
+                "'KMeans', 'MiniBatchKMeans', or 'FusedKMeans'."
+            )
+        if self._uses_target_learned_feature_geometry() and self.null_mode == (
+            "fixed_structure_permutation"
+        ):
+            raise ValueError(
+                "fixed_structure_permutation cannot calibrate target-learned "
+                "feature geometry; use null_mode='refit_permutation' or 'auto'."
             )
         if self.target_cover not in {"auto", "quantile", "kmeans"}:
             raise ValueError("target_cover must be one of {'auto', 'quantile', 'kmeans'}.")
@@ -387,6 +702,10 @@ class ContinuousOverlapIndex(BaseEstimator):
 
     def _validate_sparse_backend(self, X: Any) -> None:
         """Reject sparse features for backends that require dense arrays."""
+        if sparse.issparse(X) and self.model_type == "FusedKMeans":
+            raise TypeError("model_type='FusedKMeans' requires dense X.")
+        if sparse.issparse(X) and self.feature_transform is not None:
+            raise TypeError("feature_transform='shared_fisher' requires dense X.")
         if sparse.issparse(X) and self.model_type not in {"KMeans", "MiniBatchKMeans"}:
             raise TypeError(
                 "Sparse X is supported only for model_type='KMeans' and "
@@ -397,6 +716,84 @@ class ContinuousOverlapIndex(BaseEstimator):
         """Validate feature input."""
         self._validate_sparse_backend(X)
         return _validate_feature_matrix(X)
+
+    def _uses_target_learned_feature_geometry(self) -> bool:
+        """Return whether the opt-in feature metric depends on target cells."""
+        if self.feature_transform == "shared_fisher":
+            return True
+        if self.model_type != "FusedKMeans":
+            return False
+        kwargs = dict(self.fused_kmeans_kwargs or {})
+        return bool(kwargs.get("relevance_weighting", True))
+
+    def _normalize_features(self, X: np.ndarray) -> np.ndarray:
+        """Apply the configured stateless row normalization."""
+        if self.feature_normalization is None:
+            return X
+        if sparse.issparse(X):
+            values = sparse.csr_matrix(X, dtype=np.float32, copy=True)
+            norms = np.sqrt(
+                np.asarray(values.multiply(values).sum(axis=1)).reshape(-1)
+            )
+            inverse = np.divide(
+                1.0,
+                np.maximum(norms, np.finfo(np.float32).eps),
+            )
+            return values.multiply(inverse[:, None]).tocsr()
+        values = np.asarray(X, dtype=np.float32)
+        norms = np.linalg.norm(values, axis=1, keepdims=True)
+        return values / np.maximum(norms, np.finfo(np.float32).eps)
+
+    def _fit_feature_geometry(
+        self,
+        X: np.ndarray,
+        target_cell_ids: np.ndarray,
+        *,
+        store: bool = True,
+    ) -> np.ndarray:
+        """Fit train-only feature geometry and return metric-space rows."""
+        normalized = self._normalize_features(X)
+        if self.feature_transform is None:
+            if store:
+                self.feature_transform_ = None
+                self.fisher_diagnostics_ = {"status": "not_applied"}
+            return normalized
+        seed = (
+            self.fisher_random_state
+            if self.fisher_random_state is not None
+            else self.random_state
+        )
+        transform = fit_shared_fisher(
+            normalized,
+            target_cell_ids,
+            rank=self.fisher_rank,
+            random_state=seed,
+        )
+        transformed = transform.transform(normalized)
+        if store:
+            self.feature_transform_ = transform
+            self.fisher_diagnostics_ = {
+                "status": "applied",
+                "target_semantics": "target_cells",
+                "requested_rank": self.fisher_rank,
+                "effective_nuisance_rank": int(
+                    transform.effective_nuisance_rank
+                ),
+                "input_dimension": int(transform.input_dimension),
+                "output_dimension": int(transform.output_dimension),
+                "variance_floor": float(transform.variance_floor),
+                "variance_floor_count": int(transform.variance_floor_count),
+            }
+        return transformed
+
+    def _prep_X(self, X: np.ndarray) -> np.ndarray:
+        """Apply already fitted feature geometry to raw rows."""
+        prepared = self._normalize_features(X)
+        if self.feature_transform is None:
+            return prepared
+        if self.feature_transform_ is None:
+            raise ValueError("The shared Fisher transform is not fit yet.")
+        return self.feature_transform_.transform(prepared)
 
     @staticmethod
     def _validate_Y(Y: np.ndarray) -> np.ndarray:
@@ -436,6 +833,12 @@ class ContinuousOverlapIndex(BaseEstimator):
         self.target_scale_ = scale
         return (Y - center) / scale
 
+    def _transform_targets(self, Y: np.ndarray) -> np.ndarray:
+        """Apply fitted target scaling without refitting its state."""
+        if self.target_center_ is None or self.target_scale_ is None:
+            raise ValueError("This ContinuousOverlapIndex instance is not fit yet.")
+        return (Y - self.target_center_) / self.target_scale_
+
     def _build_target_cells(self, Y_scaled: np.ndarray) -> np.ndarray:
         """Build target-space pseudo-labels."""
         self.is_multivariate_target_ = Y_scaled.shape[1] > 1
@@ -450,8 +853,19 @@ class ContinuousOverlapIndex(BaseEstimator):
 
         n_cells = self._resolve_n_target_cells(Y_scaled.shape[0])
         if cover == "quantile":
-            return self._quantile_target_cells(Y_scaled[:, 0], n_cells)
-        return self._kmeans_target_cells(Y_scaled, n_cells)
+            quantiles = np.linspace(0.0, 1.0, n_cells + 1)
+            edges = np.quantile(Y_scaled[:, 0], quantiles)
+            self.target_cell_edges_ = np.unique(edges[1:-1])
+            self.target_cover_model_ = None
+            return np.searchsorted(
+                self.target_cell_edges_,
+                Y_scaled[:, 0],
+                side="right",
+            ).astype(int, copy=False)
+        labels, model = self._fit_kmeans_target_cells(Y_scaled, n_cells)
+        self.target_cover_model_ = model
+        self.target_cell_edges_ = None
+        return labels
 
     def _resolve_n_target_cells(self, n_samples: int) -> int:
         """Resolve the requested number of target cells."""
@@ -477,15 +891,42 @@ class ContinuousOverlapIndex(BaseEstimator):
 
     def _kmeans_target_cells(self, Y_scaled: np.ndarray, n_cells: int) -> np.ndarray:
         """Assign targets to KMeans target cells."""
+        labels, _model = self._fit_kmeans_target_cells(Y_scaled, n_cells)
+        return labels
+
+    def _fit_kmeans_target_cells(
+        self,
+        Y_scaled: np.ndarray,
+        n_cells: int,
+    ) -> Tuple[np.ndarray, KMeans]:
+        """Fit a target-space KMeans cover and return labels plus model."""
         kwargs = {
             "n_init": "auto",
             "random_state": self.random_state,
         }
         kwargs.update(self.target_cover_kwargs or {})
         model = KMeans(n_clusters=n_cells, **kwargs)
-        return model.fit_predict(Y_scaled).astype(int, copy=False)
+        labels = model.fit_predict(Y_scaled).astype(int, copy=False)
+        return labels, model
 
-    def _build_model(self) -> _BaseManyToOneClusteringModel:
+    def _assign_target_cells(self, Y_scaled: np.ndarray) -> np.ndarray:
+        """Assign evaluation targets with the fitted target cover."""
+        if self.target_cover_ == "quantile":
+            if self.target_cell_edges_ is None:
+                raise ValueError("The quantile target cover is not fit yet.")
+            return np.searchsorted(
+                self.target_cell_edges_,
+                Y_scaled[:, 0],
+                side="right",
+            ).astype(int, copy=False)
+        if self.target_cover_model_ is None:
+            raise ValueError("The KMeans target cover is not fit yet.")
+        return self.target_cover_model_.predict(Y_scaled).astype(int, copy=False)
+
+    def _build_model(
+        self,
+        label_distances: Optional[Dict[Tuple[Any, Any], float]] = None,
+    ) -> _BaseManyToOneClusteringModel:
         """Construct the selected offline backend."""
         kmeans_kwargs = dict(self.kmeans_kwargs or {})
         kmeans_kwargs.setdefault("random_state", self.random_state)
@@ -493,6 +934,17 @@ class ContinuousOverlapIndex(BaseEstimator):
             return _KMeansManyToOne(k=self.kmeans_k, kmeans_kwargs=kmeans_kwargs)
         if self.model_type == "MiniBatchKMeans":
             return _MiniBatchKMeansManyToOne(k=self.kmeans_k, kmeans_kwargs=kmeans_kwargs)
+        if self.model_type == "FusedKMeans":
+            kwargs = dict(self.fused_kmeans_kwargs or {})
+            kwargs.setdefault(
+                "random_state",
+                0 if self.random_state is None else self.random_state,
+            )
+            return _FusedKMeansManyToOne(
+                k=self.kmeans_k,
+                fused_kwargs=kwargs,
+                label_distances=label_distances,
+            )
         if self.model_type == "BallCover":
             kwargs = dict(self.ballcover_kwargs or {})
             kwargs.setdefault("random_state", self.random_state)
@@ -504,6 +956,20 @@ class ContinuousOverlapIndex(BaseEstimator):
         raise NotImplementedError(
             "ContinuousOverlapIndex V1 supports only offline backends."
         )
+
+    def _store_backend_diagnostics(self) -> None:
+        """Copy opt-in backend diagnostics onto the estimator."""
+        self.fused_kmeans_diagnostics_ = {"status": "not_applied"}
+        self.feature_weights_ = None
+        if self.model_type != "FusedKMeans":
+            return
+        self.fused_kmeans_diagnostics_ = {
+            "status": "applied",
+            **self._model.fused_diagnostics,
+        }
+        weights = np.array(self._model.feature_weights, dtype=np.float64, copy=True)
+        weights.setflags(write=False)
+        self.feature_weights_ = weights
 
     def _store_training_targets(
         self,
@@ -518,6 +984,37 @@ class ContinuousOverlapIndex(BaseEstimator):
         self.target_distance_ = self._resolve_target_distance(Y.shape[1])
         if self.target_distance_ == "sliced_wasserstein":
             self.target_directions_ = self._make_projection_directions(Y.shape[1])
+
+    def _target_cell_distances(
+        self,
+        Y_scaled: np.ndarray,
+        target_cell_ids: np.ndarray,
+    ) -> Optional[Dict[Tuple[Any, Any], float]]:
+        """Return target-distribution distances for continuous relevance.
+
+        The mapping is supplied only to FusedKMeans. Its relevance estimator
+        then averages feature margins across all competing target cells while
+        giving more weight to cells with more incompatible target values.
+        """
+        if self.model_type != "FusedKMeans":
+            return None
+        kwargs = dict(self.fused_kmeans_kwargs or {})
+        if not bool(kwargs.get("relevance_weighting", True)):
+            return None
+        labels = tuple(np.unique(target_cell_ids).tolist())
+        values = {
+            label: Y_scaled[target_cell_ids == label]
+            for label in labels
+        }
+        distances: Dict[Tuple[Any, Any], float] = {}
+        for position, source in enumerate(labels):
+            for target in labels[position + 1:]:
+                distance = float(
+                    self._target_distance(values[source], values[target])
+                )
+                distances[(source, target)] = distance
+                distances[(target, source)] = distance
+        return distances
 
     def _resolve_target_distance(self, n_targets: int) -> str:
         """Resolve auto target distance."""
@@ -684,6 +1181,8 @@ class ContinuousOverlapIndex(BaseEstimator):
         """Resolve the null estimation mode for the current fit."""
         if self.null_mode != "auto":
             return str(self.null_mode)
+        if self._uses_target_learned_feature_geometry():
+            return "refit_permutation"
         work = int(n_samples) * int(self.n_null_permutations)
         if work >= int(self.auto_null_work_threshold):
             return "fixed_structure_permutation"
@@ -729,13 +1228,22 @@ class ContinuousOverlapIndex(BaseEstimator):
         if np.unique(target_cell_ids).size <= 1:
             return 0.0
 
-        model = self._build_model()
-        model.fit_offline(X, target_cell_ids)
+        X_prepared = self._fit_feature_geometry(
+            X,
+            target_cell_ids,
+            store=False,
+        )
+        label_distances = self._target_cell_distances(
+            Y_scaled,
+            target_cell_ids,
+        )
+        model = self._build_model(label_distances=label_distances)
+        model.fit_offline(X_prepared, target_cell_ids)
         if model.n_clusters_total <= 1:
             return 0.0
 
-        own_proto = model.bmu_for_class_batch(X, target_cell_ids)
-        _, adjacency = self._adjacency_for_model(X, own_proto, model)
+        own_proto = model.bmu_for_class_batch(X_prepared, target_cell_ids)
+        _, adjacency = self._adjacency_for_model(X_prepared, own_proto, model)
         if not adjacency:
             return 0.0
 
