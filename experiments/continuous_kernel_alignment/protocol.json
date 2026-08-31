@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "status": "frozen_exploratory_before_outcomes",
+  "objective": "Test whether a single characteristic-kernel dependence score ranks continuous representations by the frozen best-head envelope without the local-versus-global scale trade-off of fixed neighbor graphs.",
+  "ancestry": {
+    "motivation_experiment": "continuous_multiscale_graph",
+    "motivation_raw_results_sha256": "ca10227cc0c4dcc861e4d176758326de1c6a29778c279c4f62b3a6d9436f2860",
+    "motivation_protocol_sha256": "8d9f9b109b7e86f483e4d7e5c73861c154f9e230740c657dc2af57ca2224364b",
+    "motivation_runner_sha256": "79c8e12d57534770d0e9da41613e328ee92f44855a91f1f2e30c2337099a62cc",
+    "outcome_use": "Prior results motivate only the frozen kernel formulation. Ranking outcomes are recomputed on new seeds."
+  },
+  "seeds": [1601, 1709, 1811],
+  "families": [
+    "linear",
+    "quadratic_product",
+    "radial_quadratic",
+    "absolute_value",
+    "sinusoid",
+    "triangle_wave"
+  ],
+  "candidate_count_per_panel": 16,
+  "rows": {
+    "train": 500,
+    "test": 500,
+    "observed_features": 16,
+    "signal_features": 4
+  },
+  "candidate_grid": {
+    "quality": [0.45, 0.65, 0.80, 0.95],
+    "nuisance_scale": [0.25, 0.75, 1.50, 3.00],
+    "local_family_nuisance_multiplier": 0.20
+  },
+  "reference_heads": {
+    "ids": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "envelope": "Maximum held-out R2 across the four frozen nested-tuned head families.",
+    "linear_probe_comparator": "linear_ridge"
+  },
+  "continuous_oi": {
+    "folds": 4,
+    "target_cells": 8,
+    "prototypes_per_cell": 4,
+    "adjacency": "soft_topk",
+    "top_k": 5,
+    "aggregation": "support_weighted",
+    "geometries": [
+      {"method_id": "rff64_mean8_k4", "geometry": "rff_mean", "rff_components": 64},
+      {"method_id": "save_rffmean_k4", "geometry": "multiview", "blocks": ["save", "rff_mean"]}
+    ]
+  },
+  "shared_execution": {
+    "folds": "One four-fold shuffled KFold partition per panel, shared across every candidate and geometry; random_state equals panel seed.",
+    "fit_seed": "panel seed * 1000 + candidate position * 10 + fold",
+    "common_bank_seed": "2026083101 + panel seed * 100 + fold",
+    "permutations": 32,
+    "training_only": "Geometry transforms, target scaling, and feature/target kernel base bandwidths are fit on training-fold rows only."
+  },
+  "kernel_alignment": {
+    "feature_kernel": "Equal arithmetic mixture of Gaussian RBF Gram matrices in the fitted feature geometry.",
+    "target_kernel": "Equal arithmetic mixture of Gaussian RBF Gram matrices on the training-scaled scalar target.",
+    "bandwidth_multipliers": [0.25, 1.0, 4.0],
+    "base_bandwidth": "Median strictly positive pairwise squared distance on the corresponding training-fold values; deterministic machine-epsilon floor if all distances are zero.",
+    "rbf_formula": "exp(-squared_distance / (2 * multiplier * base_median_squared_distance))",
+    "centering": "Double-center each mixed held-out Gram matrix.",
+    "raw_alignment": "Frobenius inner product of centered feature and target kernels divided by their Frobenius norms.",
+    "null": "Globally permute held-out target-kernel rows and columns on the identical centered feature kernel using the 32-fold common bank.",
+    "score": "clip((raw_alignment - mean_permuted_alignment) / (1 - mean_permuted_alignment), 0, 1)",
+    "eligible_estimand": "null_adjusted_multibandwidth_cka",
+    "diagnostics": [
+      "raw mixed-kernel alignment",
+      "null-adjusted individual feature-bandwidth alignments",
+      "matched current common32 ContinuousOverlapIndex score",
+      "linear-probe ranking"
+    ]
+  },
+  "decision_rule": {
+    "periodic_families": ["sinusoid", "triangle_wave"],
+    "preserve_families": ["linear", "quadratic_product", "radial_quadratic", "absolute_value"],
+    "minimum_mean_periodic_spearman_gain_over_matched_current_oi": 0.10,
+    "maximum_family_spearman_drop_from_matched_current_oi": 0.10,
+    "maximum_mean_regret_increase_over_matched_current_oi": 0.02,
+    "maximum_mean_regret_increase_over_linear_probe": 0.02,
+    "minimum_overall_spearman": 0.60,
+    "maximum_mean_regret": 0.10,
+    "minimum_exact_best_rate": 0.60,
+    "minimum_within_0_01_rate": 0.75,
+    "undefined_spearman": "Any constant selector or undefined panel correlation fails completeness; undefined values are retained as null.",
+    "interpretation": "A geometry passes only if the one eligible null-adjusted mixed-kernel score satisfies every absolute, matched-current-OI, linear-probe-regret, periodic-gain, family-preservation, and completeness condition."
+  },
+  "selection_tie_rule": "Average reference performance across candidates tied for maximum selector value at absolute tolerance 1e-12.",
+  "scope": "Final exploratory unified-statistic diagnostic on a new synthetic seed block. A pass permits broader validation only; it does not authorize public integration."
+}
