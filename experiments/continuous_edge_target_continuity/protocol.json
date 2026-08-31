@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "status": "frozen_exploratory_before_outcomes",
+  "objective": "Test whether fixed-edge pairwise target disagreement provides a correctly directed, stable continuous backbone-ranking score across linear, quadratic, local, and periodic best-head relationships.",
+  "ancestry": {
+    "parent_experiment": "continuous_fixed_structure_null",
+    "parent_raw_results_sha256": "4ce42178560c5cc99dc074ff958520f75434fdd33b3f17a9b436ddc3a883743a",
+    "parent_protocol_sha256": "7df37ac32b4063e01748a3bba1c42744af92cd97c140bc45d45618d4c662fb21",
+    "parent_runner_sha256": "8dec3cb86c3d970d216481f0b778c1f80b3c4c168f2705c70e77e1c41aaa3b9d",
+    "reference_outcomes": "Reuse the exact frozen four-head best-head envelope and current-common32 continuous-OI measurements from the parent artifact.",
+    "fit_replay": "Regenerate the exact panels, common folds, target-aware geometry transforms, FusedKMeans prototypes, and common32 permutation bank; require bit-exact replay of the parent actual Wasserstein loss."
+  },
+  "seeds": [1009, 1103, 1201],
+  "families": [
+    "linear",
+    "quadratic_product",
+    "radial_quadratic",
+    "absolute_value",
+    "sinusoid",
+    "triangle_wave"
+  ],
+  "candidate_count_per_panel": 16,
+  "rows": {
+    "train": 500,
+    "test": 500,
+    "observed_features": 16,
+    "signal_features": 4
+  },
+  "candidate_grid": {
+    "quality": [0.45, 0.65, 0.80, 0.95],
+    "nuisance_scale": [0.25, 0.75, 1.50, 3.00],
+    "local_family_nuisance_multiplier": 0.20
+  },
+  "continuous_oi": {
+    "folds": 4,
+    "target_cells": 8,
+    "prototypes_per_cell": 4,
+    "adjacency": "soft_topk",
+    "top_k": 5,
+    "aggregation": "support_weighted",
+    "geometries": [
+      {"method_id": "save8_k4", "geometry": "save"},
+      {"method_id": "rff64_mean8_k4", "geometry": "rff_mean", "rff_components": 64},
+      {"method_id": "save_rffmean_k4", "geometry": "multiview", "blocks": ["save", "rff_mean"]},
+      {"method_id": "save_rffmean_residual_k4", "geometry": "multiview", "blocks": ["save", "rff_mean", "residual"]}
+    ]
+  },
+  "shared_execution": {
+    "folds": "One four-fold KFold partition per panel, shared across every candidate and geometry; random_state equals panel seed.",
+    "fit_seed": "panel seed * 1000 + candidate position * 10 + fold",
+    "common_bank_seed": "2026083101 + panel seed * 100 + fold",
+    "permutations": 32
+  },
+  "edge_scores": {
+    "row_knn5": {
+      "graph": "Directed Euclidean five-nearest-neighbor graph on transformed held-out feature rows, excluding self.",
+      "tie_rule": "Stable mergesort of squared distances; lower held-out row index wins an exact distance tie.",
+      "actual_loss": "Mean absolute scaled-target difference over all directed row edges.",
+      "null": "Globally permute scaled held-out targets on the identical fixed row edges."
+    },
+    "prototype_cross": {
+      "graph": "Exact actual held-out own-prototype assignments and normalized directed prototype adjacency from the existing scorer.",
+      "actual_loss": "For every directed prototype edge p->q, mean absolute scaled-target difference across all row pairs in supports p and q; aggregate with source-support/N times adjacency weight.",
+      "null": "Globally permute scaled held-out targets while freezing row supports and prototype adjacency, then recompute cross-row absolute differences.",
+      "difference_from_failed_strict_null": "Cross-row expected absolute difference remains positive when endpoint supports receive samples from the same global distribution; Wasserstein between those empirical distributions instead collapses toward zero."
+    }
+  },
+  "normalization": {
+    "permutations": 32,
+    "score": "clip(1 - actual_edge_loss / mean_permuted_edge_loss, 0, 1)",
+    "reported_unbounded_estimand": "negative actual/null loss ratio",
+    "target_scope": "Frozen synthetic panels use a univariate numeric target transformed by the training-fold target scaler."
+  },
+  "primary_metrics": [
+    "full-panel Spearman against the frozen best-head envelope",
+    "selection regret R2",
+    "exact-best and within-0.01 selection rates",
+    "defined bounded-score panel count",
+    "family-specific improvement over current common32 bounded OI",
+    "row-kNN versus prototype-cross agreement"
+  ],
+  "decision_rule": {
+    "baseline": "current common32 bounded continuous OI for the same geometry",
+    "periodic_families": ["sinusoid", "triangle_wave"],
+    "preserve_families": ["linear", "quadratic_product", "radial_quadratic", "absolute_value"],
+    "minimum_mean_periodic_spearman_gain": 0.15,
+    "maximum_preservation_spearman_drop": 0.10,
+    "maximum_mean_regret_increase": 0.02,
+    "minimum_overall_spearman": 0.60,
+    "maximum_mean_regret": 0.10,
+    "minimum_exact_best_rate": 0.60,
+    "minimum_within_0_01_rate": 0.75,
+    "undefined_spearman": "Any constant selector or undefined panel correlation fails completeness; undefined values are never coerced or omitted from eligibility.",
+    "interpretation": "An edge score passes only if all 18 panel correlations are defined, it gains at least 0.15 mean periodic Spearman over the matched current OI, loses at most 0.10 in every nonperiodic family, increases regret by at most 0.02, and meets the absolute overall rho/regret/exact/within thresholds."
+  },
+  "tie_rule": "Average reference performance across candidates tied for maximum selector value at absolute tolerance 1e-12.",
+  "scope": "Exploratory post-outcome mechanism test on exhausted synthetic panels. A pass permits new-seed validation only; it does not authorize public integration or a generalization claim."
+}
