@@ -443,6 +443,10 @@ def _aggregate_metrics(
                 family_rows = [row for row in selected if row["family"] == family]
                 by_family[family] = {
                     "mean_spearman": _mean_defined(row["spearman"] for row in family_rows),
+                    "defined_spearman_panel_count": sum(
+                        row["spearman"] is not None for row in family_rows
+                    ),
+                    "expected_spearman_panel_count": len(family_rows),
                     "mean_regret_r2": float(
                         np.mean([row["selection_regret_r2"] for row in family_rows])
                     ),
@@ -453,6 +457,9 @@ def _aggregate_metrics(
                 }
             result[method_id][estimand] = {
                 "panel_count": len(selected),
+                "defined_spearman_panel_count": sum(
+                    row["spearman"] is not None for row in selected
+                ),
                 "mean_spearman": _mean_defined(row["spearman"] for row in selected),
                 "mean_regret_r2": float(
                     np.mean([row["selection_regret_r2"] for row in selected])
@@ -526,21 +533,35 @@ def _decision(
     for method_id, method in metrics.items():
         current = method["current_common32_oi"]
         strict = method["strict_common32_oi"]
-        periodic_gain = float(
-            np.mean(
-                [
-                    strict["by_family"][family]["mean_spearman"]
-                    - current["by_family"][family]["mean_spearman"]
-                    for family in config["periodic_families"]
-                ]
+        periodic_values = [
+            (
+                strict["by_family"][family]["mean_spearman"],
+                current["by_family"][family]["mean_spearman"],
             )
+            for family in config["periodic_families"]
+        ]
+        periodic_gain = (
+            float(np.mean([left - right for left, right in periodic_values]))
+            if all(left is not None and right is not None for left, right in periodic_values)
+            else None
         )
         checks = [
+            {
+                "criterion": "all_panel_spearman_defined",
+                "observed": int(strict["defined_spearman_panel_count"]),
+                "required": int(strict["panel_count"]),
+                "pass": bool(
+                    strict["defined_spearman_panel_count"] == strict["panel_count"]
+                ),
+            },
             {
                 "criterion": "mean_periodic_spearman_gain",
                 "observed": periodic_gain,
                 "minimum": float(config["minimum_mean_periodic_spearman_gain"]),
-                "pass": bool(periodic_gain >= config["minimum_mean_periodic_spearman_gain"]),
+                "pass": bool(
+                    periodic_gain is not None
+                    and periodic_gain >= config["minimum_mean_periodic_spearman_gain"]
+                ),
             },
             {
                 "criterion": "mean_regret_preservation",
@@ -566,16 +587,23 @@ def _decision(
             },
         ]
         for family in config["preserve_families"]:
-            observed = float(strict["by_family"][family]["mean_spearman"])
-            minimum = float(current["by_family"][family]["mean_spearman"]) - float(
-                config["maximum_preservation_spearman_drop"]
+            observed = strict["by_family"][family]["mean_spearman"]
+            current_value = current["by_family"][family]["mean_spearman"]
+            minimum = (
+                float(current_value) - float(config["maximum_preservation_spearman_drop"])
+                if current_value is not None
+                else None
             )
             checks.append(
                 {
                     "criterion": f"preserve_{family}_spearman",
                     "observed": observed,
                     "minimum": minimum,
-                    "pass": bool(observed >= minimum),
+                    "pass": bool(
+                        observed is not None
+                        and minimum is not None
+                        and observed >= minimum
+                    ),
                 }
             )
         results[method_id] = {

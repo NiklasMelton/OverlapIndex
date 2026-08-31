@@ -145,6 +145,8 @@ def test_decision_requires_periodic_repair_preservation_and_absolute_quality():
 
     def metric(periodic, overall, regret, preserved=0.70):
         return {
+            "panel_count": 18,
+            "defined_spearman_panel_count": 18,
             "mean_spearman": overall,
             "mean_regret_r2": regret,
             "by_family": {
@@ -179,3 +181,40 @@ def test_decision_requires_periodic_repair_preservation_and_absolute_quality():
     decision = run._decision(protocol, failing)
     assert decision["status"] == "fail"
     assert decision["passing_methods"] == []
+
+
+def test_decision_fails_closed_when_strict_bounded_score_is_constant():
+    protocol = run._load_protocol()
+
+    def metric(value, defined):
+        return {
+            "panel_count": 18,
+            "defined_spearman_panel_count": defined,
+            "mean_spearman": value,
+            "mean_regret_r2": 0.05,
+            "by_family": {
+                family: {
+                    "mean_spearman": (
+                        None if family == "triangle_wave" and defined < 18 else value
+                    )
+                }
+                for family in protocol["families"]
+            },
+        }
+
+    metrics = {
+        method_id: {
+            "current_common32_oi": metric(0.70, 18),
+            "strict_common32_oi": metric(0.75, 15),
+        }
+        for method_id in run._method_specs(protocol)
+    }
+
+    decision = run._decision(protocol, metrics)
+
+    assert decision["status"] == "fail"
+    for row in decision["methods"].values():
+        checks = {check["criterion"]: check for check in row["checks"]}
+        assert checks["all_panel_spearman_defined"]["pass"] is False
+        assert checks["mean_periodic_spearman_gain"]["observed"] is None
+        assert checks["mean_periodic_spearman_gain"]["pass"] is False

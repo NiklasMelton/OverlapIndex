@@ -86,6 +86,7 @@
     "maximum_mean_regret_increase": 0.02,
     "minimum_overall_spearman": 0.60,
     "maximum_mean_regret": 0.10,
+    "undefined_spearman": "A constant selector produces null/undefined Spearman and fails the gate; it is never coerced to zero or omitted from completeness.",
     "interpretation": "A method supports the strict null only if strict bounded OI gains at least 0.15 mean Spearman across sinusoid and triangle relative to current common32, loses at most 0.10 in every other family, increases mean regret by at most 0.02, reaches overall Spearman at least 0.60, and mean regret at most 0.10."
   },
   "tie_rule": "Average reference performance across candidates tied for maximum selector value at absolute tolerance 1e-12.",
