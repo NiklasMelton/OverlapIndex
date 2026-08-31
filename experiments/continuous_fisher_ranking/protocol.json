@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "status": "frozen_exploratory_before_outcomes",
+  "objective": "Compare continuous OI geometry variants as rankers of synthetic backbone representations against a held-out best-head regression envelope.",
+  "seeds": [101, 211, 307],
+  "families": [
+    "linear",
+    "quadratic",
+    "periodic",
+    "folded",
+    "heteroscedastic",
+    "correlated_nuisance"
+  ],
+  "rows": {
+    "train": 320,
+    "test": 320,
+    "features": 24
+  },
+  "candidate_specs": [
+    {"candidate_id": "B0", "quality": 0.35, "nuisance_scale": 0.4},
+    {"candidate_id": "B1", "quality": 0.50, "nuisance_scale": 2.5},
+    {"candidate_id": "B2", "quality": 0.62, "nuisance_scale": 0.8},
+    {"candidate_id": "B3", "quality": 0.70, "nuisance_scale": 4.0},
+    {"candidate_id": "B4", "quality": 0.78, "nuisance_scale": 0.5},
+    {"candidate_id": "B5", "quality": 0.84, "nuisance_scale": 2.0},
+    {"candidate_id": "B6", "quality": 0.90, "nuisance_scale": 5.0},
+    {"candidate_id": "B7", "quality": 0.96, "nuisance_scale": 1.0}
+  ],
+  "continuous_oi": {
+    "folds": 5,
+    "null_permutations_per_holdout": 6,
+    "target_cells": 8,
+    "prototypes_per_cell": 4,
+    "adjacency": "soft_topk",
+    "top_k": 5,
+    "aggregation": "support_weighted",
+    "methods": [
+      "legacy_mbk",
+      "fused_raw_no_relevance",
+      "fused_l2_no_relevance",
+      "fused_l2_target_relevance",
+      "fisher0_no_relevance",
+      "fisher0_target_relevance",
+      "fisher8_no_relevance",
+      "fisher8_target_relevance",
+      "fisher16_no_relevance",
+      "fisher16_target_relevance",
+      "fisher_full_no_relevance",
+      "fisher_full_target_relevance"
+    ]
+  },
+  "reference_heads": {
+    "inner_folds": 3,
+    "families": {
+      "linear_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0, 100.0]},
+      "quadratic_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0]},
+      "knn": {"n_neighbors": [3, 5, 11, 21], "weights": ["distance"]},
+      "rbf_svr": {"C": [1.0, 10.0], "gamma": ["scale", 0.1], "epsilon": [0.05, 0.1]}
+    },
+    "envelope": "maximum held-out R2 across the four frozen head families"
+  },
+  "primary_metrics": [
+    "panel Spearman rank correlation with best-head envelope",
+    "selection regret in held-out R2",
+    "exact-best selection rate",
+    "within-0.01-R2 selection rate",
+    "selector wall time"
+  ],
+  "tie_rule": "Average envelope performance across all candidates tied at absolute tolerance 1e-12 for the maximum selector score.",
+  "scope": "Exploratory synthetic development evidence; no production or generalization claim."
+}
