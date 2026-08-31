@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "status": "frozen_exploratory_before_outcomes",
+  "objective": "Test whether regularized conditional-covariance SAVE geometry, alone or combined with mean contrasts, provides one continuous OI metric that retains linear and nonlinear best-head ranking.",
+  "seeds": [1009, 1103, 1201],
+  "families": [
+    "linear",
+    "quadratic_product",
+    "radial_quadratic",
+    "absolute_value",
+    "sinusoid",
+    "triangle_wave"
+  ],
+  "rows": {
+    "train": 500,
+    "test": 500,
+    "observed_features": 16,
+    "signal_features": 4
+  },
+  "candidate_grid": {
+    "quality": [0.45, 0.65, 0.80, 0.95],
+    "nuisance_scale": [0.25, 0.75, 1.50, 3.00],
+    "local_family_nuisance_multiplier": 0.20
+  },
+  "continuous_oi": {
+    "folds": 4,
+    "null_permutations_per_holdout": 4,
+    "target_cells": 8,
+    "prototypes_per_cell": 4,
+    "residual_rank": 8,
+    "moment_projection_rank": 8,
+    "adjacency": "soft_topk",
+    "top_k": 5,
+    "aggregation": "support_weighted",
+    "methods": [
+      {"method_id": "observed_k4", "geometry": "observed"},
+      {"method_id": "residual8_k4", "geometry": "residual8"},
+      {"method_id": "fisher_full_k4", "geometry": "fisher_full"},
+      {"method_id": "mean8_k4", "geometry": "mean"},
+      {"method_id": "save8_k4", "geometry": "save"},
+      {"method_id": "mean_save8_k4", "geometry": "mean_save"},
+      {"method_id": "oracle_quadratic_lift_k4", "geometry": "oracle_quadratic_lift"}
+    ]
+  },
+  "target_moment_geometry": {
+    "preconditioner": "rank-8 pooled within-target-cell residual scaling and energetic-direction deflation",
+    "global_standardization": "symmetric eigendecomposition whitening with relative floor 1e-6 and absolute floor 1e-12",
+    "mean_moment": "sum_h p_h mu_h mu_h^T in the whitened residual space",
+    "save_moment": "sum_h p_h (I - Sigma_h)^2 in the whitened residual space",
+    "combination": "mean and SAVE moment matrices are independently trace-normalized and added with fixed equal weight",
+    "projection": "top positive eigenvectors, capped at rank 8, with deterministic column signs",
+    "leakage": "all cells, scaling, covariance, whitening, and projection state are fitted within each cross-fit training fold"
+  },
+  "reference_heads": {
+    "inner_folds": 3,
+    "families": {
+      "linear_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0, 100.0]},
+      "quadratic_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0]},
+      "knn": {"n_neighbors": [3, 5, 9, 15, 31], "weights": ["distance"]},
+      "rbf_svr": {"C": [1.0, 10.0, 100.0], "gamma": ["scale", 0.03, 0.1, 0.3], "epsilon": [0.05, 0.1]}
+    },
+    "envelope": "maximum held-out R2 across the four frozen heads on observed features"
+  },
+  "reference_performance_gate": {
+    "minimum_panel_best_r2": {
+      "linear": 0.50,
+      "quadratic_product": 0.50,
+      "radial_quadratic": 0.50,
+      "absolute_value": 0.50,
+      "sinusoid": 0.40,
+      "triangle_wave": 0.30
+    },
+    "minimum_unique_wins": {
+      "quadratic_ridge": 24,
+      "knn_or_rbf_svr": 16
+    },
+    "interpretation": "Aggregate claims require every per-panel performance floor and both nonlinear-head win counts to pass."
+  },
+  "axis_metrics": {
+    "quality_at_fixed_nuisance": "Primary monotonic ranking estimand within each nuisance level.",
+    "nuisance_at_fixed_quality": "Secondary sensitivity estimand within each quality level."
+  },
+  "primary_contrasts": [
+    "SAVE versus residual-only",
+    "mean-plus-SAVE versus mean-only and SAVE-only",
+    "mean-plus-SAVE versus full Fisher, observed OI, and the linear probe",
+    "mean-plus-SAVE versus the privileged quadratic-lift ceiling"
+  ],
+  "primary_metrics": [
+    "panel and fixed-nuisance quality Spearman with the best-head envelope",
+    "selection regret R2",
+    "exact-best and within-0.01 selection rates",
+    "negative actual-loss and negative loss-ratio Spearman",
+    "selector wall time"
+  ],
+  "tie_rule": "Average envelope performance across candidates tied at absolute tolerance 1e-12 for the maximum selector score.",
+  "scope": "Exploratory synthetic development evidence; no production or generalization claim."
+}
