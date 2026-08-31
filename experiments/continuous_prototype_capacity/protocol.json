@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "status": "frozen_exploratory_before_outcomes",
+  "objective": "Test whether increasing continuous-OI prototypes per target cell from four to eight selectively repairs multi-branch triangle-wave ranking without damaging the other five geometry families.",
+  "ancestry": {
+    "panel_generator": "exact experiments/continuous_save_ranking generator",
+    "reference_heads": "exact experiments/continuous_save_ranking four-head envelope",
+    "adaptation": "motivated by frozen multi-view evidence that triangle wave remained the isolated failure with roughly six inverse branches per target value under k=4; exploratory mechanism test only"
+  },
+  "seeds": [1009, 1103, 1201],
+  "families": [
+    "linear",
+    "quadratic_product",
+    "radial_quadratic",
+    "absolute_value",
+    "sinusoid",
+    "triangle_wave"
+  ],
+  "rows": {
+    "train": 500,
+    "test": 500,
+    "observed_features": 16,
+    "signal_features": 4
+  },
+  "candidate_grid": {
+    "quality": [0.45, 0.65, 0.80, 0.95],
+    "nuisance_scale": [0.25, 0.75, 1.50, 3.00],
+    "local_family_nuisance_multiplier": 0.20
+  },
+  "continuous_oi": {
+    "folds": 4,
+    "null_permutations_per_holdout": 4,
+    "target_cells": 8,
+    "prototype_counts": [4, 8],
+    "residual_rank": 8,
+    "moment_projection_rank": 8,
+    "rff_components": 64,
+    "adjacency": "soft_topk",
+    "top_k": 5,
+    "aggregation": "support_weighted",
+    "methods": [
+      {"method_id": "save8_k4", "geometry": "save", "prototypes_per_cell": 4},
+      {"method_id": "save8_k8", "geometry": "save", "prototypes_per_cell": 8},
+      {"method_id": "rff64_mean8_k4", "geometry": "rff_mean", "rff_components": 64, "prototypes_per_cell": 4},
+      {"method_id": "rff64_mean8_k8", "geometry": "rff_mean", "rff_components": 64, "prototypes_per_cell": 8},
+      {"method_id": "save_rffmean_k4", "geometry": "multiview", "blocks": ["save", "rff_mean"], "prototypes_per_cell": 4},
+      {"method_id": "save_rffmean_k8", "geometry": "multiview", "blocks": ["save", "rff_mean"], "prototypes_per_cell": 8},
+      {"method_id": "save_rffmean_residual_k4", "geometry": "multiview", "blocks": ["save", "rff_mean", "residual"], "prototypes_per_cell": 4},
+      {"method_id": "save_rffmean_residual_k8", "geometry": "multiview", "blocks": ["save", "rff_mean", "residual"], "prototypes_per_cell": 8}
+    ]
+  },
+  "prototype_capacity": {
+    "backend": "exact FusedKMeans configuration from the parent multi-view experiment",
+    "only_changed_parameter": "kmeans_k, from 4 to 8 prototypes per target cell",
+    "minimum_samples_per_prototype": 5,
+    "expected_training_rows_per_target_cell": "approximately 46 or 47 in each four-fold training split, allowing all eight prototypes to resolve",
+    "diagnostics": [
+      "configured and resolved prototypes per target cell",
+      "total and occupied prototypes",
+      "empty prototypes after Lloyd and after final training assignment",
+      "minimum, median, maximum, mean, and total training support",
+      "selector runtime"
+    ],
+    "leakage": "geometry and prototypes are fitted within each cross-fit training fold; holdout rows are transform/score only"
+  },
+  "reference_heads": {
+    "inner_folds": 3,
+    "families": {
+      "linear_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0, 100.0]},
+      "quadratic_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0]},
+      "knn": {"n_neighbors": [3, 5, 9, 15, 31], "weights": ["distance"]},
+      "rbf_svr": {"C": [1.0, 10.0, 100.0], "gamma": ["scale", 0.03, 0.1, 0.3], "epsilon": [0.05, 0.1]}
+    },
+    "envelope": "maximum held-out R2 across the four frozen heads on observed features"
+  },
+  "reference_performance_gate": {
+    "minimum_panel_best_r2": {
+      "linear": 0.50,
+      "quadratic_product": 0.50,
+      "radial_quadratic": 0.50,
+      "absolute_value": 0.50,
+      "sinusoid": 0.40,
+      "triangle_wave": 0.30
+    },
+    "minimum_unique_wins": {
+      "quadratic_ridge": 24,
+      "knn_or_rbf_svr": 16
+    },
+    "interpretation": "Aggregate claims require every per-panel performance floor and both nonlinear-head win counts to pass."
+  },
+  "capacity_gate": {
+    "pairs": [
+      {"k4_method_id": "save8_k4", "k8_method_id": "save8_k8"},
+      {"k4_method_id": "rff64_mean8_k4", "k8_method_id": "rff64_mean8_k8"},
+      {"k4_method_id": "save_rffmean_k4", "k8_method_id": "save_rffmean_k8"},
+      {"k4_method_id": "save_rffmean_residual_k4", "k8_method_id": "save_rffmean_residual_k8"}
+    ],
+    "minimum_triangle_spearman_improvement": 0.30,
+    "maximum_family_spearman_drop": 0.10,
+    "maximum_overall_spearman_drop": 0.02,
+    "maximum_mean_regret_increase": 0.02,
+    "preserve_families": ["linear", "quadratic_product", "radial_quadratic", "absolute_value", "sinusoid"],
+    "resolution_requirement": "all eight prototypes must resolve in every target cell and fold",
+    "interpretation": "A pair passes only if k=8 improves triangle rho by at least 0.30, loses at most 0.10 rho in each other family, loses at most 0.02 overall rho, increases mean regret by at most 0.02, and resolves all eight prototypes everywhere."
+  },
+  "success_gate": {
+    "baseline_method_id": "save8_k4",
+    "candidate_method_ids": ["save8_k8", "rff64_mean8_k8", "save_rffmean_k8", "save_rffmean_residual_k8"],
+    "maximum_mean_regret_increase": 0.02,
+    "preserve_families": ["linear", "quadratic_product", "radial_quadratic", "absolute_value"],
+    "maximum_preservation_drop": 0.10,
+    "minimum_periodic_improvement": {
+      "sinusoid": 0.20,
+      "triangle_wave": 0.15
+    },
+    "overall_requirement": "The unchanged universal gate compares each k=8 method with SAVE k=4: overall Spearman at least SAVE, regret no more than 0.02 worse, first/second-moment families lose at most 0.10, sinusoid gains at least 0.20, and triangle gains at least 0.15."
+  },
+  "axis_metrics": {
+    "quality_at_fixed_nuisance": "Primary monotonic ranking estimand within each nuisance level.",
+    "nuisance_at_fixed_quality": "Secondary sensitivity estimand within each quality level."
+  },
+  "primary_metrics": [
+    "paired family and overall Spearman differences between k=8 and k=4",
+    "selection regret R2",
+    "exact-best and within-0.01 selection rates",
+    "prototype occupancy and support",
+    "selector wall time"
+  ],
+  "tie_rule": "Average envelope performance across candidates tied at absolute tolerance 1e-12 for the maximum selector score.",
+  "scope": "Exploratory synthetic development evidence on previously observed panel families; no production, confirmation, or generalization claim."
+}
