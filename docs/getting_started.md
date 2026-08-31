@@ -88,9 +88,12 @@ constant.
 
 ## Preprocessing
 
-The package validates input but does not apply a general-purpose feature
-scaler. Normalize features consistently before comparing representations;
-distance-based backends are sensitive to relative feature scale.
+The package validates input but existing backends do not apply a
+general-purpose feature scaler. Normalize features consistently before
+comparing representations; distance-based backends are sensitive to relative
+feature scale. The opt-in `FusedKMeans` ranking path can apply row-L2
+normalization and a train-only shared-Fisher transform internally; see
+{doc}`backends/fused_kmeans`.
 
 - Offline backends consume features directly. They do not complement-code
   them or require the `[0, 1]` interval.
@@ -111,6 +114,7 @@ split before transforming an evaluation split.
 | `score()` | `float` | Return the stored score without refitting. |
 | `score(X, y)` | `float` | Fresh fit on `X, y`, then return the score. |
 | `score_fixed(X, y)` | `float` | Score a complete labeled holdout against fitted offline prototypes without refitting. |
+| `cross_fit_score(X, y, ...)` | `float` | Fit fresh offline clones on stratified folds and average fixed held-out scores. |
 | `add_batch(X, y)` | `float` | Update/refit and immediately return the score. |
 | `partial_fit(X, y)` | `self` | Incremental only for ARTMAP; offline backends refit on this batch. |
 | `add_sample(x, y)` | `float` | Single-sample update for ARTMAP only. |
@@ -133,6 +137,9 @@ When comparing embeddings, layers, or preprocessing choices:
    per-label scores.
 4. Inspect `under_prototyped_labels_` and any multi-label unevaluable
    diagnostics before interpreting the summary.
+
+For backbone ranking with learned preprocessing, use `cross_fit_score` so the
+transform and prototypes do not see their evaluation rows.
 
 Continue with {doc}`concepts` for the scoring mechanics or
 {doc}`backends/index` for backend selection.

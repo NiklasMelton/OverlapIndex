@@ -10,11 +10,12 @@ the same number of features used during fitting.
 | --- | --- | --- | --- |
 | MiniBatchKMeans | Yes | Yes | Finite; scale consistently |
 | KMeans | Yes | Yes | Finite; scale consistently |
+| FusedKMeans | Yes | No | Finite; optional internal L2/shared Fisher |
 | BallCover | Yes | No | Finite; scale consistently |
 | Fuzzy ARTMAP | Yes | No | Must be in `[0, 1]` |
 | Hypersphere ARTMAP | Yes | No | Must be in `[0, 1]` |
 
-Sparse inputs are normalized to CSR internally and remain sparse through
+For KMeans and MiniBatchKMeans, sparse inputs are normalized to CSR internally and remain sparse through
 fitting, slicing, prediction, multi-label expansion, and chunked scoring. The
 centroid and bounded score blocks are dense.
 

@@ -9,6 +9,8 @@ The implementation supports multiple swappable clustering backends:
 
 - **Fuzzy ARTMAP** and **Hypersphere ARTMAP** for incremental / online updates.
 - **KMeans** and **MiniBatchKMeans** for offline centroid-based analysis.
+- **FusedKMeans** for opt-in, class-batched embedding ranking with train-only
+  shared-Fisher preprocessing.
 - **BallCover** for offline greedy landmark-ball covers, useful when the goal is to preserve class-support geometry for downstream shape or topology analysis.
 
 ---
@@ -70,7 +72,7 @@ The index is computed incrementally by tracking shared cluster activations betwe
 
 - **Incremental and Offline Modes**  
   ARTMAP backends support streaming updates via `add_sample` and mini-batch updates via `add_batch`.
-  Offline backends such as `KMeans`, `MiniBatchKMeans`, and `BallCover` support batch computation through `add_batch`.
+  Offline backends such as `KMeans`, `MiniBatchKMeans`, `FusedKMeans`, and `BallCover` support batch computation through `add_batch`.
 
 - **Label-Aware**  
   Can be applied both to labeled raw data and to intermediate representations (e.g., neural network activations).
@@ -149,7 +151,9 @@ The Overlap Index can be used in several settings:
   resolved mode as the strings `"none"` or `"balanced_median"`.
 - Normalize input features before fitting. Examples in this repository use `MinMaxScaler` for convenience.
 - ART backends complement-code inputs internally and therefore require features in the `[0, 1]` interval.
-- Offline backends (`KMeans`, `MiniBatchKMeans`, and `BallCover`) consume normalized features directly and do not apply complement coding.
+- Offline backends consume features directly and do not apply complement
+  coding. The opt-in FusedKMeans ranking configuration can apply row-L2 and
+  shared-Fisher preprocessing internally.
 - Overlap is estimated by monitoring shared best-matching units (BMUs) or top prototype activations between class pairs.
 - The global OI is computed as the macro mean of per-class minimum pairwise overlap scores, so each observed class contributes equally to `index`.
 - A support-weighted companion score is available through `weighted_index` for workflows that need the score to reflect observed class frequencies.
@@ -271,6 +275,7 @@ For single-sample streams, ARTMAP backends also support `add_sample(x, y)`, whic
 | `partial_fit(X, y)` | `self` | Incremental batch updates for ARTMAP backends; offline backends refit on the provided batch. |
 | `score()` / `score(X, y)` | `float` | Read the current index, or refit on labeled data and return the new score. |
 | `score_fixed(X, y)` | `float` | Score a complete labeled holdout against already fitted offline prototypes without refitting. |
+| `cross_fit_score(X, y, ...)` | `float` | Average stratified held-out scores from fresh offline clones; recommended for backbone ranking. |
 | `predict(X)` | `np.ndarray` | Return the highest-scoring global prototype id for each sample. |
 | `fit_predict(X, y)` | `np.ndarray` | Fit and return per-sample prototype ids. |
 | `add_batch(X, y)` | `float` | Batch update when the current OI score is needed immediately. |
@@ -307,6 +312,7 @@ If a batch is empty or contains only one unique class, `OverlapIndex` emits a
 | `"Hypersphere"` | Online / batch | Incremental Hypersphere ARTMAP backend. Requires the optional `art` extra. |
 | `"KMeans"` | Offline batch only | Fits one scikit-learn `KMeans` model per class. |
 | `"MiniBatchKMeans"` | Offline batch only | Default backend. Fits one scikit-learn `MiniBatchKMeans` model per class; recommended for larger datasets. |
+| `"FusedKMeans"` | Offline batch only | Opt-in fixed-iteration class-batched prototypes with optional relevance weighting and shared Fisher. |
 | `"BallCover"` | Offline batch only | Fits one greedy landmark-ball cover per class. Useful when preserving class-support geometry is important. |
 
 Offline backends should be used with `fit` or `add_batch`. They do not support `add_sample` because their prototypes are fit from a complete labeled batch.
@@ -350,6 +356,31 @@ OI = OverlapIndex(
 OI.fit(X, y)
 score = OI.index
 ```
+
+#### FusedKMeans with shared Fisher
+
+This experimental opt-in path is intended for cross-fitted backbone ranking.
+Existing behavior is unchanged unless its options are selected explicitly.
+
+```python
+OI = OverlapIndex(
+    model_type="FusedKMeans",
+    kmeans_k=10,
+    feature_normalization="l2",
+    feature_transform="shared_fisher",
+    fisher_rank=32,  # nonnegative integer, or "full"
+    fisher_random_state=0,
+    fused_kmeans_kwargs={"random_state": 0},
+)
+
+score = OI.cross_fit_score(X, y, n_splits=5, random_state=0)
+```
+
+Integer Fisher ranks use diagonal within-class scaling plus a randomized
+low-rank correlated-nuisance correction. `fisher_rank="full"` selects the full
+SVD Fisher/LDA transform and can be substantially more expensive on wide
+embeddings. See the FusedKMeans backend guide in the documentation for the
+complete algorithm and configuration.
 
 #### BallCover backend
 
@@ -545,17 +576,37 @@ compare historical COI values directly with scores from this calibration.
 - `r_hat` *(float, Hypersphere ARTMAP only)*  
   Maximum cluster radius for the Hypersphere backend.
 
-- `model_type` *("Fuzzy" | "Hypersphere" | "KMeans" | "MiniBatchKMeans" | "BallCover")*  
+- `model_type` *("Fuzzy" | "Hypersphere" | "KMeans" | "MiniBatchKMeans" | "FusedKMeans" | "BallCover")*
   Clustering backend used to create class-owned prototypes. Defaults to `"MiniBatchKMeans"`.
 
 - `match_tracking` *(str)*  
   Match-tracking strategy used during ARTMAP learning.
 
 - `kmeans_k` *(int or dict)*  
-  Number of clusters per class for `KMeans` and `MiniBatchKMeans` backends.
+  Number of clusters per class for `KMeans` and `MiniBatchKMeans`, or the
+  maximum per-class count for `FusedKMeans`.
 
 - `kmeans_kwargs` *(dict, optional)*  
   Keyword arguments forwarded to the selected scikit-learn KMeans backend.
+
+- `feature_normalization` *(None or "l2", default=None)*
+  Optional row-L2 normalization for offline inputs.
+
+- `feature_transform` *(None or "shared_fisher", default=None)*
+  Optional supervised transform fitted only during training and reused by
+  `score_fixed` and `predict`.
+
+- `fisher_rank` *(nonnegative int or "full", default=32)*
+  Low-rank nuisance correction size (`0` keeps diagonal scaling only), or the
+  full SVD Fisher/LDA transform.
+
+- `fisher_random_state` *(int or None, default=0)*
+  Random seed for the scalable Fisher randomized SVD.
+
+- `fused_kmeans_kwargs` *(dict, optional)*
+  Closed `FusedKMeans` options: `random_state`, `n_iter`,
+  `min_samples_per_prototype`, `relevance_weighting`,
+  `margin_rows_per_class`, and `weight_floor`.
 
 - `ballcover_k` *(int, dict, or "auto")*  
   Number of balls per class, class-specific ball counts, or `"auto"` for greedy fixed-radius covering.
