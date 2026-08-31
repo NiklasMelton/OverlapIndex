@@ -21,7 +21,7 @@ Run with one-thread controls:
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
 VECLIB_MAXIMUM_THREADS=1 NUMEXPR_NUM_THREADS=1 LOKY_MAX_CPU_COUNT=1 \
 CONTINUOUS_OI_COMMIT=$(git rev-parse --short HEAD) \
-python experiments/continuous_residual_ranking/run.py \
+PYTHONPATH=. python experiments/continuous_residual_ranking/run.py \
   --output artifacts/continuous_residual_ranking
 ```
 
