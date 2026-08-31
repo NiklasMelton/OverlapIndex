@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "status": "frozen_exploratory_before_outcomes",
+  "objective": "Determine whether continuous-OI periodic ranking failures arise from a noisy candidate-specific evaluation permutation null or from the null-normalized estimand itself.",
+  "ancestry": {
+    "parent_experiment": "continuous_prototype_capacity",
+    "parent_raw_results_sha256": "811a853635cdc4ccda726a8c2a68e2cbc3cbe83ff044d2c28c9077cf4143d24d",
+    "parent_protocol_sha256": "f5a3e99b0309c22ae9dffde0a894e77fc44896c53bb3616bd1f842f8af2dd9bd",
+    "parent_runner_sha256": "cdfff766c825411b376d8d2a92f3ead6a98e6bd0c9492be88712238ff3b83567",
+    "reference_outcomes": "Copy the exact frozen four-head envelope from the parent raw artifact; do not refit or retune heads.",
+    "generator": "Regenerate the exact parent continuous_save_ranking panels and validate candidate identities against the parent artifact."
+  },
+  "seeds": [1009, 1103, 1201],
+  "families": [
+    "linear",
+    "quadratic_product",
+    "radial_quadratic",
+    "absolute_value",
+    "sinusoid",
+    "triangle_wave"
+  ],
+  "candidate_count_per_panel": 16,
+  "rows": {
+    "train": 500,
+    "test": 500,
+    "observed_features": 16,
+    "signal_features": 4
+  },
+  "candidate_grid": {
+    "quality": [0.45, 0.65, 0.80, 0.95],
+    "nuisance_scale": [0.25, 0.75, 1.50, 3.00],
+    "local_family_nuisance_multiplier": 0.20
+  },
+  "continuous_oi": {
+    "folds": 4,
+    "target_cells": 8,
+    "prototypes_per_cell": 4,
+    "adjacency": "soft_topk",
+    "top_k": 5,
+    "aggregation": "support_weighted",
+    "geometries": [
+      {"method_id": "save8_k4", "geometry": "save"},
+      {"method_id": "rff64_mean8_k4", "geometry": "rff_mean", "rff_components": 64},
+      {"method_id": "save_rffmean_k4", "geometry": "multiview", "blocks": ["save", "rff_mean"]},
+      {"method_id": "save_rffmean_residual_k4", "geometry": "multiview", "blocks": ["save", "rff_mean", "residual"]}
+    ]
+  },
+  "fold_policy": {
+    "policy": "One KFold split per panel, shared exactly across every candidate and geometry.",
+    "n_splits": 4,
+    "shuffle": true,
+    "random_state": "panel seed",
+    "fit_seed": "panel seed * 1000 + candidate position * 10 + fold",
+    "reason": "Common folds isolate null estimation from candidate-dependent evaluation partitions while preserving deterministic candidate fitting."
+  },
+  "null_policies": {
+    "candidate4": {
+      "permutations": 4,
+      "bank": "independent candidate-specific bank seeded by the fit seed",
+      "role": "common-fold analogue of the existing four-permutation policy"
+    },
+    "common4": {
+      "permutations": 4,
+      "bank": "first 4 permutations of the panel-fold common bank"
+    },
+    "common16": {
+      "permutations": 16,
+      "bank": "first 16 permutations of the same panel-fold common bank"
+    },
+    "common32": {
+      "permutations": 32,
+      "bank": "all 32 permutations of the same panel-fold common bank"
+    },
+    "common_bank_seed": "2026083101 + panel seed * 100 + fold",
+    "evaluation_semantics": "All policies permute held-out scaled target values through the same already-fitted target cover, feature geometry, prototypes, and adjacency scorer. No learned state is refit under an evaluation permutation.",
+    "nested_common_bank": true
+  },
+  "ranking_estimands": [
+    "negative_actual_loss",
+    "negative_loss_ratio",
+    "bounded_oi"
+  ],
+  "primary_metrics": [
+    "full-panel Spearman against the frozen best-head envelope",
+    "selection regret R2",
+    "exact-best and within-0.01 selection rates",
+    "per-fold null standard deviation and standard error",
+    "candidate correlation of null loss with actual loss and reference envelope",
+    "candidate4/common4/common16 differences from common32"
+  ],
+  "decision_rule": {
+    "periodic_families": ["sinusoid", "triangle_wave"],
+    "preserve_families": ["linear", "quadratic_product", "radial_quadratic", "absolute_value"],
+    "variance_repair_minimum_periodic_spearman_gain": 0.15,
+    "maximum_preservation_spearman_drop": 0.10,
+    "maximum_regret_increase": 0.02,
+    "estimand_mismatch_minimum_actual_over_common32_periodic_spearman": 0.15,
+    "interpretation": "Variance repair requires common32 bounded OI to improve periodic mean Spearman by at least 0.15 over candidate4, preserve every nonperiodic family within 0.10, and not increase regret by more than 0.02. If no geometry repairs and negative actual loss exceeds common32 bounded OI by at least 0.15 on a periodic family, classify the remaining issue as an estimand mismatch rather than insufficient permutations."
+  },
+  "tie_rule": "Average reference performance across candidates tied for the maximum selector value at absolute tolerance 1e-12.",
+  "scope": "Exploratory post-outcome synthetic mechanism diagnostic on previously observed panel families. It cannot promote a production metric or establish generalization."
+}
