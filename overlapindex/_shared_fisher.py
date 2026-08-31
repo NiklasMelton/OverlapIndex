@@ -236,4 +236,111 @@ def fit_shared_fisher(
     )
 
 
-__all__ = ["FisherRank", "SharedFisherTransform", "fit_shared_fisher"]
+def fit_shared_residual(
+    X: Any,
+    y: Any,
+    *,
+    rank: FisherRank,
+    random_state: int | None,
+) -> SharedFisherTransform:
+    """Fit residual scaling/deflation without a class-contrast projection.
+
+    The train-only centering, pooled within-class diagonal scaling, and
+    energetic residual-direction deflation match the scalable shared-Fisher
+    path. The final basis is the identity, so nonlinear structure is not
+    discarded merely because it is absent from class-mean contrasts.
+    """
+
+    values = np.asarray(X, dtype=np.float32)
+    labels = np.asarray(y)
+    if values.ndim != 2 or values.shape[0] == 0 or values.shape[1] == 0:
+        raise ValueError("shared residual requires a non-empty two-dimensional X")
+    if labels.ndim != 1 or labels.shape[0] != values.shape[0]:
+        raise ValueError("shared residual requires scalar labels aligned with X")
+    if not np.all(np.isfinite(values)):
+        raise ValueError("shared residual requires finite X")
+    if rank != "full" and (type(rank) is not int or rank < 0):
+        raise ValueError("fisher_rank must be a nonnegative int or 'full'")
+    if random_state is not None and (
+        type(random_state) is not int or random_state < 0
+    ):
+        raise ValueError("fisher_random_state must be None or a nonnegative int")
+
+    classes, encoded = _first_observed_encoding(labels)
+    if len(classes) < 2:
+        raise ValueError("shared residual requires at least two classes")
+    counts = np.bincount(encoded, minlength=len(classes)).astype(np.int64)
+    if np.any(counts < 2):
+        raise ValueError("shared residual requires at least two rows per class")
+
+    values64 = values.astype(np.float64)
+    class_means = np.vstack(
+        [
+            np.mean(values64[encoded == position], axis=0)
+            for position in range(len(classes))
+        ]
+    )
+    global_mean = np.mean(values64, axis=0)
+    residual = values64 - class_means[encoded]
+    pooled_variance_raw = np.mean(np.square(residual), axis=0)
+    positive = pooled_variance_raw[pooled_variance_raw > 0.0]
+    reference = float(np.median(positive)) if positive.size else 1.0
+    variance_floor = max(
+        reference * _RELATIVE_VARIANCE_FLOOR,
+        _ABSOLUTE_VARIANCE_FLOOR,
+    )
+    feature_scale = np.reciprocal(
+        np.sqrt(np.maximum(pooled_variance_raw, variance_floor))
+    )
+    standardized_residual = residual * feature_scale[None, :]
+    maximum_rank = min(values.shape[1], len(values) - len(classes))
+    effective_rank = maximum_rank if rank == "full" else min(int(rank), maximum_rank)
+    if effective_rank:
+        if rank == "full":
+            _left, singular, right = np.linalg.svd(
+                standardized_residual,
+                full_matrices=False,
+            )
+            singular = singular[:effective_rank]
+            right = right[:effective_rank]
+        else:
+            _left, singular, right = randomized_svd(
+                standardized_residual,
+                n_components=effective_rank,
+                n_iter=_RANDOMIZED_POWER_ITERATIONS,
+                n_oversamples=_RANDOMIZED_OVERSAMPLES,
+                random_state=random_state,
+                flip_sign=True,
+            )
+        nuisance_vectors = np.asarray(right.T, dtype=np.float64)
+        degrees_of_freedom = max(1, len(values) - len(classes))
+        eigenvalues = np.square(np.asarray(singular, dtype=np.float64)) / float(
+            degrees_of_freedom
+        )
+        nuisance_gains = (
+            np.reciprocal(np.sqrt(np.maximum(eigenvalues, 1.0))) - 1.0
+        )
+    else:
+        nuisance_vectors = np.empty((values.shape[1], 0), dtype=np.float64)
+        nuisance_gains = np.empty(0, dtype=np.float64)
+    basis = np.eye(values.shape[1], dtype=np.float64)
+    return SharedFisherTransform(
+        center=_read_only(global_mean, np.float64),
+        feature_scale=_read_only(feature_scale, np.float64),
+        nuisance_vectors=_read_only(nuisance_vectors, np.float64),
+        nuisance_gains=_read_only(nuisance_gains, np.float64),
+        discriminant_basis=_read_only(basis, np.float64),
+        classes=classes,
+        requested_rank=rank,
+        effective_nuisance_rank=int(effective_rank),
+        variance_floor=float(variance_floor),
+        variance_floor_count=int(np.count_nonzero(pooled_variance_raw < variance_floor)),
+    )
+
+
+__all__ = [
+    "FisherRank",
+    "SharedFisherTransform",
+    "fit_shared_fisher",
+    "fit_shared_residual",
+]

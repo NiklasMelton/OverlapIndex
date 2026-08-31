@@ -382,6 +382,12 @@ SVD Fisher/LDA transform and can be substantially more expensive on wide
 embeddings. See the FusedKMeans backend guide in the documentation for the
 complete algorithm and configuration.
 
+Continuous OI also accepts the experimental
+`feature_transform="shared_residual"` option. It applies train-only pooled
+within-target-cell scaling and residual nuisance deflation, but retains the
+original feature dimension instead of projecting onto target-cell mean
+contrasts. This is useful when predictive structure may be nonlinear.
+
 #### BallCover backend
 
 ```python
@@ -617,9 +623,10 @@ compare historical COI values directly with scores from this calibration.
 - `feature_normalization` *(None or "l2", default=None)*
   Optional row-L2 normalization for offline inputs.
 
-- `feature_transform` *(None or "shared_fisher", default=None)*
+- `feature_transform` *(None, "shared_fisher", or "shared_residual", default=None)*
   Optional supervised transform fitted only during training and reused by
-  `score_fixed` and `predict`.
+  `score_fixed` and `predict`. Continuous OI's residual variant skips the
+  target-cell contrast projection.
 
 - `fisher_rank` *(nonnegative int or "full", default=32)*
   Low-rank nuisance correction size (`0` keeps diagonal scaling only), or the

@@ -59,6 +59,12 @@ deflation. Ranks larger than the available residual dimension are safely capped.
 Fisher is a quality-oriented ceiling and can be substantially more expensive
 on wide embeddings; ranks 16 and 32 are the intended scalable settings.
 
+For continuous targets, `feature_transform="shared_residual"` performs steps
+1--5 but replaces step 6 with the identity basis. Integer ranks use the same
+randomized residual correction; `"full"` uses all available residual singular
+directions. This retains nonlinear metric structure that a target-cell
+mean-contrast projection could discard.
+
 ## Leakage and score interpretation
 
 Calling `fit(X, y)` exposes the in-sample score as `index`, as it does for

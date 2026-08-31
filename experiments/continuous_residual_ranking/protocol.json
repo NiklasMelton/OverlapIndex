@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "status": "frozen_exploratory_before_outcomes",
+  "objective": "Test whether residual-only target-cell scaling and nuisance deflation preserve nonlinear best-head ranking while retaining the nuisance robustness of full Fisher projection.",
+  "seeds": [401, 503, 607],
+  "families": [
+    "linear",
+    "heteroscedastic_linear",
+    "quadratic_product",
+    "radial_quadratic",
+    "sinusoid",
+    "sawtooth",
+    "correlated_nuisance",
+    "rotated_nuisance"
+  ],
+  "family_groups": {
+    "linear_controls": ["linear", "heteroscedastic_linear"],
+    "quadratic": ["quadratic_product", "radial_quadratic"],
+    "local_kernel": ["sinusoid", "sawtooth"],
+    "nuisance_controls": ["correlated_nuisance", "rotated_nuisance"]
+  },
+  "rows": {
+    "train": 400,
+    "test": 400,
+    "features": 16
+  },
+  "candidate_specs": [
+    {"candidate_id": "B0", "quality": 0.40, "nuisance_scale": 0.20},
+    {"candidate_id": "B1", "quality": 0.52, "nuisance_scale": 1.50},
+    {"candidate_id": "B2", "quality": 0.64, "nuisance_scale": 0.40},
+    {"candidate_id": "B3", "quality": 0.72, "nuisance_scale": 2.00},
+    {"candidate_id": "B4", "quality": 0.80, "nuisance_scale": 0.30},
+    {"candidate_id": "B5", "quality": 0.86, "nuisance_scale": 1.20},
+    {"candidate_id": "B6", "quality": 0.92, "nuisance_scale": 2.50},
+    {"candidate_id": "B7", "quality": 0.97, "nuisance_scale": 0.60}
+  ],
+  "continuous_oi": {
+    "folds": 4,
+    "null_permutations_per_holdout": 4,
+    "target_cells": 8,
+    "prototypes_per_cell": 4,
+    "adjacency": "soft_topk",
+    "top_k": 5,
+    "aggregation": "support_weighted",
+    "methods": [
+      "legacy_mbk",
+      "fused_l2_target_relevance",
+      "fisher_full_no_relevance",
+      "fisher_full_target_relevance",
+      "residual0_no_relevance",
+      "residual0_target_relevance",
+      "residual8_no_relevance",
+      "residual8_target_relevance",
+      "residual16_no_relevance",
+      "residual16_target_relevance",
+      "residual_full_no_relevance",
+      "residual_full_target_relevance"
+    ]
+  },
+  "reference_heads": {
+    "inner_folds": 3,
+    "families": {
+      "linear_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0, 100.0]},
+      "quadratic_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0]},
+      "knn": {"n_neighbors": [3, 5, 9, 15, 31], "weights": ["distance"]},
+      "rbf_svr": {"C": [1.0, 10.0, 100.0], "gamma": ["scale", 0.03, 0.1, 0.3], "epsilon": [0.05, 0.1]}
+    },
+    "envelope": "maximum held-out R2 across the four frozen head families"
+  },
+  "head_diversity_gate": {
+    "scope": "192 candidate rows across the complete 24-panel grid",
+    "minimum_unique_wins": {
+      "linear_ridge": 16,
+      "quadratic_ridge": 16,
+      "knn": 8,
+      "rbf_svr": 8
+    },
+    "interpretation": "Overall aggregate ranking is interpreted only if every minimum is met; family-level results remain descriptive otherwise."
+  },
+  "primary_contrasts": [
+    "residual rank zero, rank 8, rank 16, and full residual correction",
+    "target relevance on versus off within each residual rank",
+    "best residual-only method versus full Fisher projection",
+    "best residual-only method versus tuned linear probe and legacy continuous OI"
+  ],
+  "primary_metrics": [
+    "panel Spearman rank correlation with best-head envelope",
+    "selection regret in held-out R2",
+    "exact-best selection rate",
+    "within-0.01-R2 selection rate",
+    "selector wall time"
+  ],
+  "tie_rule": "Average envelope performance across all candidates tied at absolute tolerance 1e-12 for the maximum selector score.",
+  "scope": "Exploratory synthetic development evidence; no production or generalization claim."
+}

@@ -132,6 +132,13 @@ holdout without refitting. Because this geometry is target-learned,
 `null_mode="auto"` resolves to exact refit permutations; the approximate
 fixed-structure null is rejected for this opt-in stack.
 
+Set `feature_transform="shared_residual"` to keep the same train-only
+within-cell scaling and optional nuisance deflation while omitting the final
+target-cell mean-contrast projection. The residual transform preserves the
+input feature dimension and is the safer experimental choice when target
+structure can be quadratic, periodic, or otherwise absent from conditional
+feature means.
+
 ## Continuous behavior gallery
 
 The main synthetic gallery follows three genuinely continuous regression

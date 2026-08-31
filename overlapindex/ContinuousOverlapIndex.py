@@ -32,6 +32,7 @@ from overlapindex._shared_fisher import (
     FisherRank,
     SharedFisherTransform,
     fit_shared_fisher,
+    fit_shared_residual,
 )
 from overlapindex.utils import (
     _validate_feature_matrix,
@@ -99,7 +100,9 @@ class ContinuousOverlapIndex(BaseEstimator):
         *,
         fused_kmeans_kwargs: Optional[dict] = None,
         feature_normalization: Optional[Literal["l2"]] = None,
-        feature_transform: Optional[Literal["shared_fisher"]] = None,
+        feature_transform: Optional[
+            Literal["shared_fisher", "shared_residual"]
+        ] = None,
         fisher_rank: FisherRank = 32,
         fisher_random_state: Optional[int] = None,
     ) -> None:
@@ -147,10 +150,12 @@ class ContinuousOverlapIndex(BaseEstimator):
         feature_normalization : {None, "l2"}, default=None
             Optional stateless row-L2 normalization before feature fitting and
             scoring.
-        feature_transform : {None, "shared_fisher"}, default=None
+        feature_transform : {None, "shared_fisher", "shared_residual"}, default=None
             Optional target-cell shared-Fisher transform. It applies pooled
             within-cell scaling, optional low-rank residual deflation, and a
             target-cell contrast projection learned from training rows only.
+            ``"shared_residual"`` retains the scaling and deflation but skips
+            the contrast projection, preserving the original feature dimension.
         fisher_rank : nonnegative int or "full", default=32
             Rank of the scalable residual correction. ``0`` retains diagonal
             within-cell scaling; ``"full"`` uses the full Fisher solver.
@@ -373,7 +378,10 @@ class ContinuousOverlapIndex(BaseEstimator):
                 updates: Dict[str, Any] = {
                     "random_state": fold_seed,
                 }
-                if estimator.feature_transform == "shared_fisher":
+                if estimator.feature_transform in {
+                    "shared_fisher",
+                    "shared_residual",
+                }:
                     updates["fisher_random_state"] = fold_seed
                 if estimator.model_type in {"KMeans", "MiniBatchKMeans"}:
                     kwargs = dict(estimator.kmeans_kwargs or {})
@@ -638,8 +646,15 @@ class ContinuousOverlapIndex(BaseEstimator):
             )
         if self.feature_normalization not in {None, "l2"}:
             raise ValueError("feature_normalization must be None or 'l2'.")
-        if self.feature_transform not in {None, "shared_fisher"}:
-            raise ValueError("feature_transform must be None or 'shared_fisher'.")
+        if self.feature_transform not in {
+            None,
+            "shared_fisher",
+            "shared_residual",
+        }:
+            raise ValueError(
+                "feature_transform must be None, 'shared_fisher', or "
+                "'shared_residual'."
+            )
         if self.fused_kmeans_kwargs is not None and not isinstance(
             self.fused_kmeans_kwargs,
             dict,
@@ -662,7 +677,7 @@ class ContinuousOverlapIndex(BaseEstimator):
             "FusedKMeans",
         }:
             raise ValueError(
-                "feature_transform='shared_fisher' requires model_type "
+                "a supervised feature_transform requires model_type "
                 "'KMeans', 'MiniBatchKMeans', or 'FusedKMeans'."
             )
         if self._uses_target_learned_feature_geometry() and self.null_mode == (
@@ -705,7 +720,7 @@ class ContinuousOverlapIndex(BaseEstimator):
         if sparse.issparse(X) and self.model_type == "FusedKMeans":
             raise TypeError("model_type='FusedKMeans' requires dense X.")
         if sparse.issparse(X) and self.feature_transform is not None:
-            raise TypeError("feature_transform='shared_fisher' requires dense X.")
+            raise TypeError("a supervised feature_transform requires dense X.")
         if sparse.issparse(X) and self.model_type not in {"KMeans", "MiniBatchKMeans"}:
             raise TypeError(
                 "Sparse X is supported only for model_type='KMeans' and "
@@ -719,7 +734,7 @@ class ContinuousOverlapIndex(BaseEstimator):
 
     def _uses_target_learned_feature_geometry(self) -> bool:
         """Return whether the opt-in feature metric depends on target cells."""
-        if self.feature_transform == "shared_fisher":
+        if self.feature_transform in {"shared_fisher", "shared_residual"}:
             return True
         if self.model_type != "FusedKMeans":
             return False
@@ -763,7 +778,12 @@ class ContinuousOverlapIndex(BaseEstimator):
             if self.fisher_random_state is not None
             else self.random_state
         )
-        transform = fit_shared_fisher(
+        fitter = (
+            fit_shared_fisher
+            if self.feature_transform == "shared_fisher"
+            else fit_shared_residual
+        )
+        transform = fitter(
             normalized,
             target_cell_ids,
             rank=self.fisher_rank,
@@ -774,6 +794,7 @@ class ContinuousOverlapIndex(BaseEstimator):
             self.feature_transform_ = transform
             self.fisher_diagnostics_ = {
                 "status": "applied",
+                "feature_transform": self.feature_transform,
                 "target_semantics": "target_cells",
                 "requested_rank": self.fisher_rank,
                 "effective_nuisance_rank": int(
@@ -792,7 +813,7 @@ class ContinuousOverlapIndex(BaseEstimator):
         if self.feature_transform is None:
             return prepared
         if self.feature_transform_ is None:
-            raise ValueError("The shared Fisher transform is not fit yet.")
+            raise ValueError("The supervised feature transform is not fit yet.")
         return self.feature_transform_.transform(prepared)
 
     @staticmethod

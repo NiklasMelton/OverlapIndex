@@ -8,6 +8,7 @@ import pytest
 
 from overlapindex import ContinuousOverlapIndex
 from overlapindex._fused_kmeans import fit_fused_kmeans
+from overlapindex._shared_fisher import fit_shared_residual
 
 
 continuous_module = importlib.import_module("overlapindex.ContinuousOverlapIndex")
@@ -182,6 +183,43 @@ def test_shared_fisher_is_independent_of_the_fused_backend():
     assert np.isfinite(model.index)
 
 
+@pytest.mark.parametrize("rank", [0, 2, "full"])
+def test_shared_residual_preserves_dimension_and_skips_contrast_projection(rank):
+    X, y = _continuous_data(n=96)
+    labels = np.digitize(y, [-1.25, 0.0, 1.25])
+
+    transform = fit_shared_residual(
+        X,
+        labels,
+        rank=rank,
+        random_state=5,
+    )
+    observed = transform.transform(X)
+
+    assert transform.output_dimension == X.shape[1]
+    np.testing.assert_array_equal(
+        transform.discriminant_basis,
+        np.eye(X.shape[1]),
+    )
+    assert np.linalg.matrix_rank(observed[1:] - observed[:1]) == X.shape[1]
+    assert np.all(np.isfinite(observed))
+
+
+def test_shared_residual_continuous_stack_records_resolved_geometry():
+    X, y = _continuous_data(n=96)
+    model = _recommended(
+        feature_transform="shared_residual",
+        fisher_rank="full",
+        n_null_permutations=1,
+    ).fit(X, y)
+
+    assert model.n_features_out_ == X.shape[1]
+    assert model.fisher_diagnostics_["feature_transform"] == "shared_residual"
+    assert model.feature_transform_.output_dimension == X.shape[1]
+    assert model.null_mode_ == "refit_permutation"
+    assert np.isfinite(model.index)
+
+
 def test_multivariate_target_stack_uses_fitted_cover_and_sliced_distance():
     X, y = _continuous_data(n=100)
     targets = np.column_stack([y, np.sin(y)])
@@ -348,7 +386,12 @@ def test_cross_fitted_stack_orders_clean_noisy_and_random_representations():
         (
             {"model_type": "BallCover", "feature_transform": "shared_fisher"},
             ValueError,
-            "shared_fisher",
+            "supervised feature_transform",
+        ),
+        (
+            {"model_type": "BallCover", "feature_transform": "shared_residual"},
+            ValueError,
+            "supervised feature_transform",
         ),
     ],
 )
