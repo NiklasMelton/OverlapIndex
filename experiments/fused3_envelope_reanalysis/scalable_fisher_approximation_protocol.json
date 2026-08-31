@@ -1,0 +1,98 @@
+{
+  "status": "frozen_post_outcome_before_execution",
+  "study": "fused3_confirmation_v2_scalable_shared_fisher_approximation",
+  "scope": {
+    "evidence_role": "retrospective_development_diagnostic_only",
+    "original_confirmation_decision_unchanged": true,
+    "promotion_or_reselection_allowed": false,
+    "target": "complete_frozen_linear_quadratic_knn_rbf_best_head_envelope"
+  },
+  "fixed_selector": {
+    "aggregation": "exact_oi_second_own_worst_rival_events",
+    "refinement": false,
+    "fused3_capacity": {
+      "budget_32": 5,
+      "budget_64": 10
+    },
+    "post_projection_row_normalization": false
+  },
+  "candidates": [
+    "FUSED3-MEAN-SUBSPACE-OI-U",
+    "FUSED3-DIAG-FISHER-OI-U",
+    "FUSED3-LR16-FISHER-OI-U"
+  ],
+  "shared_moments": {
+    "scope": "outer_training_fold_only",
+    "input": "one_row_l2_normalized_embedding",
+    "class_means": "first_observed_original_scalar_classes",
+    "global_mean": "sample_weighted_rows",
+    "within_class_residual_weighting": "sample_weighted_rows",
+    "variance_floor": "max_1e-6_times_median_positive_pooled_variance_or_1e-12",
+    "output_rank": "min_class_count_minus_one_and_feature_count",
+    "hyperparameter_tuning": false
+  },
+  "approximations": {
+    "mean_only": {
+      "feature_scaling": "identity",
+      "correlated_nuisance_correction": false,
+      "basis": "right_singular_vectors_of_weighted_class_mean_contrasts"
+    },
+    "diagonal": {
+      "feature_scaling": "inverse_sqrt_pooled_within_class_diagonal_variance",
+      "correlated_nuisance_correction": false,
+      "basis": "right_singular_vectors_of_diagonally_whitened_class_mean_contrasts"
+    },
+    "low_rank_16": {
+      "feature_scaling": "inverse_sqrt_pooled_within_class_diagonal_variance",
+      "nuisance_basis": "rank_16_randomized_svd_of_standardized_within_class_residuals",
+      "randomized_power_iterations": 1,
+      "randomized_oversamples": 8,
+      "random_state": "outer_seed_plus_fold",
+      "correction": "inverse_sqrt_deflation_only_for_nuisance_eigenvalues_above_one",
+      "low_variance_amplification": false,
+      "basis": "right_singular_vectors_of_corrected_class_mean_contrasts"
+    }
+  },
+  "comparators": [
+    "immutable_raw_FUSED3",
+    "immutable_LP_FULL",
+    "validated_prior_full_SVD_Fisher_OI_unrefined"
+  ],
+  "grid": {
+    "datasets": 5,
+    "backbones": 10,
+    "replicate_seeds": 5,
+    "budgets_per_class": [
+      32,
+      64
+    ],
+    "outer_folds": 5,
+    "panel_count": 500,
+    "candidate_row_count": 1500,
+    "fold_row_count": 2500
+  },
+  "controls": {
+    "raw_recomputation": "must_match_immutable_FUSED3_score_bit_exactly_on_all_500_panels",
+    "full_fisher_source": "all_manifest_file_hashes_and_confirmation_input_identity_must_match",
+    "state_mutation": "transform_and_selector_states_must_remain_unchanged_during_scoring"
+  },
+  "estimands": {
+    "primary": [
+      "equal_dataset_mean_best_head_envelope_regret_pp",
+      "exact_best_rate",
+      "within_one_pp_rate"
+    ],
+    "secondary": [
+      "mean_spearman",
+      "per_head_regret",
+      "descriptive_runtime_ratio_to_LP_FULL",
+      "descriptive_runtime_ratio_to_full_Fisher"
+    ],
+    "uncertainty": "frozen_hierarchical_dataset_replicate_budget_bootstrap"
+  },
+  "runtime": {
+    "status": "descriptive_separate_run_not_a_product_gate",
+    "includes_shared_moments_transform_FUSED3_fit_and_exact_OI": true,
+    "cache_loading_and_panel_construction_excluded": true
+  }
+}

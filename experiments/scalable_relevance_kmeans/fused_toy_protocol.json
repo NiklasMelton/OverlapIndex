@@ -1,0 +1,50 @@
+{
+  "study": "fused_class_batched_prototype_toy",
+  "status": "frozen_before_ranking_outcomes",
+  "scope": "development-only toy and Food-shaped implementation benchmark",
+  "prior_exploratory_work": "A bounded kernel-only microcheck was used to verify implementation feasibility before this protocol. No selector ranking outcome was inspected.",
+  "prototype_objective": "sum over classes and rows of squared Euclidean distance to the nearest prototype owned by the same class",
+  "initialization": "deterministic per-class sample without replacement using SeedSequence(seed,class_position,class_count,k)",
+  "fixed_lloyd_iterations": 3,
+  "empty_cluster_rule": "retain the previous prototype",
+  "methods": {
+    "current_nolloyd": "float32 current class-wise sklearn MiniBatchKMeans, capped-32 relevance, fast OI scorer, no final weighted Lloyd",
+    "looped_fixed3": "per-class custom three-step full-batch Lloyd, capped-32 relevance, fast OI scorer",
+    "fused_fixed3": "padded class-batched custom three-step full-batch Lloyd, capped-32 relevance, fast OI scorer",
+    "linear_probe": "three-fold LogisticRegression comparator from the frozen diagonal-metric toy"
+  },
+  "correctness_gates": {
+    "fused_vs_looped_centers": "bit exact",
+    "fused_vs_looped_selector_scores": "bit exact",
+    "deterministic_repeats": "bit exact",
+    "class_ownership": "exact"
+  },
+  "ranking_toy": {
+    "generator": "experiments.diagonal_metric_toy.experiment",
+    "scenarios": ["linear_nuisance", "nonlinear_nuisance"],
+    "candidate_ids": ["bb0", "bb1", "bb2", "bb3", "bb4"],
+    "budget_per_class": 128,
+    "seed": 43,
+    "class_count": 6,
+    "feature_count": 96,
+    "k_per_class": 4,
+    "folds": 3,
+    "reference_heads": {
+      "linear_nuisance": "linear_logistic_regression",
+      "nonlinear_nuisance": "knn_5"
+    },
+    "success": "fused regret no more than 1 accuracy point worse than current_nolloyd in each scenario"
+  },
+  "food_shaped_prototype_benchmark": {
+    "class_count": 40,
+    "train_rows_per_class": 64,
+    "k_per_class": 10,
+    "feature_counts": [384, 768, 2048],
+    "seed": 7,
+    "measured_repeats": 7,
+    "warmup_excluded": true,
+    "methods": ["current_sklearn", "looped_fixed3", "fused_fixed3"],
+    "success": "fused_fixed3 median wall time less than current_sklearn at every feature count"
+  },
+  "interpretation": "Passing is evidence to justify a frozen Food-101 screen, not promotion or a public implementation change."
+}

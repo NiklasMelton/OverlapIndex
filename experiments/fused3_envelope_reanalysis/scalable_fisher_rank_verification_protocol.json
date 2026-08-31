@@ -1,0 +1,119 @@
+{
+  "status": "frozen_post_outcome_before_execution",
+  "study": "fused3_confirmation_v2_scalable_fisher_rank_runtime_verification",
+  "scope": {
+    "evidence_role": "retrospective_development_diagnostic_only",
+    "original_confirmation_decision_unchanged": true,
+    "promotion_or_reselection_allowed": false,
+    "target": "verify_low_rank_dimension_and_counterbalanced_runtime_against_LP_FULL"
+  },
+  "fixed_selector": {
+    "aggregation": "exact_oi_second_own_worst_rival_events",
+    "refinement": false,
+    "fused3_capacity": {
+      "budget_32": 5,
+      "budget_64": 10
+    },
+    "post_projection_row_normalization": false
+  },
+  "scheduled_methods": [
+    "LP-FULL",
+    "FUSED3-LR8-FISHER-OI-U",
+    "FUSED3-LR16-FISHER-OI-U",
+    "FUSED3-LR32-FISHER-OI-U"
+  ],
+  "rank_candidates": {
+    "FUSED3-LR8-FISHER-OI-U": 8,
+    "FUSED3-LR16-FISHER-OI-U": 16,
+    "FUSED3-LR32-FISHER-OI-U": 32
+  },
+  "shared_algorithm": {
+    "scope": "outer_training_fold_only",
+    "input": "one_row_l2_normalized_embedding",
+    "global_mean": "sample_weighted_rows",
+    "within_class_residual_weighting": "sample_weighted_rows",
+    "diagonal_scaling": "inverse_sqrt_pooled_within_class_variance",
+    "variance_floor": "max_1e-6_times_median_positive_pooled_variance_or_1e-12",
+    "nuisance_basis": "randomized_svd_of_diagonally_standardized_within_class_residuals",
+    "randomized_power_iterations": 1,
+    "randomized_oversamples": 8,
+    "random_state": "outer_seed_plus_fold",
+    "correction": "inverse_sqrt_deflation_only_for_nuisance_eigenvalues_above_one",
+    "low_variance_amplification": false,
+    "output_basis": "right_singular_vectors_of_corrected_weighted_class_mean_contrasts",
+    "output_rank": "min_class_count_minus_one_and_feature_count",
+    "hyperparameter_tuning": false
+  },
+  "linear_probe": {
+    "recipe": "unchanged_Confirmation_V2_LP_FULL_five_fold_OOF",
+    "normalizer": "l2_inside_each_pipeline_fold",
+    "estimator": "LogisticRegression_C1_max_iter2000_random_state_replicate_seed_n_jobs1"
+  },
+  "grid": {
+    "datasets": 5,
+    "backbones": 10,
+    "replicate_seeds": 5,
+    "budgets_per_class": [
+      32,
+      64
+    ],
+    "outer_folds": 5,
+    "panel_count": 500,
+    "scheduled_method_count": 4,
+    "measured_row_count": 2000,
+    "fold_row_count": 10000
+  },
+  "execution": {
+    "one_thread_environment": [
+      "OMP_NUM_THREADS=1",
+      "OPENBLAS_NUM_THREADS=1",
+      "MKL_NUM_THREADS=1",
+      "VECLIB_MAXIMUM_THREADS=1",
+      "NUMEXPR_NUM_THREADS=1",
+      "LOKY_MAX_CPU_COUNT=1"
+    ],
+    "schedule_seed": 2026083017,
+    "schedule": "hash_seeded_base_rotation_plus_canonical_panel_index_modulo_four",
+    "position_balance": "exactly_125_occurrences_per_method_per_position_on_500_panels",
+    "primary_clock": "outer_wall_and_cpu_around_complete_method_call_after_panel_loading",
+    "cache_and_panel_loading_included": false,
+    "method_required_preprocessing_included": true,
+    "warmups": {
+      "scope": "one_per_dataset_budget_method_on_first_backbone_first_replicate_panel",
+      "count": 40,
+      "excluded_from_all_score_and_runtime_summaries": true,
+      "clock_free_score_must_match_measured_call_exactly": true
+    }
+  },
+  "parity_gates": {
+    "LP_FULL": "all_500_measured_scores_must_match_immutable_Confirmation_V2_scores_bit_exactly",
+    "rank_16": "all_500_measured_scores_must_match_scalable_fisher_approximation_v1_bit_exactly",
+    "state_mutation": "learned_transform_and_FUSED3_state_must_not_change_during_holdout_scoring",
+    "failure_policy": "abort_before_terminal_artifact_on_any_mismatch"
+  },
+  "comparators": [
+    "immutable_raw_FUSED3",
+    "directly_remeasured_LP_FULL",
+    "validated_prior_full_SVD_Fisher_OI_unrefined"
+  ],
+  "estimands": {
+    "primary": [
+      "equal_dataset_mean_best_head_envelope_regret_pp",
+      "exact_best_rate",
+      "within_one_pp_rate"
+    ],
+    "secondary": [
+      "mean_spearman",
+      "per_head_regret",
+      "paired_full_panel_wall_ratio_to_LP_FULL",
+      "paired_per_call_wall_ratio_to_LP_FULL",
+      "paired_CPU_ratios_to_LP_FULL",
+      "rank_16_parity_to_prior_scalable_artifact"
+    ],
+    "uncertainty": "frozen_hierarchical_dataset_replicate_budget_bootstrap_for_regret_only"
+  },
+  "interpretation": {
+    "rank_selection": "descriptive_ablation_not_tuning_or_reselection",
+    "runtime": "counterbalanced_direct_measurement_not_a_confirmation_or_product_gate"
+  }
+}

@@ -91,3 +91,61 @@ PYTHONPATH=. python -m experiments.scalable_relevance_kmeans.speed_analysis \
 
 All outcomes remain retrospective development evidence. No public constructor,
 package export, Vertebrae file, or future confirmation protocol is changed.
+
+## Fused class-batched prototype toy
+
+The follow-up replaces the repeated per-class scikit-learn estimator setup with
+three deterministic full-batch Lloyd steps. It provides both a looped reference
+and a padded class-batched implementation; they must produce bit-identical
+centers and selector scores before timing is interpreted.
+
+```bash
+VECLIB_MAXIMUM_THREADS=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 LOKY_MAX_CPU_COUNT=1 \
+PYTHONPATH=. pytest -q \
+  tests/test_fused_class_prototypes.py \
+  tests/test_fused_prototype_toy.py
+
+VECLIB_MAXIMUM_THREADS=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 LOKY_MAX_CPU_COUNT=1 \
+PYTHONPATH=. python -m experiments.scalable_relevance_kmeans.fused_toy \
+  --output artifacts/scalable_relevance_kmeans/fused_toy_v1
+```
+
+This toy is a design gate for a future Food-101 screen only. Fixed-step Lloyd
+centers are not claimed to be identical to scikit-learn MiniBatchKMeans centers.
+
+## Fixed-Lloyd Food-101 development screen
+
+The separately frozen screen measures four methods on the exact archived
+30-panel development grid: current `NOLLOYD`, looped fixed-step `LOOP3`, fused
+fixed-step `FUSED3`, and a freshly run `LP-FULL`. `LOOP3` and `FUSED3` must be
+numerically identical on every fold. The screen may choose the loop only when
+it is at least five percent faster by pooled median; it never creates a
+dimension- or backbone-specific hybrid.
+
+```bash
+VECLIB_MAXIMUM_THREADS=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 LOKY_MAX_CPU_COUNT=1 \
+PYTHONPATH=. pytest -q \
+  tests/test_fused_class_prototypes.py \
+  tests/test_fused_food_screen.py \
+  tests/test_fused_food_analysis.py
+
+VECLIB_MAXIMUM_THREADS=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 LOKY_MAX_CPU_COUNT=1 \
+PYTHONPATH=. python -m experiments.scalable_relevance_kmeans.fused_food_screen \
+  --output artifacts/scalable_relevance_kmeans/fused_food_screen_v1
+
+# Add --resume only to continue an exact identity-matching interrupted run.
+
+VECLIB_MAXIMUM_THREADS=1 OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 \
+MKL_NUM_THREADS=1 BLIS_NUM_THREADS=1 LOKY_MAX_CPU_COUNT=1 \
+PYTHONPATH=. python -m experiments.scalable_relevance_kmeans.fused_food_analysis \
+  --input artifacts/scalable_relevance_kmeans/fused_food_screen_v1 \
+  --output artifacts/scalable_relevance_kmeans/fused_food_analysis_v1
+```
+
+A passing screen only authorizes design of a separately frozen full replay.
+It is retrospective development evidence, not confirmation or a public API
+change.

@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "study": "supervised_diagonal_metric_toy",
+  "status": "frozen_before_outcomes",
+  "purpose": "Quick development-only test of whether a bounded supervised diagonal metric restores OI ranking under nuisance at competitive runtime.",
+  "frozen_grid": {
+    "scenarios": [
+      "linear_clean",
+      "linear_nuisance",
+      "nonlinear_clean",
+      "nonlinear_nuisance"
+    ],
+    "budgets_per_class": [64, 256],
+    "seeds": [17, 43],
+    "class_count": 6,
+    "feature_count": 96,
+    "candidate_count_per_panel": 5,
+    "fold_count": 3
+  },
+  "methods": {
+    "raw_unrefined": "Direct current OverlapIndex with prototype_refinement=false.",
+    "raw_refined": "Direct current OverlapIndex with prototype_refinement=true.",
+    "diagonal_unrefined": "Train-fold-only supervised diagonal metric then current OverlapIndex with refinement=false.",
+    "diagonal_refined": "The same metric then current OverlapIndex with refinement=true.",
+    "linear_probe": "Three-fold LogisticRegression(C=1, solver=lbfgs, max_iter=1000)."
+  },
+  "diagonal_metric": {
+    "within": "sample-weighted pooled within-class per-feature variance",
+    "between": "sample-weighted variance of class means around the global mean",
+    "relevance": "between/(between+within+epsilon)",
+    "epsilon": "max(mean(within)*1e-6,1e-12)",
+    "raw_floor": 0.05,
+    "normalization": "divide weights by their arithmetic mean",
+    "application": "center by training global mean and multiply by sqrt(weight)",
+    "leakage_control": "fit only on selector training-fold rows and apply unchanged to heldout rows"
+  },
+  "reference_heads": {
+    "linear_scenarios": "LogisticRegression on an independent 256/class reference train bank, evaluated on an independent 512/class test bank.",
+    "nonlinear_scenarios": "5-nearest-neighbor classifier on the same independent reference banks."
+  },
+  "primary_metrics": [
+    "selection_regret_accuracy_points",
+    "spearman_rank_correlation",
+    "exact_best_rate",
+    "within_one_accuracy_point_rate",
+    "paired_end_to_end_wall_ratio_vs_linear_probe"
+  ],
+  "interpretation": {
+    "promotable": false,
+    "runtime_claim": "Toy runtime only; a real-shape timing anchor remains required.",
+    "success_signal": "Diagonal OI is within one point on linear nuisance, retains nonlinear OI ranking, and approaches probe runtime at the larger toy budget."
+  }
+}

@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "study": "one_update_relevance_weighted_kmeans_toy",
+  "status": "frozen_before_outcomes",
+  "purpose": "Test a cheaper K-means-native relevance update that avoids the prior method's second full K-means fit.",
+  "frozen_grid": {
+    "scenarios": [
+      "linear_clean",
+      "linear_nuisance",
+      "nonlinear_clean",
+      "nonlinear_nuisance"
+    ],
+    "budgets_per_class": [64, 256],
+    "seeds": [17, 43],
+    "candidate_count_per_panel": 5
+  },
+  "methods": [
+    "raw_unrefined",
+    "raw_refined",
+    "class_diagonal_refined",
+    "two_stage_prototype_refined",
+    "one_update_relevance",
+    "linear_probe"
+  ],
+  "one_update_formulation": {
+    "initial_fit": "one class-owned MiniBatchKMeans fit with four prototypes per class in raw geometry",
+    "correct_prototype": "nearest prototype owned by the row label",
+    "impostor_prototype": "nearest prototype owned by another label",
+    "feature_margin": "mean[(x-impostor)^2-(x-correct)^2] over training-fold rows",
+    "relevance": "max(feature_margin,0)/(max(feature_margin,0)+mean_correct_residual+epsilon)",
+    "weight_floor": 0.05,
+    "normalization": "divide weights by arithmetic mean",
+    "update": "exactly one within-class weighted reassignment followed by one arithmetic centroid update",
+    "kmeans_fit_count": 1,
+    "heldout": "fixed weighted centers scored with the current strict second-own versus best-target OI event definition",
+    "prototype_refinement": false
+  },
+  "primary_metrics": [
+    "selection_regret_accuracy_points",
+    "spearman_rank_correlation",
+    "within_one_accuracy_point_rate",
+    "paired_end_to_end_wall_ratio_vs_linear_probe"
+  ],
+  "interpretation": {
+    "promotable": false,
+    "success_signal": "Match or improve two-stage nonlinear-nuisance ranking with materially lower runtime while preserving linear-nuisance and nonlinear-clean ranking.",
+    "runtime_claim": "Toy only; a real-shape anchor is required before any runtime conclusion."
+  }
+}

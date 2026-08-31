@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "study": "prototype_margin_diagonal_metric_toy",
+  "status": "frozen_before_outcomes",
+  "purpose": "Test whether local correct-versus-impostor prototype margins identify nonlinear signal that a class-mean diagonal metric cannot see.",
+  "frozen_grid": {
+    "scenarios": [
+      "linear_clean",
+      "linear_nuisance",
+      "nonlinear_clean",
+      "nonlinear_nuisance"
+    ],
+    "budgets_per_class": [64, 256],
+    "seeds": [17, 43],
+    "candidate_count_per_panel": 5
+  },
+  "methods": [
+    "raw_unrefined",
+    "raw_refined",
+    "class_diagonal_refined",
+    "prototype_diagonal_unrefined",
+    "prototype_diagonal_refined",
+    "linear_probe"
+  ],
+  "prototype_margin_metric": {
+    "fit_scope": "selector training fold only",
+    "internal_split": "deterministic stratified 50/50 split; first half fits provisional prototypes and disjoint second half estimates margins",
+    "provisional_backend": "MiniBatchKMeans with four prototypes per class, n_init=1, init=random",
+    "correct_prototype": "nearest provisional prototype owned by the row label under raw Euclidean distance",
+    "impostor_prototype": "nearest provisional prototype owned by another label under raw Euclidean distance",
+    "feature_margin": "mean[(x-impostor)^2-(x-correct)^2] on the disjoint margin half",
+    "positive_margin": "maximum(feature_margin,0)",
+    "relevance": "positive_margin/(positive_margin+mean_correct_prototype_residual+epsilon)",
+    "weight_floor": 0.05,
+    "normalization": "divide weights by arithmetic mean",
+    "final_fit": "refit current OI once on all selector training rows in the learned diagonal metric",
+    "heldout": "apply the frozen metric and score_fixed without refitting"
+  },
+  "primary_metrics": [
+    "selection_regret_accuracy_points",
+    "spearman_rank_correlation",
+    "within_one_accuracy_point_rate",
+    "paired_end_to_end_wall_ratio_vs_linear_probe"
+  ],
+  "interpretation": {
+    "promotable": false,
+    "success_signal": "Prototype metric improves nonlinear-nuisance rank/regret over both raw and class-mean diagonal OI without losing linear-nuisance performance.",
+    "runtime_claim": "Toy only; runtime includes the extra provisional prototype fit."
+  }
+}

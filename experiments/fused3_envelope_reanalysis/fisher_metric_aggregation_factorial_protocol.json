@@ -1,0 +1,105 @@
+{
+  "status": "frozen_post_outcome_before_execution",
+  "study": "fused3_confirmation_v2_fisher_metric_aggregation_refinement_factorial",
+  "scope": {
+    "evidence_role": "retrospective_development_diagnostic_only",
+    "original_confirmation_decision_unchanged": true,
+    "promotion_or_reselection_allowed": false,
+    "target": "complete_frozen_linear_quadratic_knn_rbf_best_head_envelope",
+    "additional_aircraft_lda_knn": "mechanism_evidence_only_not_a_complete_target"
+  },
+  "factorial": {
+    "metric": [
+      "raw_row_l2_embedding",
+      "training_fold_shared_fisher_lda"
+    ],
+    "aggregation": [
+      "exact_oi_second_own_worst_rival_events",
+      "five_fold_oof_nearest_prototype_class_accuracy"
+    ],
+    "refinement": [
+      "off",
+      "one_balanced_median_pass_on"
+    ],
+    "candidate_ids": [
+      "FUSED3-RAW-OI-U",
+      "FUSED3-RAW-ACC-U",
+      "FUSED3-RAW-OI-R",
+      "FUSED3-RAW-ACC-R",
+      "FUSED3-FISHER-OI-U",
+      "FUSED3-FISHER-ACC-U",
+      "FUSED3-FISHER-OI-R",
+      "FUSED3-FISHER-ACC-R"
+    ]
+  },
+  "fisher_metric": {
+    "fit_scope": "outer_training_fold_only",
+    "input": "one_row_l2_normalized_embedding",
+    "implementation": "sklearn_LinearDiscriminantAnalysis",
+    "solver": "svd",
+    "tol": 0.0001,
+    "rank": "maximum_available_min_class_count_minus_one_and_feature_rank",
+    "hyperparameter_tuning": false,
+    "post_projection_row_normalization": false,
+    "class_specific_metric_or_offset": false,
+    "label_encoding": "deterministic_first_observed_integer_encoding_only_inside_lda",
+    "original_labels_preserved_for_fused3_refinement_and_scoring": true,
+    "prototype_fit": "refit_fused3_after_projection"
+  },
+  "refinement": {
+    "implementation": "canonical_balanced_median_one_pass",
+    "space": "same_learned_fused3_weighted_metric_as_scoring",
+    "mutates_unrefined_state": false,
+    "capacity_rule_unchanged": true
+  },
+  "grid": {
+    "datasets": 5,
+    "backbones": 10,
+    "replicate_seeds": 5,
+    "budgets_per_class": [
+      32,
+      64
+    ],
+    "outer_folds": 5,
+    "panel_count": 500,
+    "factorial_cells": 8,
+    "factorial_row_count": 4000,
+    "fold_row_count": 2500,
+    "frozen_k_by_budget": {
+      "32": 5,
+      "64": 10
+    }
+  },
+  "controls": {
+    "raw_unrefined_exact_oi": "must_match_immutable_fused3_score_bit_exactly_for_all_500_panels",
+    "fitted_state": "learned_selector_and_fisher_state_must_not_mutate_during_scoring_or_detached_refinement",
+    "pairing": "all_eight_cells_share_panel_fold_seed_capacity_and_training_rows"
+  },
+  "estimands": {
+    "primary": [
+      "equal_dataset_mean_best_head_envelope_regret_pp",
+      "exact_best_rate",
+      "within_one_pp_rate"
+    ],
+    "secondary": [
+      "mean_spearman",
+      "per_head_regret",
+      "aircraft_dino_minus_openclip_score",
+      "descriptive_runtime_ratio_to_lp"
+    ],
+    "factor_effects": [
+      "metric_simple_effects",
+      "aggregation_simple_effects",
+      "refinement_simple_effects",
+      "metric_by_aggregation_interaction",
+      "three_way_interaction"
+    ],
+    "uncertainty": "frozen_hierarchical_dataset_replicate_budget_bootstrap"
+  },
+  "runtime": {
+    "status": "descriptive_separate_run_not_a_product_gate",
+    "fisher_cells_include_training_fold_fit_and_transform": true,
+    "refined_cells_include_refinement": true,
+    "all_cells_include_fused3_fit_and_selected_aggregation": true
+  }
+}
