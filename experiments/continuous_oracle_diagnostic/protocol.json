@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "status": "frozen_exploratory_before_outcomes",
+  "objective": "Locate whether continuous OI best-head ranking failures arise from nuisance geometry, nonlinear feature representation, insufficient prototype topology, or score normalization.",
+  "seeds": [701, 809, 907],
+  "families": [
+    "linear",
+    "quadratic_product",
+    "radial_quadratic",
+    "sinusoid",
+    "sawtooth"
+  ],
+  "rows": {
+    "train": 400,
+    "test": 400,
+    "observed_features": 16,
+    "signal_features": 4,
+    "sufficient_features": 2
+  },
+  "candidate_grid": {
+    "quality": [0.45, 0.65, 0.80, 0.95],
+    "nuisance_scale": [0.25, 0.75, 1.50, 3.00]
+  },
+  "continuous_oi": {
+    "folds": 4,
+    "null_permutations_per_holdout": 4,
+    "target_cells": 8,
+    "adjacency": "soft_topk",
+    "top_k": 5,
+    "aggregation": "support_weighted",
+    "methods": [
+      {"method_id": "observed_k4", "view": "observed", "prototypes_per_cell": 4},
+      {"method_id": "observed_k8", "view": "observed", "prototypes_per_cell": 8},
+      {"method_id": "oracle_signal_k4", "view": "oracle_signal", "prototypes_per_cell": 4},
+      {"method_id": "oracle_sufficient_k4", "view": "oracle_sufficient", "prototypes_per_cell": 4},
+      {"method_id": "oracle_sufficient_k8", "view": "oracle_sufficient", "prototypes_per_cell": 8},
+      {"method_id": "oracle_quadratic_lift_k4", "view": "oracle_quadratic_lift", "prototypes_per_cell": 4},
+      {"method_id": "oracle_quadratic_lift_k8", "view": "oracle_quadratic_lift", "prototypes_per_cell": 8}
+    ]
+  },
+  "reference_heads": {
+    "inner_folds": 3,
+    "families": {
+      "linear_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0, 100.0]},
+      "quadratic_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0]},
+      "knn": {"n_neighbors": [3, 5, 9, 15, 31], "weights": ["distance"]},
+      "rbf_svr": {"C": [1.0, 10.0, 100.0], "gamma": ["scale", 0.03, 0.1, 0.3], "epsilon": [0.05, 0.1]}
+    },
+    "envelope": "maximum held-out R2 across the four frozen heads on observed features"
+  },
+  "oracle_semantics": {
+    "observed": "Rotated signal plus nuisance; the only practitioner-visible representation.",
+    "oracle_signal": "The four noisy signal channels before nuisance concatenation and rotation.",
+    "oracle_sufficient": "The two noisy primitive signal coordinates before redundant linear expansion.",
+    "oracle_quadratic_lift": "Oracle sufficient coordinates followed by the fixed degree-2 no-bias polynomial map; no target outcomes are used by the map."
+  },
+  "diagnostic_contrasts": {
+    "nuisance_metric": "observed_k4 versus oracle_signal_k4",
+    "redundancy": "oracle_signal_k4 versus oracle_sufficient_k4",
+    "prototype_topology": "k8 versus k4 within observed, sufficient, and lifted views",
+    "nonlinear_representation": "oracle_quadratic_lift versus oracle_sufficient at matched k",
+    "calibration": "Spearman with the best-head envelope for final index, negative actual loss, and negative loss ratio separately"
+  },
+  "axis_metrics": {
+    "quality_at_fixed_nuisance": "Within each nuisance level, rank the four independent signal-quality levels; this is the primary oracle-view estimand.",
+    "nuisance_at_fixed_quality": "Within each signal-quality level, rank nuisance severity; undefined ties are recorded as null rather than zero.",
+    "reported_values": ["Spearman", "selection regret R2"]
+  },
+  "interpretation_rules": [
+    "If oracle signal improves ranking, nuisance geometry is limiting.",
+    "Oracle nuisance-free views are interpreted primarily through quality-at-fixed-nuisance metrics because they deliberately tie nuisance variants at a fixed quality.",
+    "If k8 improves a fixed oracle view, prototype coverage is limiting.",
+    "If quadratic lifting improves a fixed-k oracle view, the linear metric representation is limiting.",
+    "If negative actual loss ranks well but final index does not, null normalization is limiting.",
+    "If oracle lifted k8 remains poor, the OI overlap objective or aggregation is misaligned with the best-head envelope."
+  ],
+  "tie_rule": "Average envelope performance across candidates tied at absolute tolerance 1e-12 for the maximum selector score.",
+  "scope": "Mechanism diagnostic with privileged oracle views; not a deployable ranking result."
+}
