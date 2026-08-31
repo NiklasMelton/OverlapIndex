@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "status": "frozen_exploratory_before_outcomes",
+  "objective": "Test whether one multiscale graph-smoothness statistic can combine fine-scale best-candidate sensitivity with stable full-panel ordering across linear, quadratic, local, and periodic continuous targets.",
+  "ancestry": {
+    "motivation_experiment": "continuous_edge_target_continuity",
+    "motivation_raw_results_sha256": "cbfd4223e43024c47544a497ad58567b387ac09b5d173c3753995fe84c435654",
+    "motivation_protocol_sha256": "67aa543ff73c5a44bf0a5cf603427a09c698ba6d3bb9f29d2c52bc7b9573e90c",
+    "motivation_runner_sha256": "ffc3152209819b397476909309ac607ed234471fcb354ceb02ce336e874ec4f8",
+    "outcome_use": "The prior artifact motivated the fixed formulation only. All ranking outcomes use new panel seeds and are recomputed from frozen generators and heads."
+  },
+  "seeds": [1301, 1409, 1511],
+  "families": [
+    "linear",
+    "quadratic_product",
+    "radial_quadratic",
+    "absolute_value",
+    "sinusoid",
+    "triangle_wave"
+  ],
+  "candidate_count_per_panel": 16,
+  "rows": {
+    "train": 500,
+    "test": 500,
+    "observed_features": 16,
+    "signal_features": 4
+  },
+  "candidate_grid": {
+    "quality": [0.45, 0.65, 0.80, 0.95],
+    "nuisance_scale": [0.25, 0.75, 1.50, 3.00],
+    "local_family_nuisance_multiplier": 0.20
+  },
+  "reference_heads": {
+    "ids": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "envelope": "Maximum held-out R2 across the four frozen nested-tuned head families.",
+    "linear_probe_comparator": "linear_ridge"
+  },
+  "continuous_oi": {
+    "folds": 4,
+    "target_cells": 8,
+    "prototypes_per_cell": 4,
+    "adjacency": "soft_topk",
+    "top_k": 5,
+    "aggregation": "support_weighted",
+    "geometries": [
+      {"method_id": "rff64_mean8_k4", "geometry": "rff_mean", "rff_components": 64},
+      {"method_id": "save_rffmean_k4", "geometry": "multiview", "blocks": ["save", "rff_mean"]}
+    ]
+  },
+  "shared_execution": {
+    "folds": "One four-fold shuffled KFold partition per panel, shared across every candidate and geometry; random_state equals panel seed.",
+    "fit_seed": "panel seed * 1000 + candidate position * 10 + fold",
+    "common_bank_seed": "2026083101 + panel seed * 100 + fold",
+    "permutations": 32,
+    "target_scaling": "Training-fold target scaler fitted by ContinuousOverlapIndex; held-out targets transformed without refit."
+  },
+  "graph": {
+    "scales": [5, 15, 45],
+    "scale_weights": [0.3333333333333333, 0.3333333333333333, 0.3333333333333333],
+    "directed": true,
+    "distance": "Squared Euclidean distance in the fitted held-out geometry.",
+    "neighbor_ties": "Stable row-index order resolves exact distance ties.",
+    "self_tuning_local_scale_k": 15,
+    "self_tuning_weight": "exp(-squared_distance_ij / (sigma_i * sigma_j)), where sigma_i is Euclidean distance to row i's 15th neighbor and a deterministic positive floor handles duplicates.",
+    "formulations": ["uniform_multiscale", "self_tuning_multiscale"]
+  },
+  "score": {
+    "scale_actual_loss": "Weighted mean absolute scaled-target difference over the directed k-neighbor edges.",
+    "scale_null": "Mean loss from 32 global permutations of held-out scaled targets on the identical edges and weights.",
+    "scale_score": "clip(1 - actual_loss / mean_permuted_loss, 0, 1)",
+    "integrated_score": "Fixed weighted arithmetic mean of the three bounded scale scores.",
+    "reported_diagnostics": [
+      "individual-scale bounded scores and ratios",
+      "integrated unbounded mean ratio",
+      "matched current common32 ContinuousOverlapIndex score",
+      "linear-probe ranking"
+    ]
+  },
+  "decision_rule": {
+    "eligible_formulations": ["uniform_multiscale", "self_tuning_multiscale"],
+    "periodic_families": ["sinusoid", "triangle_wave"],
+    "preserve_families": ["linear", "quadratic_product", "radial_quadratic", "absolute_value"],
+    "minimum_mean_periodic_spearman_gain_over_matched_current_oi": 0.10,
+    "maximum_family_spearman_drop_from_matched_current_oi": 0.10,
+    "maximum_mean_regret_increase_over_matched_current_oi": 0.02,
+    "maximum_mean_regret_increase_over_linear_probe": 0.02,
+    "minimum_overall_spearman": 0.60,
+    "maximum_mean_regret": 0.10,
+    "minimum_exact_best_rate": 0.60,
+    "minimum_within_0_01_rate": 0.75,
+    "undefined_spearman": "Any constant selector or undefined panel correlation fails completeness; undefined values are retained as null and never omitted from eligibility.",
+    "interpretation": "A candidate must satisfy every absolute, matched-current-OI, linear-probe-regret, periodic-gain, family-preservation, and completeness condition."
+  },
+  "selection_tie_rule": "Average reference performance across candidates tied for maximum selector value at absolute tolerance 1e-12.",
+  "scope": "Exploratory new-seed synthetic test. A pass permits a separately frozen broader validation only; it does not authorize public integration or a generalization claim."
+}
