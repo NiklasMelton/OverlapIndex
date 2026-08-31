@@ -14,6 +14,7 @@ from overlapindex._prototype_refinement import (
     empty_refinement_summary,
     refinement_method,
 )
+from overlapindex._fused_kmeans import fit_fused_kmeans
 from typing import Literal, Optional, Union, Dict, Any, Sequence, Tuple, Type
 
 
@@ -646,6 +647,193 @@ class _MiniBatchKMeansManyToOne(_BaseCentroidManyToOne):
         }
         kwargs.update(self._model_kwargs)
         return MiniBatchKMeans(n_clusters=n_clusters, **kwargs)
+
+
+class _FusedKMeansManyToOne(_BaseCentroidManyToOne):
+    """Fixed-iteration class-batched K-means with optional relevance weights."""
+
+    _DEFAULTS = {
+        "random_state": 0,
+        "n_iter": 3,
+        "min_samples_per_prototype": 5,
+        "relevance_weighting": True,
+        "margin_rows_per_class": 32,
+        "weight_floor": 0.05,
+    }
+
+    def __init__(
+        self,
+        k: Union[int, Dict[Any, int]] = 8,
+        fused_kwargs: Optional[dict] = None,
+    ) -> None:
+        if fused_kwargs is not None and not isinstance(fused_kwargs, dict):
+            raise TypeError("fused_kmeans_kwargs must be a dict or None.")
+        kwargs = dict(fused_kwargs or {})
+        unknown = sorted(set(kwargs) - set(self._DEFAULTS))
+        if unknown:
+            raise ValueError(f"Unknown FusedKMeans options: {unknown!r}.")
+        resolved = dict(self._DEFAULTS)
+        resolved.update(kwargs)
+        if type(resolved["random_state"]) is not int or resolved["random_state"] < 0:
+            raise ValueError("FusedKMeans random_state must be a nonnegative int.")
+        _validate_positive_integer(resolved["n_iter"], "FusedKMeans n_iter")
+        _validate_positive_integer(
+            resolved["min_samples_per_prototype"],
+            "FusedKMeans min_samples_per_prototype",
+        )
+        _validate_positive_integer(
+            resolved["margin_rows_per_class"],
+            "FusedKMeans margin_rows_per_class",
+        )
+        if type(resolved["relevance_weighting"]) is not bool:
+            raise TypeError("FusedKMeans relevance_weighting must be a bool.")
+        if (
+            type(resolved["weight_floor"]) is not float
+            or not 0.0 < resolved["weight_floor"] <= 1.0
+        ):
+            raise ValueError("FusedKMeans weight_floor must be a float in (0, 1].")
+        super().__init__(
+            k=k,
+            model_kwargs=None,
+            dtype=np.float32,
+            prototype_refinement=False,
+        )
+        self._fused_kwargs = resolved
+        self._feature_weights: Optional[np.ndarray] = None
+        self._scaled_centers: Optional[np.ndarray] = None
+        self._scaled_center_norms: Optional[np.ndarray] = None
+        self._fused_diagnostics: dict[str, Any] = {}
+
+    def fit_offline(self, X: np.ndarray, Y: np.ndarray) -> None:
+        if sparse.issparse(X):
+            raise TypeError("model_type='FusedKMeans' requires dense X.")
+        target = np.asarray(Y)
+        rows_by_class = _group_indices_by_label(target)
+        classes = np.asarray(list(rows_by_class), dtype=object)
+        _validate_class_dictionary_coverage(self._k, classes, "k")
+        fit = fit_fused_kmeans(
+            X,
+            target,
+            k=self._k,
+            random_state=self._fused_kwargs["random_state"],
+            iterations=self._fused_kwargs["n_iter"],
+            min_samples_per_prototype=self._fused_kwargs[
+                "min_samples_per_prototype"
+            ],
+            relevance_weighting=self._fused_kwargs["relevance_weighting"],
+            margin_rows_per_class=self._fused_kwargs["margin_rows_per_class"],
+            weight_floor=self._fused_kwargs["weight_floor"],
+        )
+        self._models = {}
+        self._centers = np.array(fit.centers, dtype=np.float32, copy=True)
+        self._cluster_to_class = np.array(fit.owners, copy=True)
+        self._feature_weights = np.array(
+            fit.feature_weights,
+            dtype=np.float64,
+            copy=True,
+        )
+        scale = np.asarray(np.sqrt(self._feature_weights), dtype=np.float32)
+        self._scaled_centers = self._centers * scale
+        self._scaled_center_norms = np.einsum(
+            "ij,ij->i", self._scaled_centers, self._scaled_centers
+        )
+        self._center_norms = np.einsum("ij,ij->i", self._centers, self._centers)
+        self._class_center_ids = {}
+        self._class_center_id_arrays = {}
+        self._class_to_clusters = defaultdict(set)
+        offset = 0
+        for label in classes:
+            class_k = fit.resolved_k[label]
+            ids = np.arange(offset, offset + class_k, dtype=int)
+            self._class_center_ids[label] = ids.tolist()
+            self._class_center_id_arrays[label] = ids
+            self._class_to_clusters[label].update(ids.tolist())
+            offset += class_k
+        self._prototype_refinement_summary = empty_refinement_summary(
+            "none",
+            prototype_count=int(len(self._centers)),
+        )
+        self._fused_diagnostics = {
+            **fit.diagnostics,
+            "resolved_k": dict(fit.resolved_k),
+            "weight_min": float(np.min(self._feature_weights)),
+            "weight_max": float(np.max(self._feature_weights)),
+        }
+
+    def _check_fit(self) -> None:
+        super()._check_fit()
+        if (
+            self._feature_weights is None
+            or self._scaled_centers is None
+            or self._scaled_center_norms is None
+        ):
+            raise AssertionError("FusedKMeans backend not fit.")
+
+    def _scores_for_ids(self, x: np.ndarray, ids: np.ndarray) -> np.ndarray:
+        self._check_fit()
+        ids = np.asarray(ids, dtype=int)
+        if ids.size == 0:
+            return np.asarray([], dtype=float)
+        query = np.asarray(x, dtype=np.float32) * np.asarray(
+            np.sqrt(self._feature_weights), dtype=np.float32
+        )
+        return query @ self._scaled_centers[ids].T - (
+            self._scaled_center_norms[ids] * np.float32(0.5)
+        )
+
+    def _scores_matrix(
+        self,
+        X: np.ndarray,
+        ids: Optional[Sequence[int]] = None,
+    ) -> np.ndarray:
+        self._check_fit()
+        prepared = self.prepare_score_input(X)
+        return self.score_block_prepared(prepared, ids)
+
+    def prepare_score_input(self, X: np.ndarray) -> np.ndarray:
+        self._check_fit()
+        if sparse.issparse(X):
+            raise TypeError("model_type='FusedKMeans' requires dense X.")
+        values = np.asarray(X, dtype=np.float32)
+        if values.ndim != 2:
+            raise ValueError(f"X must be a 2D array; got shape {values.shape}.")
+        scale = np.asarray(np.sqrt(self._feature_weights), dtype=np.float32)
+        return values * scale
+
+    def score_block_prepared(
+        self,
+        X_prepared: np.ndarray,
+        ids: Optional[Union[Sequence[int], slice]] = None,
+    ) -> np.ndarray:
+        self._check_fit()
+        values = np.asarray(X_prepared, dtype=np.float32)
+        if values.ndim != 2:
+            raise ValueError(
+                f"X_prepared must be a 2D array; got shape {values.shape}."
+            )
+        if ids is None:
+            centers = self._scaled_centers
+            norms = self._scaled_center_norms
+        elif isinstance(ids, slice):
+            centers = self._scaled_centers[ids]
+            norms = self._scaled_center_norms[ids]
+        else:
+            id_array = np.atleast_1d(np.asarray(ids, dtype=int))
+            centers = self._scaled_centers[id_array]
+            norms = self._scaled_center_norms[id_array]
+        scores = np.asarray(values @ centers.T)
+        scores -= norms[None, :] * np.float32(0.5)
+        return scores.astype(np.float32, copy=False)
+
+    @property
+    def feature_weights(self) -> np.ndarray:
+        self._check_fit()
+        return self._feature_weights
+
+    @property
+    def fused_diagnostics(self) -> dict[str, Any]:
+        self._check_fit()
+        return dict(self._fused_diagnostics)
 
 
 # --- BallCover backend ---

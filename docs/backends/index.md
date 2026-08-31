@@ -11,6 +11,7 @@ whether state can be updated incrementally.
 | --- | --- | --- | --- | --- |
 | {doc}`minibatch_kmeans` | Offline/refit | Yes | Yes | Default choice and large batch datasets |
 | {doc}`kmeans` | Offline/refit | Yes | Yes | Smaller datasets where full KMeans is affordable |
+| {doc}`fused_kmeans` | Offline/refit | No | No | Opt-in cross-fitted backbone ranking with shared Fisher |
 | {doc}`ballcover` | Offline/refit | No | Yes | Shape- or support-sensitive geometry |
 | {doc}`fuzzy_artmap` | Incremental | No | No online multi-label path | Streaming bounded features with Fuzzy ART prototypes |
 | {doc}`hypersphere_artmap` | Incremental | No | No online multi-label path | Streaming data with radius-based prototypes |
@@ -22,8 +23,9 @@ using the same backend and settings.
 
 ## Shared requirements
 
-- Validate and normalize features before fitting. The package does not apply a
-  general-purpose scaler.
+- Validate and normalize features before fitting. Existing backends consume
+  features directly by default; the opt-in fused ranking path can apply
+  row-L2 normalization and a train-only shared-Fisher transform.
 - Use at least two useful prototypes per label for a well-resolved top-two
   overlap comparison. Inspect `under_prototyped_labels_` after fitting.
 - `fit(X, y)` always starts a fresh fit. For offline backends,
@@ -41,6 +43,7 @@ using the same backend and settings.
 
 minibatch_kmeans
 kmeans
+fused_kmeans
 ballcover
 fuzzy_artmap
 hypersphere_artmap
