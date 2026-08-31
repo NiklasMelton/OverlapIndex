@@ -1,0 +1,93 @@
+{
+  "schema_version": 1,
+  "status": "frozen_exploratory_before_outcomes",
+  "objective": "Test whether a strict fixed-evaluation-structure target permutation null preserves continuous-OI periodic ranking signal that the current target-reassigned evaluation null removes.",
+  "ancestry": {
+    "parent_experiment": "continuous_null_diagnostic",
+    "parent_raw_results_sha256": "d044251b6c7bec73842315b642498db179b525a85b14efc473914fef331ea6b4",
+    "parent_protocol_sha256": "d08dd3990957c5af66aba4ddbe1afdacf45745d20b90d2305de24f42ccb54716",
+    "parent_runner_sha256": "a5e69b15d536197f442838e3362b777059625743849fbf8e124d3e68de20ba9c",
+    "reference_outcomes": "Reuse the exact frozen best-head envelope and current-null measurements from the parent raw artifact.",
+    "fit_replay": "Regenerate the exact panels, common folds, geometry transforms, prototypes, and 32 panel-common permutations from the parent diagnostic and require bit-exact actual fold loss."
+  },
+  "seeds": [1009, 1103, 1201],
+  "families": [
+    "linear",
+    "quadratic_product",
+    "radial_quadratic",
+    "absolute_value",
+    "sinusoid",
+    "triangle_wave"
+  ],
+  "candidate_count_per_panel": 16,
+  "rows": {
+    "train": 500,
+    "test": 500,
+    "observed_features": 16,
+    "signal_features": 4
+  },
+  "candidate_grid": {
+    "quality": [0.45, 0.65, 0.80, 0.95],
+    "nuisance_scale": [0.25, 0.75, 1.50, 3.00],
+    "local_family_nuisance_multiplier": 0.20
+  },
+  "continuous_oi": {
+    "folds": 4,
+    "target_cells": 8,
+    "prototypes_per_cell": 4,
+    "adjacency": "soft_topk",
+    "top_k": 5,
+    "aggregation": "support_weighted",
+    "geometries": [
+      {"method_id": "save8_k4", "geometry": "save"},
+      {"method_id": "rff64_mean8_k4", "geometry": "rff_mean", "rff_components": 64},
+      {"method_id": "save_rffmean_k4", "geometry": "multiview", "blocks": ["save", "rff_mean"]},
+      {"method_id": "save_rffmean_residual_k4", "geometry": "multiview", "blocks": ["save", "rff_mean", "residual"]}
+    ]
+  },
+  "shared_execution": {
+    "folds": "One KFold split per panel, shared across candidates and geometries; random_state equals panel seed.",
+    "fit_seed": "panel seed * 1000 + candidate position * 10 + fold",
+    "common_bank_seed": "2026083101 + panel seed * 100 + fold",
+    "permutations": 32,
+    "nested_parent_bank": "Use the exact parent common32 bank."
+  },
+  "null_variants": {
+    "current_target_reassigned": {
+      "source": "Exact parent common32 result.",
+      "fixed": ["target scaler", "target-cover boundaries", "feature transform", "prototype centers"],
+      "recomputed_per_permutation": ["target-cell assignment", "own-prototype assignment within the permuted target cell", "held-out prototype adjacency", "prototype target distributions", "supports"]
+    },
+    "strict_fixed_structure": {
+      "fixed_from_actual_holdout": ["scaled feature rows", "target-cell assignment", "own-prototype row assignment", "row indices per prototype", "prototype supports", "prototype adjacency"],
+      "permuted_only": "scaled held-out target values are globally permuted and regrouped using the frozen actual row indices per prototype",
+      "loss": "exact existing support-weighted adjacency Wasserstein loss on the frozen evaluation structure"
+    }
+  },
+  "ranking_estimands": [
+    "negative_actual_loss",
+    "current_common32_loss_ratio",
+    "current_common32_bounded_oi",
+    "strict_common32_loss_ratio",
+    "strict_common32_bounded_oi"
+  ],
+  "primary_metrics": [
+    "full-panel Spearman against the frozen best-head envelope",
+    "selection regret R2",
+    "exact-best and within-0.01 selection rates",
+    "strict-null correlation with actual loss and the reference envelope",
+    "strict versus current null loss and bounded-OI differences"
+  ],
+  "decision_rule": {
+    "periodic_families": ["sinusoid", "triangle_wave"],
+    "preserve_families": ["linear", "quadratic_product", "radial_quadratic", "absolute_value"],
+    "minimum_mean_periodic_spearman_gain": 0.15,
+    "maximum_preservation_spearman_drop": 0.10,
+    "maximum_mean_regret_increase": 0.02,
+    "minimum_overall_spearman": 0.60,
+    "maximum_mean_regret": 0.10,
+    "interpretation": "A method supports the strict null only if strict bounded OI gains at least 0.15 mean Spearman across sinusoid and triangle relative to current common32, loses at most 0.10 in every other family, increases mean regret by at most 0.02, reaches overall Spearman at least 0.60, and mean regret at most 0.10."
+  },
+  "tie_rule": "Average reference performance across candidates tied for maximum selector value at absolute tolerance 1e-12.",
+  "scope": "Exploratory post-outcome mechanism test on exhausted synthetic panels. A pass would justify a new-data validation experiment, not public integration or a generalization claim."
+}
