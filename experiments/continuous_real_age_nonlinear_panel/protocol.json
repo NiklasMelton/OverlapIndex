@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "status": "frozen_controlled_nonlinear_real_image_before_outcomes",
+  "objective": "Test the bounded shared continuous-OI shortlist on a controlled nonlinear scalar target over the same frozen real-image embeddings, so nonlinear reference heads can contribute to the best-head envelope without changing images or backbone candidates.",
+  "scope": "Post-linear-panel developmental stress test. This is not untouched confirmation and cannot establish external-dataset generalization.",
+  "ancestry": {
+    "embedding_manifest_sha256": "ee0554f3892adbf07057b5526328899d4787152628de8c6d72cc4b35f63a3c7a",
+    "linear_panel_summary_sha256": "1663fb1b2ac01b3190767309b2f5ad20c7244055bfbb205d91bc7cd397798cf5",
+    "linear_panel_manifest_sha256": "12b813bde607c05f1c0c912a0ffd8d0bc986c1e44b049ed115996fb7a60b9b79",
+    "linear_panel_protocol_sha256": "d1bf2401ea9da29c1bca4f34de8fcdd2886cba705bdc34770aff7dea39b3a680",
+    "linear_panel_result_commit": "794d9657c1aa6c7564d202b97fef36a111cc2c77"
+  },
+  "dataset": "Exact frozen 1,350-image UTKFace cohort and 16-backbone embedding bank from continuous_real_age_panel",
+  "replicate_seeds": [4103, 4201, 4303, 4409, 4507],
+  "target": {
+    "formula": "abs(age - 44.5) / 44.5",
+    "center": 44.5,
+    "scale": 44.5,
+    "range": [0.011235955056179775, 1.0],
+    "rationale": "A symmetric V-shaped transform around the exact midpoint of the frozen 0-89 age range; chosen before nonlinear outcomes."
+  },
+  "backbones": "Exact ordered 16-backbone roster inherited from the frozen embedding manifest",
+  "preprocessing": "Exact row-L2 plus training-only randomized PCA-32 inherited from the linear real-image panel",
+  "reference_heads": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+  "reference_envelope": "Maximum held-out R2 across the four unchanged nested-tuned head families",
+  "methods": ["broad_rff", "save_rff_current", "bounded_2k", "linear_probe"],
+  "continuous_oi": "Exact shared broad-RFF plus SAVE-RFF evaluator and bounded top-2k five-backbone rule inherited unchanged",
+  "bootstrap": {
+    "resamples": 10000,
+    "seed": 2026090102,
+    "unit": "training cohort with shared evaluation cohort"
+  },
+  "decision_rule": {
+    "primary": "upper95 bounded-minus-linear-probe top-five mean utility regret <= 0",
+    "safety": [
+      "upper95 bounded-minus-linear-probe top-five opportunity regret <= 0.01",
+      "broad top-one opportunity is preserved to absolute tolerance 1e-12",
+      "top-2k retrieval bound is active in every panel",
+      "all 20 panel-method rows are complete and finite"
+    ]
+  }
+}
+
