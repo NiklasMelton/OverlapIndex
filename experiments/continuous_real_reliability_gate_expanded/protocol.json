@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "status": "frozen_expanded_reliability_gate_before_derived_analysis",
+  "scope": "Post-outcome developmental application of the unchanged reliability-gate formulation to four dataset groups and five target families. It is not confirmation and cannot authorize integration.",
+  "ancestry": {
+    "prior_gate_protocol_sha256": "52a41f040d2c5a7f97e24cc44ad3950dec0a8c0da05ca9c66371707eaef1eaa5",
+    "prior_gate_summary_sha256": "e1ac14ce0aa1bc9e6ec47cf7214ca41f0e5f8ff2828a8036f3112c64b6616336",
+    "prior_gate_manifest_sha256": "555be3f6b3db3478be6f3ad10e0100247334222d2a287387aa21eaaa9affa153",
+    "bbox_protocol_sha256": "e3229f3d084cce914209016e10c4106286d8211e7b7b43198165ae40f17571b3",
+    "bbox_raw_results_sha256": "e3d604f28f3160708a9d6158eac4fec1ebc1d18caa74dbc0ee016acd4a06722b",
+    "bbox_manifest_sha256": "722a09c07b6f4118c71a5b7d21c710fcd20dfc4068146794984c0d6714f97fa8"
+  },
+  "dataset_groups": ["utkface", "oxford_pet", "torchvision_gtsrb", "torchvision_fgvc_aircraft"],
+  "target_families": ["utkface_age", "utkface_normalized_absolute_age_deviation", "oxford_pet_foreground_occupancy", "gtsrb_sign_roi_occupancy", "fgvc_aircraft_bbox_occupancy"],
+  "replicate_alignment": "Five replicate positions are paired across all target families; dataset-specific seed values identify the same positions.",
+  "backbones": ["dinov2-small", "deit-tiny", "convnext-tiny", "mobilenetv3-large", "openclip-vit-b-32", "resnet50", "efficientnet-b0", "swin-tiny", "vit-small-16", "densenet121"],
+  "roster_rule": "Restrict every historical and new panel to the exact common ten-backbone intersection before computing features, rankings, or outcomes.",
+  "feature_schema": ["broad_save_spearman", "complete_top5_jaccard", "normalized_broad_top5_margin", "mean_broad_score"],
+  "feature_policy": {"allowed": "OI scores and OI-derived ranks only", "forbidden": ["head scores", "best-head envelope", "linear-probe score", "backbone identity", "dataset identity"]},
+  "candidate_rules": {"broad": "broad_rff", "blend": "fixed alpha=0.50 ordinal Borda over the complete broad top-10 pool"},
+  "gate": {"model": "closed-form ridge regression", "ridge_penalty": 1.0, "intercept_penalized": false, "standardization": "training-group mean and population standard deviation", "target": "broad top-five mean regret minus blend top-five mean regret", "decision": "blend iff predicted benefit > 0; otherwise broad"},
+  "leave_dataset_out": {"unit": "dataset group", "groups": ["utkface", "oxford_pet", "torchvision_gtsrb", "torchvision_fgvc_aircraft"], "shared_dataset_images_never_cross_the_held_out_boundary": true},
+  "methods": ["broad_rff", "bounded_2k", "pool_borda_a050", "lodo_reliability_gate", "oracle_panel_gate", "linear_probe"],
+  "bootstrap": {"unit": "joint replicate position across all five target families", "resamples": 10000, "seed": 2026091201, "interval": "percentile 95%"},
+  "decision": {"primary": "upper95 reliability-gate-minus-broad top-five mean utility regret < 0", "safety": ["upper95 gate-minus-broad top-five opportunity regret <= 0.01", "upper95 gate-minus-broad top-one opportunity regret <= 0.01", "complete finite four-group grid"]},
+  "interpretation": "This tests whether adding independent dataset groups stabilizes the previously frozen OI-only gate. No feature, threshold, alpha, or model hyperparameter may be retuned from the earlier two-group analysis."
+}
+
