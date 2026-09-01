@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "status": "frozen_post_confirmation_diagnostic_before_metrics",
+  "objective": "Determine without refitting whether the predeclared bounded top-2k rule retains the confirmed average top-five shortlist gain while eliminating the family-specific harm of unbounded winner filling.",
+  "input": {
+    "experiment": "continuous_top5_shortlist_confirmation",
+    "implementation_commit": "379785a52addd5519c181840c4a48031b880d708",
+    "raw_results_sha256": "b442e67a13cfb6c701090e5390f5c28a7553654f0520feca5a540520d191605c",
+    "summary_sha256": "aeb73edd8febb12ca03fbb3824d04273076abc0356c190bc2a45ebb281d1afee",
+    "report_sha256": "dca26051a4779143d3c8c379d2f23ff0b98890bea28faf887d180c786b2c8623",
+    "manifest_sha256": "b0f4603f7b1b854abf1b1c27df96d1003906bcd235d0c5c821bbd0a855261886",
+    "protocol_sha256": "c7a8be7a46817a310e86bdbab7ec2bf98621446ae988c2bba5229d01a38b2f72",
+    "required_artifact_status": "completed",
+    "required_decision_status": "fail",
+    "seeds": [2903, 3001, 3109, 3203, 3301],
+    "panel_count": 30
+  },
+  "method_ancestry": {
+    "experiment": "continuous_shortlist_depth_audit",
+    "implementation_commit": "13636e113c1b7761021e5e8b53d278c145e2500d",
+    "protocol_sha256": "2a0a9ec4d331f5eb302b32f4dc8267e2bf7fa7e478d2affe8adf7bf9ae0e677b",
+    "rule_was_frozen_before_confirmation_outcomes": true
+  },
+  "families": [
+    "linear",
+    "quadratic_product",
+    "radial_quadratic",
+    "absolute_value",
+    "sinusoid",
+    "triangle_wave"
+  ],
+  "candidate_count_per_panel": 16,
+  "shortlist_depth": 5,
+  "methods": {
+    "broad_rff": "Pure broad-RFF ranking.",
+    "unbounded_winner_fill": "Preserve the complete broad-RFF winner group and rank every remaining candidate by SAVE+RFF.",
+    "bounded_2k": "Preserve the complete broad-RFF winner group; retrieve complete broad-RFF groups until at least min(2k,16) candidates are retained; rank the remainder of that pool by SAVE+RFF before all outside candidates. At k=5 the nominal retrieval depth is 10."
+  },
+  "ties": {
+    "absolute_tolerance": 1e-12,
+    "retrieval_cutoff": "Include a complete broad-RFF group crossing depth 2k.",
+    "shortlist_cutoff": "Uniformly average all top-k subsets admitted by a rank-group tie."
+  },
+  "bootstrap": {
+    "resamples": 10000,
+    "seed": 2026090501,
+    "unit": "seed panel within equal-weight target family",
+    "pairing": "Every contrast preserves seed and family."
+  },
+  "decision_rule": {
+    "candidate": "bounded_2k",
+    "primary": "upper95 candidate-minus-broad top5 mean utility regret < 0",
+    "safety": [
+      "maximum absolute panel top1 regret difference from broad_rff <= 1e-12",
+      "upper95 candidate-minus-broad top5 opportunity regret <= 0.01",
+      "lower95 candidate-minus-broad top5 material precision >= -0.02",
+      "maximum family-mean candidate-minus-broad top5 mean utility regret <= 0.03",
+      "all 30 panels and 90 panel-method metric rows complete and finite"
+    ],
+    "pass": "Every primary and safety criterion must pass."
+  },
+  "interpretation": "A pass only justifies one new unused-seed confirmation of bounded_2k. This post-outcome diagnostic cannot promote, integrate, tune, or replace the failed unbounded confirmation.",
+  "execution": "No model fit, transform, score, or outcome generation. Reanalyze only the hash-bound stored confirmation panels."
+}
