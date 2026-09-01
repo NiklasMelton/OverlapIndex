@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "status": "frozen_shared_evaluator_benchmark_before_execution",
+  "objective": "Verify that one shared fold pass reproduces the two confirmed bounded-shortlist component scores and materially reduces their combined runtime.",
+  "ancestry": {
+    "confirmation_experiment": "continuous_top5_bounded_confirmation",
+    "confirmation_implementation_commit": "1a90e249b0bfc1f82d3fa77463aa2d83f963bdc3",
+    "confirmation_raw_results_sha256": "9ec90831f321463d25fdddf5b05f173e05e6558119a85a18bd4d147b28662745",
+    "confirmation_summary_sha256": "d42044865080bed8476062545fdf39d532aaa50a26becc4a815d871672f6e6fb",
+    "confirmation_report_sha256": "01ac23c16da6d41d5ab677e803c88d2ae5dd3f03e7b191e69d1f1f35dc6dd929",
+    "confirmation_manifest_sha256": "49c318aea87d7c966d2ebcc27162e16a74d7ebbb498688c6ce183e6304361e7c",
+    "confirmation_protocol_sha256": "53bfab23e96d54ddf29c0d3eab9d20f78483a722c527635cc295ea1cd54b9c36",
+    "required_confirmation_status": "pass"
+  },
+  "benchmark_seed": 3907,
+  "families": [
+    "linear",
+    "quadratic_product",
+    "radial_quadratic",
+    "absolute_value",
+    "sinusoid",
+    "triangle_wave"
+  ],
+  "candidate_count_per_panel": 16,
+  "component_scores": {
+    "broad_rff": "rff64_mean8_k4 null-adjusted kernel-alignment score at feature bandwidth 4.0",
+    "save_rff_current": "save_rffmean_k4 matched common32 ContinuousOverlapIndex score"
+  },
+  "shared_algorithm": [
+    "Construct each train-fold SAVE block once.",
+    "Construct each train-fold RFF-mean block once.",
+    "Concatenate equal-weight row-normalized SAVE and RFF-mean blocks.",
+    "Fit one SAVE+RFF ContinuousOverlapIndex selector per fold.",
+    "Compute the SAVE+RFF current score from that model.",
+    "Reuse its feature-independent fitted target scaling and the retained RFF-mean rows to compute broad-RFF kernel alignment.",
+    "Do not fit the broad-RFF prototype model or compute unused SAVE+RFF kernel alignment."
+  ],
+  "legacy_comparator": "Run the frozen rff64_mean8_k4 and save_rffmean_k4 evaluators independently with identical folds, seeds, permutation banks, and inputs.",
+  "timing": {
+    "clock": "perf_counter outer wall seconds",
+    "warmup": "One legacy and one shared evaluation on the first frozen candidate, excluded from all rows.",
+    "order": "Alternate legacy-first and shared-first by family position plus candidate position.",
+    "unit": "Complete 16-candidate family panel."
+  },
+  "verification": {
+    "score_absolute_tolerance": 1e-12,
+    "rank_groups": "Exact equality for broad, SAVE+RFF, and the bounded top-five rule.",
+    "required_candidate_rows": 96
+  },
+  "speed_gate": {
+    "metric": "median across six families of shared panel wall seconds divided by legacy panel wall seconds",
+    "maximum": 0.75,
+    "interpretation": "At least 25% lower median end-to-end component evaluation time."
+  },
+  "decision": "Pass only if every score/rank check is exact, all 96 rows are complete and finite, and the speed gate passes.",
+  "scope": "Experimental shared-computation validation only. No public API or confirmed ranking formula changes."
+}
