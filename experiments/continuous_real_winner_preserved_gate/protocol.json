@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "status": "frozen_winner_preserved_gate_before_derived_analysis",
+  "scope": "Post-outcome developmental test of a winner-preserving shortlist mode over the frozen four-group common-roster panel. It is not untouched confirmation.",
+  "ancestry": {
+    "expanded_protocol_sha256": "0e17b979ceede91f18447ebf57e7bb7be32e8109ebf1244af4d7cede767452ab",
+    "expanded_summary_sha256": "9e1625fc943c855a05ce9f96d094e3c5a6f26b8c8140d6e357a1746b1cc4495e",
+    "expanded_manifest_sha256": "1ef2d0b494c9b3ac553a992b4cb9eaee73cf466d8e47b583c01bbd13d3f56af4"
+  },
+  "dataset_groups": ["utkface", "oxford_pet", "torchvision_gtsrb", "torchvision_fgvc_aircraft"],
+  "candidate_roster": "Exact common ten-backbone roster inherited from the expanded reliability analysis.",
+  "feature_schema": ["broad_save_spearman", "complete_top5_jaccard", "normalized_broad_top5_margin", "mean_broad_score"],
+  "feature_policy": "Exactly the prior OI-only feature schema; no head, envelope, candidate-identity, or dataset-identity feature.",
+  "alternative": {
+    "id": "winner_preserved_borda_a050",
+    "winner_rule": "Preserve the complete first broad-RFF tie-group exactly and unconditionally.",
+    "fill_rule": "Within the remaining broad top-10 pool, order candidates by an equal weighted average of broad and SAVE ordinal scores.",
+    "outside_pool_rule": "Retain broad ordering; vacuous for the frozen ten-candidate roster.",
+    "alpha": 0.5
+  },
+  "gate": {
+    "model": "closed-form ridge regression",
+    "ridge_penalty": 1.0,
+    "intercept_penalized": false,
+    "standardization": "training-group mean and population standard deviation",
+    "target": "broad top-five mean regret minus winner-preserved alternative top-five mean regret",
+    "decision": "use the winner-preserved alternative iff predicted benefit > 0; otherwise use broad",
+    "leave_dataset_out_unit": "dataset group"
+  },
+  "methods": ["broad_rff", "bounded_2k", "winner_preserved_borda_a050", "lodo_winner_preserved_gate", "oracle_winner_preserved_gate", "pool_borda_a050", "linear_probe"],
+  "bootstrap": {"unit": "joint replicate position across all five target families", "resamples": 10000, "seed": 2026091201, "interval": "percentile 95%"},
+  "decision": {
+    "primary": "upper95 gated-minus-broad top-five mean utility regret < 0",
+    "required_invariants": ["first rank group exactly equals broad in every panel", "top-one metrics equal broad exactly", "upper95 top-five opportunity regret difference <= 0.01", "complete finite grid"]
+  },
+  "interpretation": "A pass supports this formulation as a development candidate for a future untouched continuous target. It does not erase the observed gap to the linear probe."
+}
+
