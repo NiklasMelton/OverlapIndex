@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "status": "frozen_independent_bbox_regression_panels_before_outcomes",
+  "scope": "Two independent natural real-image continuous targets with five disjoint 200-row training cohorts and one shared 200-row evaluation cohort per dataset. This is developmental evidence, not untouched confirmation.",
+  "ancestry": {
+    "registry_sha256": "a6fd86518562cca32851e8ddf2ae0d874b61c32433614ba3ee91a8bbc86861b9",
+    "cohort_sha256": "485135316d576a20309a3cd50d209118f410d1b5f7a73bc629b502f11b5980c5",
+    "input_manifest_sha256": "ee08fbc85c215930c1b81e5c5acce1349008f6b581177a3990b2e6b695bd3f46"
+  },
+  "datasets": {
+    "torchvision_gtsrb": {
+      "family": "gtsrb_sign_roi_occupancy",
+      "target": "inclusive official ROI box area divided by raw image area",
+      "target_sha256": "527c8e67a7bbe6a2f42875f329f9ec6cffa788e55b5ce17bb672d13499e0f491",
+      "cohort_rows_sha256": "93ce045df00013e9f0284c4b792bbe9dc80a4ea27c7a8b55212783e5500eac8f"
+    },
+    "torchvision_fgvc_aircraft": {
+      "family": "fgvc_aircraft_bbox_occupancy",
+      "target": "inclusive official aircraft bounding-box area divided by raw image area",
+      "target_sha256": "0b1f2384d8ee3ebab46f06114e6fd4ec831d8a84ebf1714f04cd3915dad1a117",
+      "cohort_rows_sha256": "6ddee64119a1fcb8f770b58124b2733aa7993608af41f2289b21b10beaafcbae"
+    }
+  },
+  "cohorts": {
+    "target_rank_bins": 10,
+    "training_rows_per_replicate": 200,
+    "evaluation_rows": 200,
+    "training_cohorts_disjoint": true,
+    "official_train_and_test_splits_disjoint": true,
+    "training_bank_seed": 2026091101,
+    "evaluation_seed": 2026091102
+  },
+  "replicate_seeds": [4103, 4201, 4303, 4409, 4507],
+  "backbones": [
+    "dinov2-small",
+    "deit-tiny",
+    "convnext-tiny",
+    "mobilenetv3-large",
+    "openclip-vit-b-32",
+    "resnet50",
+    "efficientnet-b0",
+    "swin-tiny",
+    "vit-small-16",
+    "densenet121"
+  ],
+  "candidate_roster_rule": "Exact common intersection of the prior 16-backbone continuous panels and the outcome-free FUSED3 embedding registry, in the prior continuous-panel order.",
+  "preprocessing": {
+    "row_l2": true,
+    "pca_rank": 32,
+    "pca_fit": "training cohort only",
+    "primitive_block": "two zero columns"
+  },
+  "selectors": {
+    "broad_rff": "rff64_mean8_k4 kernel alignment",
+    "save_rff_current": "save_rffmean_k4 current_common32 from the same shared fold pass",
+    "bounded_2k": "preserve broad winner then rank the broad top-10 pool by SAVE; with ten candidates the pool is complete"
+  },
+  "reference_heads": {
+    "ids": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "recipe": "Unchanged continuous_residual_ranking three-fold training-only grid search and held-out R2",
+    "ranking_target": "maximum held-out R2 across the four frozen head families"
+  },
+  "methods": ["broad_rff", "save_rff_current", "bounded_2k", "linear_probe"],
+  "ties": {"absolute_tolerance": 1e-12, "aggregation": "tie-averaged"},
+  "outcome_policy": "Panel implementation, cohorts, targets, candidate roster, and protocol are frozen before selector or reference-head outcomes are computed."
+}
+
