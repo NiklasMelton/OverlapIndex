@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "status": "frozen_exploratory_before_outcomes",
+  "objective": "Test whether bounded broad-RFF retrieval followed by SAVE+RFF reranking improves a three-backbone continuous shortlist without losing broad-RFF nonlinear candidates.",
+  "ancestry": {
+    "motivation_experiment": "continuous_winner_fill_shortlist",
+    "motivation_implementation_commit": "34123d8efa2daa58af59b9c1cc04f487bc1d8321",
+    "motivation_raw_results_sha256": "5b0ddae20f7a2fc8475349532a0606827a3b81b9091fab0cd08342beec993c56",
+    "motivation_summary_sha256": "75d511df167bf15fd6177f224ae71cd14ca1ad12cdbd3729aa8b4b0aae5c5342",
+    "motivation_report_sha256": "82771280b4ce5c07228392b6cbafd36c9b09fe0ec33809033249b1a0093bb6be",
+    "motivation_protocol_sha256": "81ee8aca8b386db6ae36b0791ea31398c506faebc5ac0053abe7d32792260cc5",
+    "outcome_use": "Prior outcomes define only the bounded-retrieval hypothesis and family-safety gate. Every ranking outcome is recomputed on unused seeds."
+  },
+  "seeds": [2411, 2503, 2609, 2711, 2801],
+  "families": [
+    "linear",
+    "quadratic_product",
+    "radial_quadratic",
+    "absolute_value",
+    "sinusoid",
+    "triangle_wave"
+  ],
+  "candidate_count_per_panel": 16,
+  "rows": {
+    "train": 500,
+    "test": 500,
+    "observed_features": 16,
+    "signal_features": 4
+  },
+  "candidate_grid": {
+    "quality": [0.45, 0.65, 0.80, 0.95],
+    "nuisance_scale": [0.25, 0.75, 1.50, 3.00],
+    "local_family_nuisance_multiplier": 0.20
+  },
+  "reference_heads": {
+    "ids": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "envelope": "Maximum held-out R2 across the four frozen nested-tuned head families.",
+    "linear_probe_comparator": "linear_ridge"
+  },
+  "continuous_oi": {
+    "folds": 4,
+    "target_cells": 8,
+    "prototypes_per_cell": 4,
+    "adjacency": "soft_topk",
+    "top_k": 5,
+    "aggregation": "support_weighted",
+    "geometries": [
+      {"method_id": "rff64_mean8_k4", "geometry": "rff_mean", "rff_components": 64},
+      {"method_id": "save_rffmean_k4", "geometry": "multiview", "blocks": ["save", "rff_mean"]}
+    ]
+  },
+  "shared_execution": {
+    "folds": "One four-fold shuffled KFold partition per panel, shared across every candidate and geometry; random_state equals panel seed.",
+    "fit_seed": "panel seed * 1000 + candidate position * 10 + fold",
+    "common_bank_seed": "2026083101 + panel seed * 100 + fold",
+    "permutations": 32,
+    "training_only": "Geometry transforms, target scaling, and feature/target kernel base bandwidths are fit on training-fold rows only."
+  },
+  "kernel_alignment": {
+    "feature_kernel": "Equal arithmetic mixture of Gaussian RBF Gram matrices in the fitted feature geometry.",
+    "target_kernel": "Equal arithmetic mixture of Gaussian RBF Gram matrices on the training-scaled scalar target.",
+    "bandwidth_multipliers": [0.25, 1.0, 4.0],
+    "base_bandwidth": "Median strictly positive pairwise squared distance on training-fold values.",
+    "rbf_formula": "exp(-squared_distance / (2 * multiplier * base_median_squared_distance))",
+    "centering": "Double-center each held-out Gram matrix.",
+    "score": "clip((raw_alignment - mean_permuted_alignment) / (1 - mean_permuted_alignment), 0, 1)"
+  },
+  "primary_shortlist_size": 3,
+  "broad_retrieval_depth": 6,
+  "bounded_reranker": {
+    "rule": "Preserve the complete maximum broad-RFF rank group. Admit complete broad-RFF rank groups until at least six candidates are in the retrieval pool. Order the remaining retrieved candidates by SAVE+RFF rank groups, then order candidates outside the pool by SAVE+RFF rank groups.",
+    "cutoff_ties": "A broad-RFF rank group crossing retrieval position six is included in full.",
+    "rationale": "Depth six equals twice the frozen three-backbone shortlist size and is fixed independently of new-seed outcomes."
+  },
+  "ranking_methods": {
+    "broad_rff": "rff64_mean8_k4 null-adjusted feature bandwidth 4.0",
+    "save_rff_current": "save_rffmean_k4 matched common32 ContinuousOverlapIndex score",
+    "unbounded_winner_fill": "Complete broad-RFF winner group followed by all remaining candidates in SAVE+RFF order",
+    "bounded6_rerank": "Complete broad-RFF winner group followed by SAVE+RFF reranking inside the broad top-six retrieval pool, then the outside pool",
+    "linear_probe": "linear_ridge held-out R2"
+  },
+  "ranking_ties": {
+    "absolute_tolerance": 1e-12,
+    "pure_methods": "Equal scores form one rank group.",
+    "structured_methods": "Tier boundaries are strict; equal SAVE+RFF scores within a tier form one rank group.",
+    "evaluation": "Uniformly average all top-k subsets admitted by a rank-group tie at the cutoff."
+  },
+  "shortlist_sizes": [1, 2, 3, 5],
+  "material_equivalence_band_r2": 0.01,
+  "bootstrap": {
+    "resamples": 10000,
+    "seed": 2026090201,
+    "unit": "panel within equal-weight target family",
+    "pairing": "All method contrasts preserve the exact panel."
+  },
+  "decision_rule": {
+    "eligible_method": "bounded6_rerank",
+    "primary": [
+      "upper95 bounded6_rerank-minus-broad_rff top3 mean utility regret < 0",
+      "upper95 bounded6_rerank-minus-save_rff_current top3 mean utility regret < 0"
+    ],
+    "safety": [
+      "maximum absolute panel top1 regret difference from broad_rff <= 1e-12",
+      "upper95 bounded6_rerank-minus-broad_rff top3 opportunity regret <= 0.01",
+      "lower95 bounded6_rerank-minus-save_rff_current material pair concordance >= -0.02",
+      "maximum family-mean bounded6_rerank-minus-broad_rff top3 mean utility regret <= 0.03",
+      "all panel Spearman and material concordance values defined"
+    ],
+    "pass": "Every primary and safety criterion must pass."
+  },
+  "runtime": "Descriptive only. Structured methods are conservatively charged the sum of separately evaluated broad-RFF and SAVE+RFF component wall times.",
+  "scope": "New-seed synthetic validation of one fixed bounded shortlist rule. A pass permits shared-computation and real-panel validation only; it does not authorize public integration."
+}

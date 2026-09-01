@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "status": "post_outcome_motivation_only",
+  "source_experiment": "continuous_winner_fill_shortlist",
+  "source_decision": "fail",
+  "source_raw_results_sha256": "5b0ddae20f7a2fc8475349532a0606827a3b81b9091fab0cd08342beec993c56",
+  "source_summary_sha256": "75d511df167bf15fd6177f224ae71cd14ca1ad12cdbd3729aa8b4b0aae5c5342",
+  "source_report_sha256": "82771280b4ce5c07228392b6cbafd36c9b09fe0ec33809033249b1a0093bb6be",
+  "finding": "Unbounded SAVE+RFF filling improved linear and radial-quadratic top-three mean utility but displaced useful broad-RFF periodic candidates.",
+  "fixed_hypothesis": "Retrieve twice the requested shortlist depth with broad RFF, preserve its winner group, and permit SAVE+RFF to rerank only inside that bounded pool."
+}
