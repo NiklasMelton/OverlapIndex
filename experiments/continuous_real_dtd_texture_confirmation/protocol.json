@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "status": "frozen_dtd_texture_new_target_before_outcomes",
+  "scope": "New continuous-target holdout on the previously used DTD image and embedding bank. DTD classification evidence existed before this test; only the texture-gradient target and its rankings are held out.",
+  "ancestry": {
+    "registry_sha256": "a6fd86518562cca32851e8ddf2ae0d874b61c32433614ba3ee91a8bbc86861b9",
+    "cohort_sha256": "6d4731f8766487078765e26922ac3705e81720ee1672cbf8da37e8b2386df5be",
+    "input_manifest_sha256": "257f553678d4394bfc3d3e92e088953f38bada28414cfd018b86382a3e102dfa",
+    "development_protocol_sha256": "2feff731275571403d0aa6839d5cea26e16dc4f1233d2aebffd8883f17040973",
+    "development_summary_sha256": "df62b137828cddd0c3c0b0c23e0d0564f6bcc9f5552cd6dfe94bbeec6af0e39c",
+    "development_manifest_sha256": "8ca9a85e6e400271a077b42cb554d03bb9eb03e3deb256487cf7b0f0be6d2940"
+  },
+  "target": {
+    "dataset_id": "torchvision_dtd",
+    "family": "dtd_texture_gradient_energy",
+    "recipe": "PIL RGB source converted to 8-bit L, bilinear-resized to 224x224, divided by 255, then sqrt(0.5*(mean(horizontal adjacent difference squared)+mean(vertical adjacent difference squared)))",
+    "target_sha256": "c5025624655545952c9ed818f10d39b1992def0b3fcbe2f20c5a41a216d5694d",
+    "cohort_rows_sha256": "01df6c95b037dfe8cc3b2a03b605af912ddc20dc463f4c7195237035e65bd1c9",
+    "source_manifest_sha256": "e9aa6909b7a63d8d91d2ad51c3c6300978446a47ea7a673e4bb7e1a8eb05c789",
+    "embedding_union_sample_ids_sha256": "3730789d7405698f9362f69e6fbdcfbfdd279959e649a0fadac4f1a01c26f277"
+  },
+  "cohorts": {
+    "target_rank_bins": 10,
+    "training_rows_per_replicate": 200,
+    "evaluation_rows": 200,
+    "five_training_cohorts_disjoint": true,
+    "shared_evaluation_cohort": true,
+    "official_training_and_test_splits_disjoint": true,
+    "training_bank_seed": 2026091101,
+    "evaluation_seed": 2026091102
+  },
+  "replicate_seeds": [4103, 4201, 4303, 4409, 4507],
+  "backbones": [
+    "dinov2-small",
+    "deit-tiny",
+    "convnext-tiny",
+    "mobilenetv3-large",
+    "openclip-vit-b-32",
+    "resnet50",
+    "efficientnet-b0",
+    "swin-tiny",
+    "vit-small-16",
+    "densenet121"
+  ],
+  "preprocessing": {
+    "row_l2": true,
+    "pca_rank": 32,
+    "pca_fit": "training cohort only",
+    "primitive_block": "two zero columns"
+  },
+  "reference_heads": {
+    "ids": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "recipe": "Unchanged continuous_residual_ranking three-fold training-only grid search and held-out R2",
+    "ranking_target": "maximum held-out R2 across the four frozen head families"
+  },
+  "fixed_alternative": {
+    "id": "winner_preserved_borda_a050",
+    "winner_rule": "Preserve the complete first broad-RFF tie group exactly.",
+    "fill_rule": "Rank the remaining candidates by equal-weight broad/SAVE ordinal Borda scores.",
+    "alpha": 0.5
+  },
+  "gate_model": {
+    "coefficients": [-0.0034840654871126156, -0.005009555597819472, 0.005491773786679331, 0.0018787343547539764],
+    "feature_mean": [0.6014545454545454, 0.6585714285714285, 0.0712506886445889, 0.11445582222884322],
+    "feature_names": ["broad_save_spearman", "complete_top5_jaccard", "normalized_broad_top5_margin", "mean_broad_score"],
+    "feature_scale": [0.3125547092606216, 0.23770730301099693, 0.059578730193986455, 0.054588981161951516],
+    "intercept": 0.006818442017566928,
+    "ridge_penalty": 1.0,
+    "training_dataset_groups": ["utkface", "oxford_pet", "torchvision_gtsrb", "torchvision_fgvc_aircraft"],
+    "training_rows": 25,
+    "training_target": "broad_minus_winner_preserved_borda_top5_mean_regret"
+  },
+  "gate_decision": "Use winner_preserved_borda_a050 iff the fixed model predicts benefit > 0; otherwise use broad_rff. Never refit on DTD.",
+  "methods": ["broad_rff", "winner_preserved_borda_a050", "fixed_winner_preserved_gate", "linear_probe"],
+  "bootstrap": {"unit": "training-cohort replicate seed", "resamples": 10000, "seed": 2026091301, "interval": "percentile 95%"},
+  "decision": {
+    "primary": "upper95 fixed-gate-minus-broad top-five mean utility regret < 0",
+    "required_invariants": ["top-one metrics equal broad exactly", "upper95 top-five opportunity regret difference <= 0.01", "complete finite five-seed grid"]
+  },
+  "interpretation": "A pass is scoped evidence that the frozen gate transfers to one new continuous target. It is not independent-dataset confirmation and does not by itself justify integration."
+}

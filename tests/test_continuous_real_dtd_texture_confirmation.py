@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 import pytest
 
-from experiments.continuous_real_dtd_texture_confirmation import prepare
+from experiments.continuous_real_dtd_texture_confirmation import prepare, run
 
 
 def test_texture_gradient_energy_is_zero_for_constant_image():
@@ -43,3 +43,35 @@ def test_load_cohort_rejects_hash_change(tmp_path: Path):
     )
     with pytest.raises(ValueError, match="cohort hash"):
         prepare.load_cohort(tmp_path)
+
+
+def test_frozen_gate_model_recomputes_exactly():
+    protocol = run._load_protocol()
+    assert run.recompute_development_gate_model() == protocol["gate_model"]
+
+
+def test_fixed_gate_never_changes_broad_winner_on_development_panels():
+    from experiments.continuous_real_reliability_gate_expanded import run as expanded
+
+    protocol = run._load_protocol()
+    panels = expanded.load_panels(expanded._load_protocol())
+    for panel in panels:
+        row = run.panel_metric(panel, "fixed_winner_preserved_gate", protocol["gate_model"])
+        broad = run.panel_metric(panel, "broad_rff", protocol["gate_model"])
+        assert row["rank_groups"][0] == broad["rank_groups"][0]
+        assert row["top_1_opportunity_regret_r2"] == broad["top_1_opportunity_regret_r2"]
+
+
+def test_gate_selection_uses_only_closed_oi_features():
+    import copy
+    from experiments.continuous_real_reliability_gate_expanded import run as expanded
+
+    protocol = run._load_protocol()
+    panel = copy.deepcopy(expanded.load_panels(expanded._load_protocol())[0])
+    for candidate in panel["candidates"]:
+        candidate.pop("heads", None)
+        candidate.pop("best_head_ids", None)
+        candidate.pop("best_head_envelope_r2", None)
+    selection = run.gate_selection(panel, protocol["gate_model"])
+    assert set(selection["features"]) == set(run.FEATURE_NAMES)
+    assert selection["selected_method"] in {"broad_rff", "winner_preserved_borda_a050"}
