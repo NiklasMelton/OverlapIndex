@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "status": "frozen_post_outcome_reliability_gate_before_derived_analysis",
+  "objective": "Test whether panel-level OI diagnostics can identify when to retain broad RFF and when to apply the fixed 50/50 broad-SAVE pool reranking.",
+  "scope": "Post-outcome developmental leave-dataset-out diagnostic over two dataset groups. It is not confirmation and cannot authorize integration.",
+  "ancestry": {
+    "authorizing_commit": "c7546066b0336bf319a4763278f746726e7559d7",
+    "rank_aggregation_protocol_sha256": "23dddda871840f8b43014f2dbd43ac9b537f8ab817dd0f0313c6a31b3eaa5fdb",
+    "rank_aggregation_summary_sha256": "ae8646ffefc21107ecfdcf7d47852ea7b8560c945fa9c7f76e12960dd59b4b08",
+    "rank_aggregation_manifest_sha256": "abb10b24cb13867a4124dbd64ef393d1d1e04ab8cc33be3be3f8c209bcce5006"
+  },
+  "choices": {
+    "retain": "broad_rff",
+    "blend": "pool_borda_a050"
+  },
+  "feature_schema": [
+    "broad_save_spearman",
+    "complete_top5_jaccard",
+    "normalized_broad_top5_margin",
+    "mean_broad_score"
+  ],
+  "feature_constraints": {
+    "allowed_source": "Only broad-RFF and SAVE selector diagnostics from the current panel",
+    "forbidden": ["head scores", "best-head envelope", "linear-probe score", "backbone identity", "dataset identity"],
+    "tie_absolute_tolerance": 1e-12
+  },
+  "gate_model": {
+    "type": "closed-form ridge regression with unpenalized intercept",
+    "target": "broad top-five mean regret minus 50/50-blend top-five mean regret; positive means blend",
+    "feature_standardization": "training-group mean and population standard deviation; zero scales replaced by one",
+    "ridge_penalty": 1.0,
+    "decision_threshold": 0.0,
+    "prediction_rule": "blend only when predicted benefit > 0; ties retain broad"
+  },
+  "leave_dataset_out": {
+    "groups": ["utkface", "oxford_pet"],
+    "utkface_tasks_kept_together": true
+  },
+  "methods": [
+    "broad_rff",
+    "bounded_2k",
+    "pool_borda_a050",
+    "lodo_reliability_gate",
+    "oracle_panel_gate",
+    "linear_probe"
+  ],
+  "oracle_panel_gate": "Descriptive upper bound choosing lower realized top-five regret per panel; never eligible or deployable.",
+  "bootstrap": {
+    "resamples": 10000,
+    "seed": 2026090401,
+    "unit": "joint replicate-seed block across all three target families"
+  },
+  "decision_rule": {
+    "primary": "upper95 reliability-gate-minus-broad top-five mean utility regret < 0",
+    "safety": [
+      "upper95 reliability-gate-minus-broad top-five opportunity regret <= 0.01",
+      "upper95 reliability-gate-minus-broad top-one opportunity regret <= 0.01",
+      "all 90 method-panel rows and all 15 gate predictions are complete and finite",
+      "held-out outcome mutations cannot change held-out feature vectors or gate predictions"
+    ],
+    "interpretation": "A pass would justify freezing a gate for a future untouched dataset, not validate it on unseen data."
+  }
+}
