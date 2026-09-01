@@ -83,8 +83,8 @@ def _validate_protocol_against_code(protocol: Mapping[str, Any]) -> None:
         "triangle_wave",
     ):
         raise ValueError("frozen shortlist family set does not match code")
-    if tuple(protocol["ranking_methods"]) != METHODS:
-        raise ValueError("frozen shortlist method order does not match code")
+    if set(protocol["ranking_methods"]) != set(METHODS):
+        raise ValueError("frozen shortlist method set does not match code")
     if tuple(protocol["shortlist_sizes"]) != SHORTLIST_SIZES:
         raise ValueError("frozen shortlist sizes do not match code")
     if float(protocol["ranking_ties"]["absolute_tolerance"]) != TIE_ATOL:

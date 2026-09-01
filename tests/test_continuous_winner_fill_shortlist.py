@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 
 import numpy as np
 import pytest
@@ -77,6 +78,12 @@ def test_protocol_closes_new_seeds_methods_shortlists_and_ancestry():
     assert tuple(protocol["ranking_methods"]) == run.METHODS
     assert tuple(protocol["shortlist_sizes"]) == run.SHORTLIST_SIZES
     assert protocol["decision_rule"]["eligible_method"] == "winner_fill"
+
+
+def test_canonically_serialized_protocol_remains_valid():
+    protocol = json.loads(json.dumps(run._load_protocol(), sort_keys=True))
+
+    run._validate_protocol_against_code(protocol)
 
 
 def test_score_groups_use_frozen_tolerance_and_partition_once():
