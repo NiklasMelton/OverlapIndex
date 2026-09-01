@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "status": "frozen_real_image_regression_before_outcomes",
+  "objective": "Test whether the bounded shared continuous-OI shortlist ranks 16 real pretrained image backbones by the best held-out regression result attainable across four frozen head families, and whether its five-backbone shortlist is competitive with a linear-probe ranking.",
+  "scope": "Single-dataset real-image validation with five disjoint training cohorts and one shared evaluation cohort. Replicates measure training-sample stability, not independent-dataset generalization.",
+  "ancestry": {
+    "bounded_confirmation_summary_sha256": "d42044865080bed8476062545fdf39d532aaa50a26becc4a815d871672f6e6fb",
+    "bounded_confirmation_manifest_sha256": "49c318aea87d7c966d2ebcc27162e16a74d7ebbb498688c6ce183e6304361e7c",
+    "shared_evaluator_summary_sha256": "a5332c0d4f88603bcf1fa8527204dc27be52115b8dbe36009f8f168fb19862a8",
+    "shared_evaluator_manifest_sha256": "a7cc41ce06eff331ef915ea45ade7389bb8cbf20eb1eb7ec9bad807453ee42ad",
+    "authorizing_branch_head_before_real_panel": "b1dcc2f4f65015492927a96759d2c66cf6d34d31"
+  },
+  "dataset": {
+    "id": "utkface_aligned_age_0_89_balanced_decades",
+    "official_page": "https://susanqq.github.io/UTKFace/",
+    "official_license_scope": "non-commercial research only",
+    "mirror_repository": "MJZU/UTKFace-Cropped",
+    "mirror_revision": "9ed55e9d06440324163069a9053bbb7e7d8e4017",
+    "archive_sha256": "2c0655397b498e81b82d685ee74bee8c2e4364a5897caf3afec6ea48929024a7",
+    "input_manifest_sha256": "5ea4252b2765b20c345dd571132a5f8f818ad176c58f926015845014a8b6a9e5",
+    "cohort_sha256": "93cc088ed934ff925f6f3fdcef14280e4aad5752b6fa1e3f5abf83e80430e9c9",
+    "target": "integer age parsed from the official filename convention and treated as a scalar regression target",
+    "age_range": [0, 89],
+    "sampling": "25 images from each of nine ten-year bins per split, selected by SHA-256 order before embeddings",
+    "evaluation_rows": 225,
+    "training_rows_per_replicate": 225,
+    "union_rows": 1350,
+    "malformed_filename_policy": "exclude before cohort selection"
+  },
+  "replicate_seeds": [4103, 4201, 4303, 4409, 4507],
+  "backbones": [
+    "dinov2-small",
+    "deit-tiny",
+    "convnext-tiny",
+    "mobilenetv3-large",
+    "openclip-vit-b-32",
+    "resnet50",
+    "efficientnet-b0",
+    "swin-tiny",
+    "vit-small-16",
+    "densenet121",
+    "dino-vit-small-16",
+    "resnet18",
+    "resnet34",
+    "efficientnet-b2",
+    "mobilenetv3-small",
+    "convnext-small"
+  ],
+  "embedding_extraction": {
+    "output": "frozen final pooled backbone embedding",
+    "dtype": "float32",
+    "device": "cpu",
+    "batch_size": 16,
+    "network_policy_during_extraction": "offline cached weights only",
+    "checkpoint_identity": "Exact per-backbone revision and checkpoint SHA-256 constants in extract.py"
+  },
+  "preprocessing": {
+    "row_normalization": "one L2 normalization",
+    "pca_rank": 32,
+    "pca_solver": "randomized with candidate/replicate seed",
+    "fit_scope": "Complete 225-row training cohort only; the evaluation cohort never participates",
+    "purpose": "Equalize dimensionality and make the frozen quadratic reference head computationally feasible",
+    "caveat": "PCA is unsupervised but is fit before continuous-OI cross-fitting on the complete training cohort"
+  },
+  "reference_heads": {
+    "ids": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "implementation": "experiments.continuous_residual_ranking.run.evaluate_heads",
+    "selection": "Three-fold shuffled training-only GridSearchCV using R2, followed by held-out evaluation",
+    "envelope": "Maximum held-out R2 across the four frozen head families",
+    "linear_probe_comparator": "linear_ridge"
+  },
+  "continuous_oi": {
+    "implementation": "continuous_bounded_shared_evaluator.shared.evaluate_shared_pair",
+    "folds": 4,
+    "broad_score": "RFF-mean feature bandwidth multiplier 4.0 kernel alignment",
+    "structured_score": "SAVE plus RFF-mean shared ContinuousOverlapIndex",
+    "shortlist_rule": "Preserve the full broad winner group; restrict structured filling to the broad top-2k retrieval pool",
+    "shortlist_depth": 5,
+    "candidate_count": 16,
+    "tie_absolute_tolerance": 1e-12
+  },
+  "methods": ["broad_rff", "save_rff_current", "bounded_2k", "linear_probe"],
+  "metrics": [
+    "Spearman correlation with best-head envelope",
+    "top-five opportunity regret",
+    "top-five mean utility regret",
+    "top-five material precision",
+    "descriptive panel runtime"
+  ],
+  "bootstrap": {
+    "resamples": 10000,
+    "seed": 2026090102,
+    "unit": "training-cohort replicate with shared evaluation cohort",
+    "interpretation": "seed-stability interval, not an independent-dataset confidence interval"
+  },
+  "decision_rule": {
+    "primary": "upper95 bounded-minus-linear-probe top-five mean utility regret <= 0",
+    "safety": [
+      "upper95 bounded-minus-linear-probe top-five opportunity regret <= 0.01",
+      "broad top-one opportunity is preserved to absolute tolerance 1e-12",
+      "the top-2k retrieval bound is active in every panel",
+      "all 20 panel-method rows are complete and finite"
+    ],
+    "interpretation": "A pass supports another real-dataset panel; it does not establish generalization or authorize library integration."
+  }
+}
+
