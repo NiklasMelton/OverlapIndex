@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "status": "frozen_natural_real_image_regression_before_outcomes",
+  "objective": "Test whether the bounded shared continuous-OI shortlist ranks 16 real pretrained image backbones by the best held-out result across four frozen regression-head families on a naturally continuous spatial target, and whether its five-backbone shortlist is competitive with linear-probe ranking.",
+  "scope": "One natural real-image target with five disjoint training cohorts and one shared evaluation cohort. Replicates measure training-sample stability, not independent-dataset generalization.",
+  "ancestry": {
+    "prior_linear_panel_summary_sha256": "1663fb1b2ac01b3190767309b2f5ad20c7244055bfbb205d91bc7cd397798cf5",
+    "prior_nonlinear_panel_summary_sha256": "e1a029e2e474dfc9faa38b6289fd7362f8a0b87b9380aff9e910c6a344b6db4c",
+    "prior_nonlinear_panel_manifest_sha256": "6a3aff5571a3a6d12e846f4dac6cb74df314bacd9d6007ddef4556588cdc20aa",
+    "authorizing_branch_head_before_pet_panel": "adc2de71a4aeec13e8e9e7997944878688d498b6"
+  },
+  "dataset": {
+    "id": "oxford_iiit_pet_foreground_occupancy",
+    "official_page": "https://www.robots.ox.ac.uk/~vgg/data/pets/",
+    "images_url": "https://www.robots.ox.ac.uk/~vgg/data/pets/data/images.tar.gz",
+    "annotations_url": "https://www.robots.ox.ac.uk/~vgg/data/pets/data/annotations.tar.gz",
+    "images_archive_sha256": "67195c5e1c01f1ab5f9b6a5d22b8c27a580d896ece458917e61d459337fa318d",
+    "annotations_archive_sha256": "52425fb6de5c424942b7626b428656fcbd798db970a937df61750c0f1d358e91",
+    "input_manifest_sha256": "acec9fbd00a3c7445e5c492204d3421ce753b9af5090ddf5c744fbc03ad1a151",
+    "cohort_sha256": "de44c91481890b348ed8bf53bd096c24e4a80700601b90b9f48adc4b5a9ef7cb",
+    "target": "foreground plus boundary pixel count divided by total pixels in the official trimap",
+    "target_pixel_rule": "mask_value != 2; official values are foreground=1, background=2, not-classified boundary=3",
+    "valid_target_range_inclusive": [0.01, 0.99],
+    "excluded_degenerate_records": 15,
+    "eligible_official_list_records": 7334,
+    "sampling": "Ten equal-count rank strata over all valid targets; SHA-256 selection order within stratum; 20 images per stratum in every split",
+    "selection_seed": 2026090301,
+    "evaluation_rows": 200,
+    "training_rows_per_replicate": 200,
+    "union_rows": 1200,
+    "license_scope": "Research use per the downloaded archive README; follow the official page and original-image terms"
+  },
+  "replicate_seeds": [4103, 4201, 4303, 4409, 4507],
+  "backbones": [
+    "dinov2-small",
+    "deit-tiny",
+    "convnext-tiny",
+    "mobilenetv3-large",
+    "openclip-vit-b-32",
+    "resnet50",
+    "efficientnet-b0",
+    "swin-tiny",
+    "vit-small-16",
+    "densenet121",
+    "dino-vit-small-16",
+    "resnet18",
+    "resnet34",
+    "efficientnet-b2",
+    "mobilenetv3-small",
+    "convnext-small"
+  ],
+  "embedding_extraction": {
+    "recipe": "Exact frozen 16-backbone checkpoint roster inherited from continuous_real_age_panel.extract",
+    "output": "frozen final pooled backbone embedding",
+    "dtype": "float32",
+    "device": "cpu",
+    "batch_size": 16,
+    "network_policy_during_extraction": "offline cached weights only"
+  },
+  "preprocessing": {
+    "row_normalization": "one L2 normalization",
+    "pca_rank": 32,
+    "pca_solver": "randomized with candidate/replicate seed",
+    "fit_scope": "Complete 200-row training cohort only; the evaluation cohort never participates",
+    "purpose": "Equalize dimensionality and make the frozen quadratic reference head computationally feasible"
+  },
+  "reference_heads": {
+    "ids": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "implementation": "experiments.continuous_residual_ranking.run.evaluate_heads",
+    "selection": "Three-fold shuffled training-only GridSearchCV using R2, followed by held-out evaluation",
+    "envelope": "Maximum held-out R2 across the four frozen head families",
+    "linear_probe_comparator": "linear_ridge"
+  },
+  "continuous_oi": {
+    "implementation": "continuous_bounded_shared_evaluator.shared.evaluate_shared_pair",
+    "folds": 4,
+    "broad_score": "RFF-mean feature bandwidth multiplier 4.0 kernel alignment",
+    "structured_score": "SAVE plus RFF-mean shared ContinuousOverlapIndex",
+    "shortlist_rule": "Preserve the full broad winner group; restrict structured filling to the broad top-2k retrieval pool",
+    "shortlist_depth": 5,
+    "candidate_count": 16,
+    "tie_absolute_tolerance": 1e-12
+  },
+  "methods": ["broad_rff", "save_rff_current", "bounded_2k", "linear_probe"],
+  "metrics": [
+    "Spearman correlation with best-head envelope",
+    "top-five opportunity regret",
+    "top-five mean utility regret",
+    "top-five material precision",
+    "descriptive panel runtime"
+  ],
+  "bootstrap": {
+    "resamples": 10000,
+    "seed": 2026090102,
+    "unit": "training-cohort replicate with shared evaluation cohort",
+    "interpretation": "seed-stability interval, not an independent-dataset confidence interval"
+  },
+  "decision_rule": {
+    "primary": "upper95 bounded-minus-linear-probe top-five mean utility regret <= 0",
+    "safety": [
+      "upper95 bounded-minus-linear-probe top-five opportunity regret <= 0.01",
+      "broad top-one opportunity is preserved to absolute tolerance 1e-12",
+      "the top-2k retrieval bound is active in every panel",
+      "all 20 panel-method rows are complete and finite"
+    ],
+    "interpretation": "A pass supports another natural-target panel; it does not establish generalization or authorize library integration."
+  }
+}
