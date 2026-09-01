@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 import json
 import os
 from pathlib import Path
+import subprocess
 from typing import Any
 
 import numpy as np
@@ -651,6 +652,16 @@ def _source_paths(roots: Mapping[str, Path]) -> dict[str, Path]:
     return result
 
 
+def _repository_head() -> str:
+    return subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
 def run(output: Path, roots: Mapping[str, Path] = DEFAULT_INPUTS) -> dict[str, Any]:
     protocol = _load_protocol()
     _validate_protocol(protocol)
@@ -664,6 +675,8 @@ def run(output: Path, roots: Mapping[str, Path] = DEFAULT_INPUTS) -> dict[str, A
         raise ValueError(
             "CONTINUOUS_OI_COMMIT must contain the frozen 40-hex commit"
         ) from error
+    if implementation_commit != _repository_head():
+        raise ValueError("CONTINUOUS_OI_COMMIT does not match the current Git HEAD")
     source_hashes = {
         key: common._sha256(path) for key, path in _source_paths(roots).items()
     }

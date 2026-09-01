@@ -247,6 +247,7 @@ def test_terminal_writer_is_hash_bound_and_nonoverwriting(monkeypatch, tmp_path)
                 loaded.append({"cohort": cohort, "panel": _panel(seed, family)})
     monkeypatch.setattr(run, "load_inputs", lambda protocol, roots: loaded)
     monkeypatch.setenv("CONTINUOUS_OI_COMMIT", "b" * 40)
+    monkeypatch.setattr(run, "_repository_head", lambda: "b" * 40)
     output = tmp_path / "audit"
 
     summary = run.run(output)
@@ -260,3 +261,12 @@ def test_terminal_writer_is_hash_bound_and_nonoverwriting(monkeypatch, tmp_path)
         assert descriptor["sha256"] == run.common._sha256(output / name)
     with pytest.raises(FileExistsError):
         run.run(output)
+
+
+def test_terminal_writer_rejects_commit_argument_that_is_not_head(monkeypatch, tmp_path):
+    monkeypatch.setattr(run, "load_inputs", lambda protocol, roots: [])
+    monkeypatch.setenv("CONTINUOUS_OI_COMMIT", "b" * 40)
+    monkeypatch.setattr(run, "_repository_head", lambda: "c" * 40)
+
+    with pytest.raises(ValueError, match="does not match the current Git HEAD"):
+        run.run(tmp_path / "audit")
