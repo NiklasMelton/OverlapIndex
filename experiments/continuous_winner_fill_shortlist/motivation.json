@@ -1,0 +1,30 @@
+{
+  "status": "post_outcome_motivation_only",
+  "rank_utility_audit_summary_sha256": "8c1af69e25d9f9c4a98b238a10b2d57ae69d10d55fd8bd1aa1dafd4139ca6c7a",
+  "rank_utility_audit_report_sha256": "aa49b5cfac09772a0d08e73ade4a0963ea9ccebd2bfe922787883e953232f97e",
+  "source_panel_count": 18,
+  "source_candidate_count_per_panel": 16,
+  "broad_rff": {
+    "top_1_regret_r2": 0.0054947135405103865,
+    "top_3_mean_regret_r2": 0.1033522639416989,
+    "top_3_material_precision": 0.4259259259259259,
+    "gap_aware_concordance": 0.6825246802017306,
+    "spearman": 0.47271241830065364
+  },
+  "save_rff_current": {
+    "top_1_regret_r2": 0.10546511912422527,
+    "top_3_mean_regret_r2": 0.11022763187896817,
+    "top_3_material_precision": 0.48148148148148145,
+    "gap_aware_concordance": 0.7373963300174967,
+    "spearman": 0.6104575163398693
+  },
+  "post_outcome_winner_fill_diagnostic": {
+    "top_1_regret_r2": 0.0054947135405103865,
+    "top_3_mean_regret_r2": 0.09281211027131958,
+    "top_3_material_precision": 0.5,
+    "gap_aware_concordance": 0.7544883480791459,
+    "spearman": 0.6431372549019607,
+    "interpretation": "Primary hypothesis only; must be tested on entirely new seeds."
+  }
+}
+

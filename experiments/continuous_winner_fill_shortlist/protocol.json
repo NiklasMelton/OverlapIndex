@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "status": "frozen_exploratory_before_outcomes",
+  "objective": "Test whether a structured broad-kernel winner plus smooth SAVE+RFF fill produces a stronger continuous-backbone shortlist without sacrificing best-potential detection or material ordering.",
+  "ancestry": {
+    "motivation_experiment": "continuous_kernel_alignment",
+    "motivation_raw_results_sha256": "e1d99f1659ba0ba620249039116919d964a486a8f2e490e8b91ea10ceb3a5012",
+    "motivation_summary_sha256": "07560be5b55cd3b1c623773a0f28f916bf38275eb8170c97256812e1aacc7eee",
+    "motivation_protocol_sha256": "333a014dc75a5bc4029caee9ba03d605f63adc059783a9ead27dd3e9835f739c",
+    "motivation_runner_sha256": "309ac8b390cf5c41858921b6a7c0caf17258a15909dbeed06620ac07b936d1ab",
+    "rank_utility_audit_summary_sha256": "8c1af69e25d9f9c4a98b238a10b2d57ae69d10d55fd8bd1aa1dafd4139ca6c7a",
+    "rank_utility_audit_report_sha256": "aa49b5cfac09772a0d08e73ade4a0963ea9ccebd2bfe922787883e953232f97e",
+    "outcome_use": "Prior outcomes define only the fixed structured-ranking hypothesis. Every ranking outcome is recomputed on new seeds."
+  },
+  "seeds": [1907, 2011, 2113, 2207, 2311],
+  "families": [
+    "linear",
+    "quadratic_product",
+    "radial_quadratic",
+    "absolute_value",
+    "sinusoid",
+    "triangle_wave"
+  ],
+  "candidate_count_per_panel": 16,
+  "rows": {
+    "train": 500,
+    "test": 500,
+    "observed_features": 16,
+    "signal_features": 4
+  },
+  "candidate_grid": {
+    "quality": [0.45, 0.65, 0.80, 0.95],
+    "nuisance_scale": [0.25, 0.75, 1.50, 3.00],
+    "local_family_nuisance_multiplier": 0.20
+  },
+  "reference_heads": {
+    "ids": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "envelope": "Maximum held-out R2 across the four frozen nested-tuned head families.",
+    "linear_probe_comparator": "linear_ridge"
+  },
+  "continuous_oi": {
+    "folds": 4,
+    "target_cells": 8,
+    "prototypes_per_cell": 4,
+    "adjacency": "soft_topk",
+    "top_k": 5,
+    "aggregation": "support_weighted",
+    "geometries": [
+      {"method_id": "rff64_mean8_k4", "geometry": "rff_mean", "rff_components": 64},
+      {"method_id": "save_rffmean_k4", "geometry": "multiview", "blocks": ["save", "rff_mean"]}
+    ]
+  },
+  "shared_execution": {
+    "folds": "One four-fold shuffled KFold partition per panel, shared across every candidate and geometry; random_state equals panel seed.",
+    "fit_seed": "panel seed * 1000 + candidate position * 10 + fold",
+    "common_bank_seed": "2026083101 + panel seed * 100 + fold",
+    "permutations": 32,
+    "training_only": "Geometry transforms, target scaling, and feature/target kernel base bandwidths are fit on training-fold rows only."
+  },
+  "kernel_alignment": {
+    "feature_kernel": "Equal arithmetic mixture of Gaussian RBF Gram matrices in the fitted feature geometry.",
+    "target_kernel": "Equal arithmetic mixture of Gaussian RBF Gram matrices on the training-scaled scalar target.",
+    "bandwidth_multipliers": [0.25, 1.0, 4.0],
+    "base_bandwidth": "Median strictly positive pairwise squared distance on training-fold values.",
+    "rbf_formula": "exp(-squared_distance / (2 * multiplier * base_median_squared_distance))",
+    "centering": "Double-center each held-out Gram matrix.",
+    "score": "clip((raw_alignment - mean_permuted_alignment) / (1 - mean_permuted_alignment), 0, 1)"
+  },
+  "ranking_methods": {
+    "broad_rff": "rff64_mean8_k4 null-adjusted feature bandwidth 4.0",
+    "mixed_rff": "rff64_mean8_k4 null-adjusted equal three-bandwidth kernel",
+    "save_rff_current": "save_rffmean_k4 matched common32 ContinuousOverlapIndex score",
+    "winner_fill": "First broad_rff rank group, followed by every remaining candidate in save_rff_current order.",
+    "linear_probe": "linear_ridge held-out R2"
+  },
+  "ranking_ties": {
+    "absolute_tolerance": 1e-12,
+    "pure_methods": "Equal scores form one rank group.",
+    "winner_fill": "The entire maximum broad-RFF group stays tied for first. Remaining candidates use SAVE+RFF rank groups.",
+    "evaluation": "Uniformly average all top-k subsets admitted by a rank-group tie at the cutoff."
+  },
+  "shortlist_sizes": [1, 2, 3, 5],
+  "material_equivalence_band_r2": 0.01,
+  "bootstrap": {
+    "resamples": 10000,
+    "seed": 2026090101,
+    "unit": "panel within equal-weight target family",
+    "pairing": "All method contrasts preserve the exact panel."
+  },
+  "decision_rule": {
+    "eligible_method": "winner_fill",
+    "primary": [
+      "upper95 winner_fill-minus-broad_rff top3 mean utility regret < 0",
+      "upper95 winner_fill-minus-save_rff_current top3 mean utility regret < 0"
+    ],
+    "safety": [
+      "maximum absolute panel top1 regret difference from broad_rff <= 1e-12",
+      "upper95 winner_fill-minus-broad_rff top3 opportunity regret <= 0.01",
+      "lower95 winner_fill-minus-save_rff_current material pair concordance >= -0.02",
+      "all panel Spearman and material concordance values defined"
+    ],
+    "pass": "Every primary and safety criterion must pass."
+  },
+  "runtime": "Descriptive only. Winner-fill is conservatively charged the sum of separately evaluated broad-RFF and SAVE+RFF component wall times.",
+  "scope": "New-seed synthetic validation of one fixed shortlist rule. A pass permits scalable implementation and real-panel validation only; it does not authorize public integration."
+}
