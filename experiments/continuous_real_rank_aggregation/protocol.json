@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "status": "frozen_post_outcome_real_rank_aggregation_before_derived_analysis",
+  "objective": "Determine whether an OI-only aggregation of broad RFF and SAVE ranks improves top-five shortlist quality across the completed real-image continuous panels without using linear-probe scores at inference.",
+  "scope": "Post-outcome developmental diagnostic over three completed target families and two dataset groups. It cannot serve as confirmation or authorize integration.",
+  "ancestry": {
+    "authorizing_commit": "2f46d8d3380041189830bcfce49f834c3460b247",
+    "sources": {
+      "utkface_age": {
+        "dataset_group": "utkface",
+        "raw_results_sha256": "64e3046d2cd36061b504c4fb870f55f5637e414a91700d0589dbc994e8a971a3",
+        "manifest_sha256": "12b813bde607c05f1c0c912a0ffd8d0bc986c1e44b049ed115996fb7a60b9b79"
+      },
+      "utkface_normalized_absolute_age_deviation": {
+        "dataset_group": "utkface",
+        "raw_results_sha256": "e1f82fa80fad11a7d9dea555b24ebf32b581b8796b03da854a3b41191ad8cf68",
+        "manifest_sha256": "6a3aff5571a3a6d12e846f4dac6cb74df314bacd9d6007ddef4556588cdc20aa"
+      },
+      "oxford_pet_foreground_occupancy": {
+        "dataset_group": "oxford_pet",
+        "raw_results_sha256": "3d70e90f422d653d799035adb1859663f387484d41f071bd67fe71d28c1a7e3f",
+        "manifest_sha256": "ad941e577e8eba0e5ee08d7499e5c878e3a3ef2f72387b41bfe82694f4ff641e"
+      }
+    }
+  },
+  "candidate_count": 16,
+  "shortlist_depth": 5,
+  "retrieval_rule": "Take complete broad-RFF rank groups until at least ten candidates are included.",
+  "aggregation": {
+    "formula": "alpha * broad_ordinal_score + (1-alpha) * SAVE_ordinal_score inside the retrieval pool; candidates outside the pool retain broad order",
+    "weights": [0.0, 0.25, 0.5, 0.75, 1.0],
+    "tie_absolute_tolerance": 1e-12,
+    "linear_probe_used_as_feature": false
+  },
+  "leave_dataset_out_selection": {
+    "groups": ["utkface", "oxford_pet"],
+    "rule": "For each held-out dataset group, choose the weight with minimum mean top-five utility regret on every panel from the other group.",
+    "tie_preference": [0.5, 0.75, 0.25, 1.0, 0.0],
+    "utkface_grouping_reason": "The age and absolute-age tasks share exact images and embeddings and must never be split across weight selection and evaluation."
+  },
+  "methods": [
+    "broad_rff",
+    "save_rff_current",
+    "bounded_2k",
+    "pool_borda_a000",
+    "pool_borda_a025",
+    "pool_borda_a050",
+    "pool_borda_a075",
+    "pool_borda_a100",
+    "lodo_pool_borda",
+    "linear_probe"
+  ],
+  "metrics": [
+    "Spearman correlation with best-head envelope",
+    "top-one opportunity regret and exact-best coverage",
+    "top-five opportunity regret",
+    "top-five mean utility regret",
+    "top-five material precision"
+  ],
+  "bootstrap": {
+    "resamples": 10000,
+    "seed": 2026090401,
+    "unit": "joint replicate-seed block across all three target families"
+  },
+  "decision_rule": {
+    "primary": "upper95 leave-dataset-out-minus-broad top-five mean utility regret < 0",
+    "safety": [
+      "upper95 leave-dataset-out-minus-broad top-five opportunity regret <= 0.01",
+      "all 150 method-panel rows complete and finite",
+      "held-out outcomes never influence their dataset group's selected weight"
+    ],
+    "interpretation": "A pass identifies a candidate aggregation rule for a future untouched dataset; it does not validate the selected rule on unseen data."
+  }
+}
