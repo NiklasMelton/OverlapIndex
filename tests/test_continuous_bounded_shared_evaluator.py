@@ -134,6 +134,25 @@ def test_summary_requires_exactness_completeness_and_speed():
     assert run.summarize(protocol, changed)["decision"]["status"] == "fail"
 
 
+def test_rank_only_panel_adapter_supports_the_inherited_bounded_helper():
+    rows = [
+        {
+            "candidate_id": f"candidate_{position:02d}",
+            "legacy_broad_rff_score": float(16 - position),
+            "shared_broad_rff_score": float(16 - position),
+            "legacy_save_rff_current_score": float(position),
+            "shared_save_rff_current_score": float(position),
+        }
+        for position in range(16)
+    ]
+
+    panel = run._score_panel(rows, "shared")
+    groups = run.audit_parent.ranking_groups(panel, "bounded_2k", 5)
+
+    assert groups[0] == (0,)
+    assert groups[1] == (9,)
+
+
 def test_terminal_writer_is_hash_bound_and_nonoverwriting(monkeypatch, tmp_path):
     monkeypatch.setenv("CONTINUOUS_OI_COMMIT", "a" * 40)
     monkeypatch.setattr(run, "_repository_head", lambda: "a" * 40)

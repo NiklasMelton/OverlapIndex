@@ -145,6 +145,10 @@ def _score_panel(rows: Sequence[Mapping[str, Any]], prefix: str) -> dict[str, An
         "candidates": [
             {
                 "candidate_id": row["candidate_id"],
+                # The inherited depth-audit helper supports an outcome-using
+                # oracle branch and therefore validates this field before
+                # dispatch. The bounded branch never reads its values.
+                "best_head_envelope_r2": 0.0,
                 "selectors": {
                     "rff64_mean8_k4": {
                         "kernel_alignment": {
