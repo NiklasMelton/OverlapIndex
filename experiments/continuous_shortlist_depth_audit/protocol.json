@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "status": "frozen_post_outcome_audit_before_additional_outcomes",
+  "objective": "Determine whether the relative utility of broad RFF and structured SAVE+RFF filling changes reproducibly with requested shortlist depth.",
+  "inputs": {
+    "winner_fill": {
+      "implementation_commit": "34123d8efa2daa58af59b9c1cc04f487bc1d8321",
+      "raw_results_sha256": "5b0ddae20f7a2fc8475349532a0606827a3b81b9091fab0cd08342beec993c56",
+      "summary_sha256": "75d511df167bf15fd6177f224ae71cd14ca1ad12cdbd3729aa8b4b0aae5c5342",
+      "manifest_sha256": "e225513d7f467061feaa20c5a422c323b9b416492622dd120494c11e83672fb8",
+      "protocol_sha256": "81ee8aca8b386db6ae36b0791ea31398c506faebc5ac0053abe7d32792260cc5",
+      "seeds": [1907, 2011, 2113, 2207, 2311]
+    },
+    "bounded": {
+      "implementation_commit": "8836ed23ab283f1ba96e885fc8729224077ec605",
+      "raw_results_sha256": "1773505a03b886dd41a20ffde4fd5d8e7dbccfaad8cca868e994150b4ae701fe",
+      "summary_sha256": "6fb53de93f4940c64b609125e2cf02d15f0113bca90378a34012cc343df482f9",
+      "manifest_sha256": "c92571e15c1716c9097783e4b0abd31e5d1c80efa977504bcbda828ea810d1d9",
+      "protocol_sha256": "2f51e04a0921b8db213388a79b55533302b8ca10713d687a86434df2742649eb",
+      "seeds": [2411, 2503, 2609, 2711, 2801]
+    }
+  },
+  "families": [
+    "linear",
+    "quadratic_product",
+    "radial_quadratic",
+    "absolute_value",
+    "sinusoid",
+    "triangle_wave"
+  ],
+  "panel_count": 60,
+  "candidate_count_per_panel": 16,
+  "shortlist_depths": [1, 2, 3, 4, 5, 6, 7, 8],
+  "methods": {
+    "broad_rff": "Pure broad-RFF ranking.",
+    "save_rff_current": "Pure SAVE+RFF current ranking.",
+    "unbounded_winner_fill": "Preserve the complete broad-RFF winner group and rank every remaining candidate by SAVE+RFF.",
+    "bounded_2k": "Preserve the complete broad-RFF winner group; retrieve complete broad-RFF groups until at least min(2k,16) candidates are retained; rank the remainder of that pool by SAVE+RFF before all outside candidates.",
+    "winner_preserved_pool_oracle": "Outcome-using diagnostic ceiling: preserve the complete broad-RFF winner group and rank remaining broad top-2k pool candidates by the best-head envelope."
+  },
+  "ties": {
+    "absolute_tolerance": 1e-12,
+    "retrieval_cutoff": "Include a complete broad-RFF group crossing depth 2k.",
+    "shortlist_cutoff": "Uniformly average all top-k subsets admitted by a rank-group tie."
+  },
+  "metrics": {
+    "primary": ["mean_utility_regret_r2", "opportunity_regret_r2", "material_precision"],
+    "swap": ["expected_membership_swaps", "realized_mean_utility_gain", "oracle_pool_headroom", "oracle_headroom_capture_fraction"],
+    "outcome_free_diagnostics": ["normalized_broad_boundary_margin", "broad_fold_inclusion_stability", "broad_bandwidth_inclusion_agreement", "broad_save_inclusion_agreement"]
+  },
+  "bootstrap": {
+    "resamples": 10000,
+    "seed": 2026090301,
+    "unit": "seed panel within equal-weight cohort-by-family stratum",
+    "pairing": "Every method contrast preserves cohort, seed, and family."
+  },
+  "top5_confirmation_justification": {
+    "candidate": "unbounded_winner_fill",
+    "checks": [
+      "upper95 candidate-minus-broad top5 mean utility regret < 0",
+      "point candidate-minus-broad top5 mean utility regret < 0 in each input cohort",
+      "upper95 candidate-minus-broad top5 opportunity regret <= 0.01",
+      "lower95 candidate-minus-broad top5 material precision >= -0.02",
+      "all 60 panels and all decision-driving depth metrics complete and finite; oracle capture fraction is explicitly null only when oracle pool headroom is zero"
+    ],
+    "pass": "Every check must pass. A pass justifies one frozen new-seed top-five confirmation; it does not itself promote a method."
+  },
+  "scope": "Post-outcome diagnostic reanalysis of two completed synthetic cohorts. No model is refit, no ranking rule is promoted, and any resulting top-five hypothesis requires unused-seed confirmation."
+}
