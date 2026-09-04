@@ -63,6 +63,11 @@ def canonical_json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
+def _head_record_sha256(value: Mapping[str, Any]) -> str:
+    payload = {key: item for key, item in value.items() if key != "head_record_sha256"}
+    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+
+
 def sha256_path(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -354,7 +359,10 @@ def ranking_metrics(truth: Sequence[float], scores: Sequence[float]) -> dict[str
     for left in range(len(truth_values)):
         for right in range(left + 1, len(truth_values)):
             truth_delta = float(truth_values[left] - truth_values[right])
-            if abs(truth_delta) < MATERIAL_ATOL - TIE_ATOL:
+            # The material-pair rule is inclusive at the frozen 0.01
+            # boundary: only differences strictly below MATERIAL_ATOL are
+            # excluded.
+            if abs(truth_delta) < MATERIAL_ATOL:
                 continue
             score_delta = float(score_values[left] - score_values[right])
             pair_credit.append(0.5 if abs(score_delta) <= TIE_ATOL else float(np.sign(score_delta) == np.sign(truth_delta)))
@@ -429,7 +437,7 @@ def _stability_metrics(vectors: Sequence[Sequence[float]], *, candidate_ids: Seq
         (left, right)
         for left in range(values.shape[1])
         for right in range(left + 1, values.shape[1])
-        if abs(float(anchor[left] - anchor[right])) >= MATERIAL_ATOL - TIE_ATOL
+        if abs(float(anchor[left] - anchor[right])) >= MATERIAL_ATOL
     ]
     rank_values, winner_agreement, top3_jaccards, pair_agreement = [], [], [], []
     for left in range(len(values)):
@@ -728,23 +736,20 @@ def _evaluate_heads_with_predictions(
     """Fit the unchanged grids while delaying every held-out score until fits finish."""
     train_values = np.asarray(X_train, dtype=np.float32)
     targets = np.asarray(y_train, dtype=np.float64)
-    eval_values = np.asarray(X_eval, dtype=np.float32)
-    eval_targets = np.asarray(y_eval, dtype=np.float64)
     if (
         train_values.ndim != 2
-        or eval_values.ndim != 2
-        or train_values.shape[1] != eval_values.shape[1]
         or targets.shape != (len(train_values),)
-        or eval_targets.shape != (len(eval_values),)
         or len(train_values) < 8
         or not np.isfinite(train_values).all()
-        or not np.isfinite(eval_values).all()
         or not np.isfinite(targets).all()
-        or not np.isfinite(eval_targets).all()
     ):
         raise ValueError("reference envelope head inputs are invalid")
     inner = KFold(n_splits=3, shuffle=True, random_state=int(seed))
-    fitted: dict[str, tuple[float, dict[str, Any], float, np.ndarray]] = {}
+    # First pass: all CV searches must finish before touching the shared
+    # evaluation rows.  This makes the train/evaluation boundary explicit and
+    # prevents a future implementation from accidentally using held-out data
+    # while the remaining head-family searches are still being selected.
+    fitted: dict[str, tuple[Any, float]] = {}
     for head_id, (estimator, grid) in residual._head_estimators().items():
         if head_id not in HEADS:
             raise ValueError("reference envelope source head set changed")
@@ -759,25 +764,36 @@ def _evaluate_heads_with_predictions(
         )
         started = time.perf_counter()
         search.fit(train_values, targets)
-        prediction = np.asarray(search.predict(eval_values), dtype=np.float64)
-        fitted[head_id] = (
-            float(search.best_score_),
-            dict(search.best_params_),
-            float(time.perf_counter() - started),
-            prediction,
-        )
-    # y_eval is intentionally consumed only after all training/CV searches complete.
+        fitted[head_id] = (search, float(time.perf_counter() - started))
+
+    # Second pass: only now materialize the shared evaluation rows and score
+    # every already-fitted search.  No estimator is refit here.
+    eval_values = np.asarray(X_eval, dtype=np.float32)
+    eval_targets = np.asarray(y_eval, dtype=np.float64)
+    if (
+        eval_values.ndim != 2
+        or train_values.shape[1] != eval_values.shape[1]
+        or eval_targets.shape != (len(eval_values),)
+        or not np.isfinite(eval_values).all()
+        or not np.isfinite(eval_targets).all()
+    ):
+        raise ValueError("reference envelope evaluation inputs are invalid")
     output = {}
     for head_id in HEADS:
-        inner_score, params, wall, prediction = fitted[head_id]
+        search, fit_wall = fitted[head_id]
+        prediction_started = time.perf_counter()
+        prediction = np.asarray(search.predict(eval_values), dtype=np.float64)
+        prediction_wall = float(time.perf_counter() - prediction_started)
         score = float(r2_score(eval_targets, prediction))
         if not np.isfinite(score) or not np.isfinite(prediction).all():
             raise ValueError("reference envelope held-out prediction is nonfinite")
         output[head_id] = {
             "test_r2": score,
-            "inner_best_r2": inner_score,
-            "best_params": params,
-            "wall_seconds": wall,
+            "inner_best_r2": float(search.best_score_),
+            "best_params": dict(search.best_params_),
+            # Preserve the source evaluator's per-head fit+prediction wall
+            # semantics without charging later head fits to an earlier head.
+            "wall_seconds": float(fit_wall + prediction_wall),
             "test_predictions": prediction.tolist(),
         }
     return output
@@ -863,6 +879,8 @@ def _fit_budget_panel(
         pca_wall = float(time.perf_counter() - pca_started)
         fit_seed = _budget_seed(dataset_position, target_position, budget_position, backbone_position)
         heads = _evaluate_heads_with_predictions(X_train, y_train, X_eval, y_eval, fit_seed)
+        for head in HEADS:
+            heads[head]["head_record_sha256"] = _head_record_sha256(heads[head])
         cv_envelope = max(float(heads[head]["inner_best_r2"]) for head in HEADS)
         heldout_envelope = max(float(heads[head]["test_r2"]) for head in HEADS)
         candidates.append({
@@ -1241,16 +1259,41 @@ def _diagnostic_gates(
     gates = protocol["diagnostic_gates"]
     checks = []
 
-    def add(name: str, estimate: Optional[float], minimum: Optional[float] = None, maximum: Optional[float] = None) -> None:
+    def add(
+        name: str,
+        estimate: Optional[float],
+        minimum: Optional[float] = None,
+        maximum: Optional[float] = None,
+        *,
+        weighting: str = "equal target weight",
+    ) -> None:
         if estimate is None or not np.isfinite(float(estimate)):
-            checks.append({"id": name, "status": "inconclusive_nonfinite_estimate", "estimate": estimate})
+            checks.append(
+                {
+                    "id": name,
+                    "status": "inconclusive_nonfinite_estimate",
+                    "estimate": estimate,
+                    "minimum": minimum,
+                    "maximum": maximum,
+                    "weighting": weighting,
+                }
+            )
             return
         passed = True
         if minimum is not None:
             passed = passed and float(estimate) >= float(minimum)
         if maximum is not None:
             passed = passed and float(estimate) <= float(maximum)
-        checks.append({"id": name, "status": "pass" if passed else "fail", "estimate": float(estimate), "minimum": minimum, "maximum": maximum})
+        checks.append(
+            {
+                "id": name,
+                "status": "pass" if passed else "fail",
+                "estimate": float(estimate),
+                "minimum": minimum,
+                "maximum": maximum,
+                "weighting": weighting,
+            }
+        )
 
     add(
         "archive_all_cv_vs_heldout_spearman",
@@ -1278,6 +1321,41 @@ def _diagnostic_gates(
         n300.get("mean_spearman"),
         minimum=float(gates["budget_cv_vs_heldout_spearman_minimum"]),
     )
+    new_budget_ids = [
+        str(row["id"]) for row in _budget_specs(protocol) if not bool(row.get("archived"))
+    ]
+    new_metric_rows = [
+        row
+        for row in budget.get("metric_rows", ())
+        if str(row.get("budget_id")) in set(new_budget_ids)
+    ]
+    by_target: dict[str, dict[str, float]] = defaultdict(dict)
+    for row in new_metric_rows:
+        target_id = str(row["target"])
+        budget_id = str(row["budget_id"])
+        if budget_id in by_target[target_id]:
+            by_target[target_id][budget_id] = float("nan")
+        else:
+            by_target[target_id][budget_id] = float(row["top1_regret_r2"])
+    expected_new_budget_count = len(new_budget_ids)
+    aggregate_values = [
+        float(np.mean([values[budget_id] for budget_id in new_budget_ids]))
+        for values in by_target.values()
+        if set(values) == set(new_budget_ids)
+        and len(values) == expected_new_budget_count
+        and np.isfinite([values[budget_id] for budget_id in new_budget_ids]).all()
+    ]
+    aggregate = (
+        float(np.mean(aggregate_values))
+        if len(aggregate_values) == len(by_target) and aggregate_values
+        else None
+    )
+    add(
+        "budget_new_mean_top1_regret_r2",
+        aggregate,
+        maximum=float(gates["budget_mean_top1_regret_r2_maximum"]),
+        weighting="equal target weight after equal weighting of the three fixed n200 unions and fixed n300 union",
+    )
     comparison_summaries = budget["budget_reference_comparison_summaries"]["heldout_envelope"]
     for budget_id, gate_key in (
         ("n100_s4103", "budget_100_vs_300_heldout_spearman_minimum"),
@@ -1296,8 +1374,9 @@ def _diagnostic_gates(
     gate_rows = checks
     return {
         "diagnostic_only": True,
-        "weighting": "point gates use equal target weight; intervals use target or dataset cluster units as reported",
+        "weighting": "point gates use equal target weight after fixed cohort/union construction; n300 top-1 regret is the mean of one panel-level regret per target; intervals use target or dataset cluster units as reported",
         "point_and_bound_policy": "point threshold failures are actionable; bootstrap bounds are reported for review and do not authorize promotion",
+        "bound_thresholds": dict(gates["bound_thresholds"]),
         "checks": gate_rows,
         "all_point_checks_passed": bool(gate_rows) and all(row["status"] == "pass" for row in gate_rows),
         "continuation": "Any failed or inconclusive check blocks a promotion/confirmation decision and requires design review; all passing checks still authorize only a prospective diagnostic stage.",
@@ -1367,7 +1446,7 @@ def report(summary: Mapping[str, Any]) -> str:
         "",
         "## Budget curve",
         "",
-        "The budget curve uses the eight source-selected frozen recoverable targets. It contains three archived 100-label cohorts, three fixed 200-label unions, and one fixed 300-label union per target. New 200/300 rows store per-head held-out predictions for paired evaluation-row bootstrap.",
+        "The budget curve uses the eight source-selected frozen recoverable targets. This set was selected before ranker outcomes from the frozen source opportunity benchmark; no post-outcome target replacement is allowed. It contains three archived 100-label cohorts, three fixed 200-label unions, and one fixed 300-label union per target. New 200/300 rows store per-head held-out predictions for paired evaluation-row bootstrap.",
         "",
         "| Budget | Panels | Candidates | New sklearn fits |",
         "|---|---:|---:|---:|",
@@ -1377,9 +1456,11 @@ def report(summary: Mapping[str, Any]) -> str:
         "",
         "The exact new budget total is 160 candidate rows, 640 family calls, 160 PCA fits, and 18,880 sklearn estimator fits. All fitting uses one-thread controls and the unchanged residual-ranking grids.",
         "",
+        "The held-out envelope is a noisy winner's-curse reference (the maximum of four fixed head families on shared evaluation rows), not a deployable or independent oracle. Archived n100 predictions were not stored, so n100 has no evaluation-row bootstrap. Budget intervals are conditional on fitted models and the fixed evaluation cohort; they do not cover training, grid-selection, or winner's-curse uncertainty and do not replace point gates.",
+        "",
         "## Diagnostic gates",
         "",
-        f"All gates are diagnostic-only. Point estimates use equal target weighting. Bootstrap bounds are reported for review; a failed or inconclusive check blocks promotion/confirmation and triggers design review, while a pass only permits a prospective diagnostic stage.",
+        f"All gates are diagnostic-only. Point estimates use equal target weighting; the declared new-budget top-1 regret gate first averages the fixed n200 unions and n300 union within each target. Bootstrap bounds are reported for review; a failed or inconclusive check blocks promotion/confirmation and triggers design review, while a pass only permits a prospective diagnostic stage.",
         "",
         "| Gate | Status | Estimate |",
         "|---|---|---:|",
@@ -1405,35 +1486,189 @@ def _validate_budget_checkpoint(
     target: str,
     budget: Mapping[str, Any],
     source_hash_map: Mapping[str, str],
+    cohort: Mapping[str, Any],
+    datasets: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, Any]:
+    """Validate a checkpoint as a canonical, self-contained panel.
+
+    Resume must not trust a checkpoint merely because its filename and source
+    hashes match.  The panel is checked against the frozen cohort construction,
+    deterministic seed formulas, embedding metadata, head grids, and the
+    recorded evaluation scores/predictions.  This keeps a partially tampered
+    or stale checkpoint from silently entering the final summary.
+    """
     panel = checkpoint.get("panel")
-    if checkpoint.get("source_hashes") != dict(source_hash_map) or not isinstance(panel, Mapping):
+    if (
+        checkpoint.get("schema_version") != 1
+        or checkpoint.get("status") != "completed_reference_envelope_budget_checkpoint"
+        or checkpoint.get("source_hashes") != dict(source_hash_map)
+        or not isinstance(panel, Mapping)
+    ):
         raise ValueError("reference envelope budget checkpoint source identity changed")
     expected_position = next(
         index for index, row in enumerate(_budget_specs(protocol)) if str(row["id"]) == str(budget["id"])
     )
+    dataset_id, target_id = _split_target_key(target)
+    if dataset_id not in datasets or target_id not in source_run.load_protocol()["datasets"][dataset_id]["targets"]:
+        raise ValueError("reference envelope budget checkpoint dataset identity changed")
+    source_dataset_order = tuple(source_run.load_protocol()["datasets"])
+    dataset_position = source_dataset_order.index(dataset_id)
+    target_position = tuple(source_run.load_protocol()["datasets"][dataset_id]["targets"]).index(target_id)
+    expected_train, expected_eval, _y_train, expected_y_eval, expected_train_ids, expected_eval_ids = _budget_rows(
+        cohort, target, budget["training_replicate_seeds"]
+    )
+    expected_panel_keys = {
+        "dataset_id", "target_id", "target", "stratum", "budget_id", "budget_position",
+        "training_replicate_seeds", "training_rows", "evaluation_rows", "training_sample_ids",
+        "evaluation_sample_ids", "evaluation_targets", "candidate_count", "candidates",
+        "evaluation_predictions_available", "source_archived", "shared_evaluation_dependence",
+        "panel_wall_seconds",
+    }
+    if set(panel) != expected_panel_keys:
+        raise ValueError("reference envelope budget checkpoint panel schema changed")
     if (
-        str(panel.get("target")) != target
+        str(panel.get("dataset_id")) != dataset_id
+        or str(panel.get("target_id")) != target_id
+        or str(panel.get("target")) != target
+        or str(panel.get("stratum")) != _stratum_by_target(protocol)[target]
         or str(panel.get("budget_id")) != str(budget["id"])
         or int(panel.get("budget_position", -1)) != expected_position
         or int(panel.get("training_rows", -1)) != int(budget["rows"])
         or int(panel.get("evaluation_rows", -1)) != 200
-        or tuple(str(value) for value in panel.get("training_replicate_seeds", ()))
-        != tuple(str(value) for value in budget["training_replicate_seeds"])
+        or tuple(panel.get("training_replicate_seeds", ())) != tuple(budget["training_replicate_seeds"])
+        or canonical_json(panel.get("training_sample_ids")) != canonical_json(expected_train_ids)
+        or canonical_json(panel.get("evaluation_sample_ids")) != canonical_json(expected_eval_ids)
+        or canonical_json(panel.get("evaluation_targets")) != canonical_json(expected_y_eval.tolist())
         or tuple(row.get("candidate_id") for row in panel.get("candidates", ())) != BACKBONES
         or int(panel.get("candidate_count", -1)) != len(BACKBONES)
         or not bool(panel.get("evaluation_predictions_available"))
+        or bool(panel.get("source_archived"))
+        or panel.get("shared_evaluation_dependence") is not True
     ):
         raise ValueError("reference envelope budget checkpoint identity changed")
+
+    if not isinstance(panel.get("panel_wall_seconds"), (int, float)) or not np.isfinite(float(panel["panel_wall_seconds"])) or float(panel["panel_wall_seconds"]) < 0:
+        raise ValueError("reference envelope checkpoint panel timing is invalid")
+
+    source_heads = residual._head_estimators()
+
+    def scalar_equal(left: Any, right: Any) -> bool:
+        if isinstance(left, np.generic):
+            left = left.item()
+        if isinstance(right, np.generic):
+            right = right.item()
+        if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+            return bool(float(left) == float(right))
+        return left == right
+
+    def params_match(head_id: str, params: Any) -> bool:
+        if not isinstance(params, Mapping) or head_id not in source_heads:
+            return False
+        _estimator, grid = source_heads[head_id]
+        if set(params) != set(grid):
+            return False
+        return all(any(scalar_equal(params[key], value) for value in values) for key, values in grid.items())
+
+    expected_pca_rank = int(geometry.PCA_RANK)
     for candidate in panel["candidates"]:
+        expected_candidate_keys = {
+            "candidate_id", "pca", "pca_seed", "fit_seed", "pca_wall_seconds", "heads",
+            "cv_envelope_r2", "heldout_envelope_r2", "best_head_ids", "evaluation_predictions_available",
+        }
+        if set(candidate) != expected_candidate_keys or str(candidate.get("candidate_id")) not in BACKBONES:
+            raise ValueError("reference envelope checkpoint candidate schema changed")
+        backbone_position = BACKBONES.index(str(candidate["candidate_id"]))
+        expected_fit_seed = _budget_seed(dataset_position, target_position, expected_position, backbone_position)
+        expected_pca_seed = _budget_geometry_seed(dataset_position, target_position, expected_position, backbone_position)
+        if (
+            type(candidate.get("fit_seed")) is not int
+            or type(candidate.get("pca_seed")) is not int
+            or int(candidate["fit_seed"]) != expected_fit_seed
+            or int(candidate["pca_seed"]) != expected_pca_seed
+            or candidate.get("evaluation_predictions_available") is not True
+        ):
+            raise ValueError("reference envelope checkpoint seeds or prediction flag changed")
+        pca = candidate.get("pca")
+        expected_pca_keys = {"rank", "input_dimension", "fit_rows", "explained_variance_ratio_sum"}
+        if not isinstance(pca, Mapping) or set(pca) != expected_pca_keys:
+            raise ValueError("reference envelope checkpoint PCA metadata changed")
+        matrix = datasets[dataset_id]["matrices"].get(str(candidate["candidate_id"]))
+        if matrix is None or len(getattr(matrix, "shape", ())) != 2:
+            raise ValueError("reference envelope checkpoint embedding metadata is unavailable")
+        pca_explained = pca.get("explained_variance_ratio_sum")
+        if (
+            int(pca.get("rank", -1)) != expected_pca_rank
+            or int(pca.get("input_dimension", -1)) != int(matrix.shape[1])
+            or int(pca.get("fit_rows", -1)) != int(budget["rows"])
+            or not isinstance(pca_explained, (int, float))
+            or not np.isfinite(float(pca_explained))
+            or float(pca_explained) < 0.0
+        ):
+            raise ValueError("reference envelope checkpoint PCA metadata changed")
+        # The compact metadata is still derived from a deterministic PCA fit;
+        # recompute it from the source-bound matrix and exact training rows so
+        # a finite but altered explained-variance value cannot pass resume.
+        _unused_train_geometry, _unused_eval_geometry, expected_pca = geometry.pca_geometry(
+            matrix,
+            expected_train,
+            expected_eval,
+            expected_pca_seed,
+        )
+        if canonical_json(dict(pca)) != canonical_json(expected_pca):
+            raise ValueError("reference envelope checkpoint PCA metadata changed")
+        pca_wall = candidate.get("pca_wall_seconds")
+        if not isinstance(pca_wall, (int, float)) or not np.isfinite(float(pca_wall)) or float(pca_wall) < 0:
+            raise ValueError("reference envelope checkpoint PCA timing is invalid")
         if set(candidate.get("heads", ())) != set(HEADS):
             raise ValueError("reference envelope checkpoint head set changed")
+        test_scores: dict[str, float] = {}
+        cv_scores: dict[str, float] = {}
         for head in HEADS:
-            predictions = candidate["heads"][head].get("test_predictions")
-            if not isinstance(predictions, list) or len(predictions) != 200 or not np.isfinite(np.asarray(predictions, dtype=np.float64)).all():
+            head_result = candidate["heads"][head]
+            expected_head_keys = {
+                "test_r2", "inner_best_r2", "best_params", "wall_seconds", "test_predictions",
+                "head_record_sha256",
+            }
+            if not isinstance(head_result, Mapping) or set(head_result) != expected_head_keys:
+                raise ValueError("reference envelope checkpoint head schema changed")
+            predictions = head_result.get("test_predictions")
+            if not isinstance(predictions, list) or len(predictions) != 200:
                 raise ValueError("reference envelope checkpoint predictions are incomplete")
-        if not isinstance(candidate.get("fit_seed"), int) or not isinstance(candidate.get("pca_seed"), int):
-            raise ValueError("reference envelope checkpoint seeds are missing")
+            prediction_values = np.asarray(predictions, dtype=np.float64)
+            if not np.isfinite(prediction_values).all():
+                raise ValueError("reference envelope checkpoint predictions are nonfinite")
+            if not params_match(head, head_result.get("best_params")):
+                raise ValueError("reference envelope checkpoint head parameters changed")
+            if not isinstance(head_result.get("test_r2"), (int, float)) or not isinstance(
+                head_result.get("inner_best_r2"), (int, float)
+            ):
+                raise ValueError("reference envelope checkpoint head scores are invalid")
+            if not np.isfinite(float(head_result["test_r2"])) or not np.isfinite(float(head_result["inner_best_r2"])):
+                raise ValueError("reference envelope checkpoint head scores are nonfinite")
+            if (
+                not isinstance(head_result.get("wall_seconds"), (int, float))
+                or not np.isfinite(float(head_result["wall_seconds"]))
+                or float(head_result["wall_seconds"]) < 0
+            ):
+                raise ValueError("reference envelope checkpoint head timing is invalid")
+            actual_score = float(head_result["test_r2"])
+            expected_score = float(r2_score(expected_y_eval, prediction_values))
+            if not np.isclose(actual_score, expected_score, rtol=0.0, atol=5.0e-13):
+                raise ValueError("reference envelope checkpoint prediction-score consistency changed")
+            if head_result.get("head_record_sha256") != _head_record_sha256(head_result):
+                raise ValueError("reference envelope checkpoint head record digest changed")
+            test_scores[head] = actual_score
+            cv_scores[head] = float(head_result["inner_best_r2"])
+        expected_cv = max(cv_scores.values())
+        expected_heldout = max(test_scores.values())
+        if (
+            not np.isclose(float(candidate["cv_envelope_r2"]), expected_cv, rtol=0.0, atol=5.0e-13)
+            or not np.isclose(float(candidate["heldout_envelope_r2"]), expected_heldout, rtol=0.0, atol=5.0e-13)
+            or list(candidate["best_head_ids"]) != _winner_ids(test_scores)
+            or not np.isfinite(float(candidate["cv_envelope_r2"]))
+            or not np.isfinite(float(candidate["heldout_envelope_r2"]))
+        ):
+            raise ValueError("reference envelope checkpoint envelope summary changed")
     return dict(panel)
 
 
@@ -1546,8 +1781,16 @@ def run(
                 if not resume:
                     raise FileExistsError(f"reference envelope checkpoint exists: {checkpoint_path}")
                 checkpoint = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+                if datasets is None:
+                    datasets = source_run.load_dataset(input_root, embedding_root)
                 panel = _validate_budget_checkpoint(
-                    checkpoint, protocol, str(target), budget, source_hash_map
+                    checkpoint,
+                    protocol,
+                    str(target),
+                    budget,
+                    source_hash_map,
+                    cohort,
+                    datasets,
                 )
             else:
                 if datasets is None:

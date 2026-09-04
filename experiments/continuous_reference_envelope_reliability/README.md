@@ -13,7 +13,9 @@ replicates. Archived prediction vectors were not retained, so evaluation-row
 bootstrap is explicitly unavailable for this part. Target-block and
 five-dataset-cluster percentile intervals are reported instead.
 
-The budget part uses the eight source-selected frozen recoverable targets. It
+The budget part uses the eight source-selected frozen recoverable targets. The
+eight-target set was selected from the frozen source opportunity benchmark
+before any ranker outcomes and is not replaced after seeing these results. It
 reuses the three archived 100-label cohorts, then fits the unchanged
 three-fold training-only four-head grids for all three fixed 200-label unions
 and the fixed 300-label union. Row order is frozen by replicate seed
@@ -22,6 +24,16 @@ training cohort only. The common 200-row evaluation cohort is used only after
 all training/CV fits finish. New budget checkpoints retain each head's
 200-row prediction vector, enabling paired evaluation-row bootstrap with the
 same resampled row IDs across candidates, heads, cohorts, and budgets.
+
+The held-out envelope is a noisy winner's-curse reference: it is the maximum
+over the four fixed head families on the shared evaluation rows, not a
+deployable score and not an independent oracle. The archived 100-label rows do
+not contain per-head prediction vectors, so no evaluation-row bootstrap is
+reported for `n100`; their target-block seed stability remains descriptive.
+Budget bootstrap intervals are conditional on the fitted models and the fixed
+shared evaluation cohort. They do not quantify training-sample, head-grid
+selection, or winner's-curse uncertainty, and they never replace the frozen
+point gates.
 
 The exact new workload is 160 candidate rows, 640 head-family calls, 160 PCA
 fits, and 18,880 underlying sklearn estimator fits. `n_jobs=1` is fixed and
