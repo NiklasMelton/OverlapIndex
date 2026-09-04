@@ -1,0 +1,215 @@
+{
+  "schema_version": 1,
+  "status": "frozen_reference_envelope_reliability_before_outcomes",
+  "scope": {
+    "claim": "development-only diagnostic of whether a four-head held-out reference envelope is stable enough to support backbone-ranking comparisons",
+    "archive_audit": "all 20 target channels and all 60 archived source panels; no model or OverlapIndex fits",
+    "budget_curve": "the eight source-selected, frozen recoverable targets only, with 100, 200, and 300 training-label cohorts",
+    "method_promotion_allowed": false,
+    "reserved_backbone_evaluation": false,
+    "post_outcome_cohort_or_gate_changes_allowed": false,
+    "confirmation_claim_allowed": false
+  },
+  "source": {
+    "directory": "artifacts/continuous_large_structured_opportunity_benchmark",
+    "protocol_sha256": "db5879f0204141d5e6b4ed24b21e721e1c551b011036acb0a06266cd32435b94",
+    "protocol_sidecar_sha256": "dfc4cf7ae141705ce09a0bd34d91f2461633a886edf104300ad665e7c37d945d",
+    "prepare_sha256": "5a53cd878f491953080f4b858038336c96af0a31c23fa807bda94c84d5d10424",
+    "extract_sha256": "8d093c13ed19c67d6c2254e5d5a7d48d0e9726b8edca29686f48a8de77c182cf",
+    "runner_sha256": "9d7785f30012f2393d8e2c2c4ed94e3c99f6082d3ee477b5b186bcd5d1d7b7b4",
+    "head_evaluator_sha256": "45e962a2e1f65cc65a5a927f2e312870b55d63166caaa829ed2b5a152ad4b84c",
+    "geometry_sha256": "549dc5254ba64768487069cb2d38b60512b482806b1b32b5a5ebfe8f247b5449",
+    "cohort_sha256": "435ea27e37a1753caa7cb147c971483756c28c6d4a714bfcf15e05efbae1a5db",
+    "embedding_manifest_sha256": "3b228f6dae6570cae46e31f624387bb37eeca6fe89332db4ee97b60121bf6d8b",
+    "raw_results_sha256": "cd258a518b9c30c790cc70993da608483c1be4b7f12e8b33e9df0d04a7d14375",
+    "summary_sha256": "5268db05359d37ebb0997de0d3211870fc9146cc60d32915e0f5a9ec9010d1b8",
+    "manifest_sha256": "8c8824f32bfdb9a26f6f6be4c275d678fa9b7527d81b350ee20d82c778128ade",
+    "expected_status": "completed_large_structured_opportunity_benchmark",
+    "expected_panel_count": 60,
+    "expected_candidate_count": 300
+  },
+  "strata": {
+    "recoverable_lp_dominated_control": [
+      "coco_2017_person_pose_geometry::wrist_span_over_torso_length",
+      "cub_200_2011_part_geometry::leg_span_over_bbox_diagonal",
+      "cub_200_2011_part_geometry::wing_axis_cosine",
+      "oxford_iiit_pet_mask_geometry::foreground_compactness"
+    ],
+    "rank_changing_nonlinear_opportunity": [
+      "lsp_2000_pose_geometry::ankle_span_over_torso_length",
+      "lsp_2000_pose_geometry::wrist_span_over_torso_length",
+      "pascal_voc_2007_largest_box_geometry::largest_box_area_fraction",
+      "pascal_voc_2007_largest_box_geometry::largest_box_log_aspect_ratio"
+    ],
+    "unusable_for_ranking": [
+      "coco_2017_person_pose_geometry::ankle_span_over_torso_length",
+      "coco_2017_person_pose_geometry::bilateral_elbow_extension_cosine",
+      "coco_2017_person_pose_geometry::shoulder_to_hip_width_ratio",
+      "cub_200_2011_part_geometry::wing_axis_sine",
+      "cub_200_2011_part_geometry::wing_span_over_bbox_diagonal",
+      "lsp_2000_pose_geometry::bilateral_elbow_extension_cosine",
+      "lsp_2000_pose_geometry::shoulder_to_hip_width_ratio",
+      "oxford_iiit_pet_mask_geometry::foreground_bbox_fill",
+      "oxford_iiit_pet_mask_geometry::foreground_boundary_roughness",
+      "oxford_iiit_pet_mask_geometry::foreground_eccentricity",
+      "pascal_voc_2007_largest_box_geometry::largest_box_center_x",
+      "pascal_voc_2007_largest_box_geometry::largest_box_center_y"
+    ]
+  },
+  "cohort": {
+    "replicate_seeds": [4103, 4201, 4303],
+    "training_rows_per_replicate": 100,
+    "evaluation_rows": 200,
+    "training_rows_total": 300,
+    "target_rows_total": 500,
+    "training_cohorts_disjoint": true,
+    "evaluation_cohort_shared_within_target": true,
+    "evaluation_cohort_disjoint_from_training": true
+  },
+  "backbones": {
+    "scout": [
+      "dinov2-small",
+      "deit-tiny",
+      "mobilenetv3-large",
+      "resnet50",
+      "convnext-tiny"
+    ],
+    "reserved": [
+      "openclip-vit-b-32",
+      "efficientnet-b0",
+      "swin-tiny",
+      "vit-small-16",
+      "densenet121"
+    ],
+    "reserved_evaluated": []
+  },
+  "heads": {
+    "ids": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "implementation": "continuous_residual_ranking.run._head_estimators and evaluate_heads; unchanged three-fold shuffled training-only GridSearchCV, scoring R2, n_jobs=1, refit=true",
+    "reference_envelope": "maximum held-out test R2 over the four frozen head families",
+    "cv_envelope": "maximum inner best CV R2 over the four frozen head families",
+    "head_agreement": "winner-set intersection is agreement; primary-winner confusion uses the first head in frozen HEADS order as deterministic tie break",
+    "bias": "per-head and envelope inner score minus held-out score; absolute error is absolute value of that difference"
+  },
+  "ranking_metrics": {
+    "tie_tolerance": 1e-12,
+    "material_pair_difference_r2": 0.01,
+    "topk": 3,
+    "topk_ties": "all candidates at or above the stable cutoff are included",
+    "spearman_constant": "undefined JSON null",
+    "top1_regret": "held-out maximum minus maximum held-out value among CV-envelope winners",
+    "top3_opportunity_regret": "held-out maximum minus maximum held-out value among stable CV top-three candidates",
+    "top3_utility_regret": "mean held-out value of stable held-out top-three minus mean held-out value of stable CV top-three",
+    "material_pair_accuracy": "exclude held-out envelope differences below 0.01; score ties receive 0.5 credit"
+  },
+  "archive_audit": {
+    "panel_count": 60,
+    "candidate_count": 300,
+    "evaluation_predictions_available": false,
+    "metrics": [
+      "cv_vs_heldout_envelope_spearman",
+      "cv_vs_heldout_top1_regret_r2",
+      "cv_vs_heldout_exact_best_rate",
+      "cv_vs_heldout_top3_opportunity_regret_r2",
+      "cv_vs_heldout_top3_utility_regret_r2",
+      "cv_vs_heldout_top3_set_recall",
+      "cv_vs_heldout_material_pair_accuracy",
+      "head_argmax_agreement",
+      "head_confusion_matrix",
+      "envelope_bias_and_absolute_error",
+      "target_level_seed_rank_winner_top3_material_pair_stability"
+    ],
+    "groups": ["all", "recoverable_lp_dominated_control", "rank_changing_nonlinear_opportunity", "unusable_for_ranking"],
+    "bootstrap": {
+      "evaluation_rows": "unavailable because archived predictions were not stored",
+      "target_blocks": 2000,
+      "seed": 2026091401,
+      "interval": "percentile 95%",
+      "unit": "target block with all three archived replicate panels retained together",
+      "dataset_cluster_intervals": true,
+      "dataset_cluster_unit": "five dataset clusters; target means within each dataset are averaged before resampling"
+    }
+  },
+  "budget_curve": {
+    "targets": [
+      "coco_2017_person_pose_geometry::wrist_span_over_torso_length",
+      "cub_200_2011_part_geometry::leg_span_over_bbox_diagonal",
+      "cub_200_2011_part_geometry::wing_axis_cosine",
+      "oxford_iiit_pet_mask_geometry::foreground_compactness",
+      "lsp_2000_pose_geometry::ankle_span_over_torso_length",
+      "lsp_2000_pose_geometry::wrist_span_over_torso_length",
+      "pascal_voc_2007_largest_box_geometry::largest_box_area_fraction",
+      "pascal_voc_2007_largest_box_geometry::largest_box_log_aspect_ratio"
+    ],
+    "selection_status": "source-selected after the frozen source opportunity benchmark and before ranker outcomes; no replacement is allowed",
+    "cohort_order": ["4103", "4201", "4303"],
+    "union_row_order": "replicate seed order 4103, 4201, 4303; within each seed preserve target-cohort row order",
+    "seed_derivation": {
+      "fit": "2026091501 + source_dataset_position*100000 + source_target_position*1000 + budget_position*100 + backbone_position",
+      "pca": "fit seed + 10000000",
+      "budget_position": "frozen budget list position offset by three so new budgets cannot collide with source seeds"
+    },
+    "budgets": [
+      {"id": "n100_s4103", "training_replicate_seeds": [4103], "rows": 100, "archived": true},
+      {"id": "n100_s4201", "training_replicate_seeds": [4201], "rows": 100, "archived": true},
+      {"id": "n100_s4303", "training_replicate_seeds": [4303], "rows": 100, "archived": true},
+      {"id": "n200_u4103_4201", "training_replicate_seeds": [4103, 4201], "rows": 200, "archived": false},
+      {"id": "n200_u4103_4303", "training_replicate_seeds": [4103, 4303], "rows": 200, "archived": false},
+      {"id": "n200_u4201_4303", "training_replicate_seeds": [4201, 4303], "rows": 200, "archived": false},
+      {"id": "n300_u4103_4201_4303", "training_replicate_seeds": [4103, 4201, 4303], "rows": 300, "archived": false}
+    ],
+    "pca": "row L2 normalization followed by randomized rank-32 PCA fitted on the selected training cohort only",
+    "training_decisions": "all four unchanged head grids are fit and selected inside each selected training cohort; held-out values are read only after all fits finish",
+    "new_panel_count": 32,
+    "new_candidate_count": 160,
+    "new_pca_fit_count": 160,
+    "new_head_family_call_count": 640,
+    "new_sklearn_estimator_fit_count": 18880,
+    "new_overlapindex_fit_count": 0,
+    "reserved_backbone_count": 0
+  },
+  "evaluation_bootstrap": {
+    "resamples": 2000,
+    "seed": 2026091402,
+    "unit": "paired evaluation-row resample within target; common row indices across candidates, heads, cohorts, and budgets",
+    "conditional_on_fitted_models": true,
+    "archive_100_status": "unavailable_archived_predictions_not_stored",
+    "new_200_300_status": "stored per-head test predictions enable paired bootstrap"
+  },
+  "diagnostic_gates": {
+    "archive_all_cv_vs_heldout_spearman_minimum": 0.50,
+    "archive_recoverable_cv_vs_heldout_spearman_minimum": 0.50,
+    "archive_target_seed_rank_stability_minimum": 0.50,
+    "budget_cv_vs_heldout_spearman_minimum": 0.50,
+    "budget_100_vs_300_heldout_spearman_minimum": 0.50,
+    "budget_200_vs_300_heldout_spearman_minimum": 0.50,
+    "budget_mean_top1_regret_r2_maximum": 0.05,
+    "purpose": "actionable diagnostic flags only; no gate can promote a ranker or authorize confirmation",
+    "point_estimate_weighting": "equal target weight after equal replicate/union averaging",
+    "point_threshold_rule": "minimum gates pass when point estimate is at least the minimum; maximum gates pass when point estimate is at most the maximum",
+    "bound_rule": "target and dataset cluster percentile intervals are reported separately; no bound is substituted for the point threshold",
+    "bound_thresholds": {
+      "minimum_gate_lower_95": 0.0,
+      "maximum_top1_regret_upper_95": 0.08,
+      "usage": "review-only informational thresholds; they never promote a ranker or authorize confirmation"
+    },
+    "continuation_rule": "any failed or inconclusive point gate blocks promotion/confirmation and requires design review; all passing gates authorize only a prospective diagnostic stage"
+  },
+  "expected_grid": {
+    "archive_target_count": 20,
+    "archive_panel_count": 60,
+    "archive_candidate_count": 300,
+    "archive_recoverable_panel_count": 24,
+    "budget_target_count": 8,
+    "budget_archived_100_panel_count": 24,
+    "budget_new_200_panel_count": 24,
+    "budget_new_300_panel_count": 8,
+    "budget_new_panel_count": 32,
+    "budget_new_candidate_count": 160,
+    "budget_new_pca_fit_count": 160,
+    "budget_new_head_family_call_count": 640,
+    "budget_new_sklearn_estimator_fit_count": 18880,
+    "reserved_backbone_count": 0,
+    "overlapindex_fit_count": 0
+  }
+}
