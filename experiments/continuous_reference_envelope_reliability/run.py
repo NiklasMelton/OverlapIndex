@@ -1374,7 +1374,7 @@ def _diagnostic_gates(
     gate_rows = checks
     return {
         "diagnostic_only": True,
-        "weighting": "point gates use equal target weight after fixed cohort/union construction; n300 top-1 regret is the mean of one panel-level regret per target; intervals use target or dataset cluster units as reported",
+        "weighting": "point gates use equal target weight after fixed cohort/union construction; the new-budget top-1 regret is the mean of equal-union averages within each target; intervals use target or dataset cluster units as reported",
         "point_and_bound_policy": "point threshold failures are actionable; bootstrap bounds are reported for review and do not authorize promotion",
         "bound_thresholds": dict(gates["bound_thresholds"]),
         "checks": gate_rows,
@@ -1487,7 +1487,9 @@ def _validate_budget_checkpoint(
     budget: Mapping[str, Any],
     source_hash_map: Mapping[str, str],
     cohort: Mapping[str, Any],
-    datasets: Mapping[str, Mapping[str, Any]],
+    datasets: Optional[Mapping[str, Mapping[str, Any]]],
+    *,
+    recompute_pca: bool = True,
 ) -> dict[str, Any]:
     """Validate a checkpoint as a canonical, self-contained panel.
 
@@ -1509,7 +1511,9 @@ def _validate_budget_checkpoint(
         index for index, row in enumerate(_budget_specs(protocol)) if str(row["id"]) == str(budget["id"])
     )
     dataset_id, target_id = _split_target_key(target)
-    if dataset_id not in datasets or target_id not in source_run.load_protocol()["datasets"][dataset_id]["targets"]:
+    if datasets is not None and dataset_id not in datasets:
+        raise ValueError("reference envelope budget checkpoint dataset identity changed")
+    if target_id not in source_run.load_protocol()["datasets"][dataset_id]["targets"]:
         raise ValueError("reference envelope budget checkpoint dataset identity changed")
     source_dataset_order = tuple(source_run.load_protocol()["datasets"])
     dataset_position = source_dataset_order.index(dataset_id)
@@ -1592,13 +1596,23 @@ def _validate_budget_checkpoint(
         expected_pca_keys = {"rank", "input_dimension", "fit_rows", "explained_variance_ratio_sum"}
         if not isinstance(pca, Mapping) or set(pca) != expected_pca_keys:
             raise ValueError("reference envelope checkpoint PCA metadata changed")
-        matrix = datasets[dataset_id]["matrices"].get(str(candidate["candidate_id"]))
-        if matrix is None or len(getattr(matrix, "shape", ())) != 2:
-            raise ValueError("reference envelope checkpoint embedding metadata is unavailable")
+        matrix = None
+        if datasets is not None:
+            matrix = datasets[dataset_id]["matrices"].get(str(candidate["candidate_id"]))
+            if matrix is None or len(getattr(matrix, "shape", ())) != 2:
+                raise ValueError("reference envelope checkpoint embedding metadata is unavailable")
+            expected_input_dimension = int(matrix.shape[1])
+        else:
+            try:
+                expected_input_dimension = int(
+                    source_extract.SPEC_BY_ID[str(candidate["candidate_id"])]["dimension"]
+                )
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("reference envelope checkpoint embedding metadata is unavailable") from exc
         pca_explained = pca.get("explained_variance_ratio_sum")
         if (
             int(pca.get("rank", -1)) != expected_pca_rank
-            or int(pca.get("input_dimension", -1)) != int(matrix.shape[1])
+            or int(pca.get("input_dimension", -1)) != expected_input_dimension
             or int(pca.get("fit_rows", -1)) != int(budget["rows"])
             or not isinstance(pca_explained, (int, float))
             or not np.isfinite(float(pca_explained))
@@ -1608,14 +1622,17 @@ def _validate_budget_checkpoint(
         # The compact metadata is still derived from a deterministic PCA fit;
         # recompute it from the source-bound matrix and exact training rows so
         # a finite but altered explained-variance value cannot pass resume.
-        _unused_train_geometry, _unused_eval_geometry, expected_pca = geometry.pca_geometry(
-            matrix,
-            expected_train,
-            expected_eval,
-            expected_pca_seed,
-        )
-        if canonical_json(dict(pca)) != canonical_json(expected_pca):
-            raise ValueError("reference envelope checkpoint PCA metadata changed")
+        if recompute_pca:
+            if matrix is None:
+                raise ValueError("reference envelope checkpoint PCA source is unavailable")
+            _unused_train_geometry, _unused_eval_geometry, expected_pca = geometry.pca_geometry(
+                matrix,
+                expected_train,
+                expected_eval,
+                expected_pca_seed,
+            )
+            if canonical_json(dict(pca)) != canonical_json(expected_pca):
+                raise ValueError("reference envelope checkpoint PCA metadata changed")
         pca_wall = candidate.get("pca_wall_seconds")
         if not isinstance(pca_wall, (int, float)) or not np.isfinite(float(pca_wall)) or float(pca_wall) < 0:
             raise ValueError("reference envelope checkpoint PCA timing is invalid")
@@ -1695,8 +1712,26 @@ def _validate_existing_json_identity(path: Path, source_hash_map: Mapping[str, s
 def _validate_terminal_manifest(
     manifest: Mapping[str, Any], output_root: Path, source_hash_map: Mapping[str, str]
 ) -> dict[str, Any]:
+    expected_manifest_keys = {
+        "schema_version", "status", "protocol_sha256", "source_hashes", "artifacts", "counts",
+        "environment", "archive_evaluation_predictions_available",
+        "budget_new_evaluation_predictions_available", "reserved_backbones_evaluated",
+        "overlapindex_fit_count", "diagnostic_only",
+    }
+    if set(manifest) != expected_manifest_keys:
+        raise ValueError("reference envelope terminal manifest schema changed")
     if manifest.get("status") != "completed_reference_envelope_reliability":
         raise ValueError("reference envelope terminal status changed")
+    if (
+        manifest.get("schema_version") != 1
+        or manifest.get("protocol_sha256") != sha256_path(PROTOCOL_PATH)
+        or manifest.get("archive_evaluation_predictions_available") is not False
+        or manifest.get("budget_new_evaluation_predictions_available") is not True
+        or manifest.get("reserved_backbones_evaluated") != []
+        or manifest.get("overlapindex_fit_count") != 0
+        or manifest.get("diagnostic_only") is not True
+    ):
+        raise ValueError("reference envelope terminal manifest identity changed")
     if manifest.get("source_hashes") != dict(source_hash_map):
         raise ValueError("reference envelope terminal source identity changed")
     artifacts = manifest.get("artifacts", {})
@@ -1719,6 +1754,144 @@ def _validate_terminal_manifest(
         "overlapindex_fits": 0,
     }:
         raise ValueError("reference envelope terminal counts changed")
+    return dict(manifest)
+
+
+def _read_json_artifact(path: Path, label: str) -> dict[str, Any]:
+    if not path.is_file():
+        raise ValueError(f"reference envelope {label} is missing")
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"reference envelope {label} is not valid JSON") from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"reference envelope {label} is not a JSON object")
+    return value
+
+
+def validate_artifact(output_root: Path = DEFAULT_OUTPUT_ROOT) -> dict[str, Any]:
+    """Validate a completed audit without fitting models or writing artifacts.
+
+    The source chain and current protocol are checked first.  Then the
+    terminal files, every checkpoint, and the raw/summary/report relationship
+    are reconstructed from serialized values and deterministic metric code.
+    No embedding arrays or estimator fits are needed for this validation path.
+    """
+    protocol = load_protocol()
+    raw_source, _source_summary, _source_manifest, cohort = validate_sources(protocol)
+    source_hash_map = source_hashes()
+    output_root = Path(output_root).resolve()
+    manifest = _read_json_artifact(output_root / "manifest.json", "terminal manifest")
+    _validate_terminal_manifest(manifest, output_root, source_hash_map)
+    raw = _read_json_artifact(output_root / "raw_results.json", "raw results")
+    summary = _read_json_artifact(output_root / "summary.json", "summary")
+    report_path = output_root / "report.md"
+    if not report_path.is_file():
+        raise ValueError("reference envelope report is missing")
+
+    expected_raw_keys = {
+        "schema_version", "status", "protocol", "source_hashes", "archive_audit", "budget_panels",
+        "reserved_backbones_evaluated", "overlapindex_fit_count",
+    }
+    if set(raw) != expected_raw_keys:
+        raise ValueError("reference envelope raw artifact schema changed")
+    if (
+        raw.get("schema_version") != 1
+        or raw.get("status") != "completed_reference_envelope_reliability"
+        or raw.get("source_hashes") != dict(source_hash_map)
+        or canonical_json(raw.get("protocol")) != canonical_json(protocol)
+        or raw.get("reserved_backbones_evaluated") != []
+        or raw.get("overlapindex_fit_count") != 0
+    ):
+        raise ValueError("reference envelope raw artifact identity changed")
+
+    expected_archive = archive_audit(raw_source, protocol)
+    if canonical_json(raw.get("archive_audit")) != canonical_json(expected_archive):
+        raise ValueError("reference envelope archive artifact content changed")
+    if (
+        len(raw.get("budget_panels", ())) != 56
+        or sum(len(panel.get("candidates", ())) for panel in raw.get("budget_panels", ())) != 280
+    ):
+        raise ValueError("reference envelope raw budget grid is incomplete")
+
+    strata = _stratum_by_target(protocol)
+    source_panel_lookup = {
+        (_target_key(str(panel["dataset_id"]), str(panel["target_id"])), int(panel["seed"])): panel
+        for panel in raw_source["panels"]
+    }
+    budget_specs = _budget_specs(protocol)
+    budget_panels = raw["budget_panels"]
+    expected_checkpoint_names = set()
+    for panel_index, (budget, target) in enumerate(
+        ( (budget, target) for budget in budget_specs for target in protocol["budget_curve"]["targets"] )
+    ):
+        panel = budget_panels[panel_index]
+        budget_id = str(budget["id"])
+        if (
+            str(panel.get("budget_id")) != budget_id
+            or str(panel.get("target")) != str(target)
+            or str(panel.get("stratum")) != strata[str(target)]
+        ):
+            raise ValueError("reference envelope raw budget panel grid changed")
+        if bool(budget.get("archived")):
+            seed = int(budget["training_replicate_seeds"][0])
+            source_panel = source_panel_lookup[(str(target), seed)]
+            expected_panel = _source_100_budget_panel(
+                source_panel, str(target), seed, strata[str(target)], budget_id
+            )
+            if canonical_json(panel) != canonical_json(expected_panel):
+                raise ValueError("reference envelope archived budget panel content changed")
+        else:
+            expected_checkpoint_names.add(_checkpoint_name(panel))
+            _validate_budget_checkpoint(
+                {
+                    "schema_version": 1,
+                    "status": "completed_reference_envelope_budget_checkpoint",
+                    "source_hashes": source_hash_map,
+                    "panel": panel,
+                },
+                protocol,
+                str(target),
+                budget,
+                source_hash_map,
+                cohort,
+                None,
+                recompute_pca=False,
+            )
+
+    checkpoint_root = output_root / "checkpoints"
+    if not checkpoint_root.is_dir():
+        raise ValueError("reference envelope checkpoint directory is missing")
+    actual_checkpoint_names = {path.name for path in checkpoint_root.glob("*.json")}
+    if actual_checkpoint_names != expected_checkpoint_names:
+        raise ValueError("reference envelope checkpoint grid changed")
+    panel_by_checkpoint_name = {
+        _checkpoint_name(panel): panel
+        for panel in budget_panels
+        if not bool(panel.get("source_archived"))
+    }
+    for checkpoint_name in sorted(expected_checkpoint_names):
+        checkpoint = _read_json_artifact(checkpoint_root / checkpoint_name, f"checkpoint {checkpoint_name}")
+        panel = panel_by_checkpoint_name[checkpoint_name]
+        budget = next(row for row in budget_specs if str(row["id"]) == str(panel["budget_id"]))
+        _validate_budget_checkpoint(
+            checkpoint,
+            protocol,
+            str(panel["target"]),
+            budget,
+            source_hash_map,
+            cohort,
+            None,
+            recompute_pca=False,
+        )
+        if canonical_json(checkpoint["panel"]) != canonical_json(panel):
+            raise ValueError(f"reference envelope checkpoint {checkpoint_name} differs from raw panel")
+
+    reconstructed_summary = summarize(protocol, expected_archive, budget_panels)
+    if canonical_json(summary) != canonical_json(reconstructed_summary):
+        raise ValueError("reference envelope summary cannot be reconstructed from raw artifact")
+    if report_path.read_text(encoding="utf-8") != report(summary):
+        raise ValueError("reference envelope report cannot be reconstructed from summary")
     return dict(manifest)
 
 
@@ -1878,8 +2051,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--embedding-root", type=Path, default=source_extract.DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--validate-only", action="store_true")
     args = parser.parse_args(argv)
-    print(canonical_json(run(args.input_root, args.embedding_root, args.output_root, resume=args.resume)))
+    if args.validate_only:
+        print(canonical_json(validate_artifact(args.output_root)))
+    else:
+        print(canonical_json(run(args.input_root, args.embedding_root, args.output_root, resume=args.resume)))
     return 0
 
 

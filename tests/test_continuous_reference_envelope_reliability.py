@@ -267,6 +267,8 @@ def test_declared_budget_top1_regret_gate_is_evaluated_and_can_fail():
     assert gate["weighting"] == (
         "equal target weight after equal weighting of the three fixed n200 unions and fixed n300 union"
     )
+    assert "n300 top-1 regret" not in result["weighting"]
+    assert "new-budget top-1 regret" in result["weighting"]
     assert gate["status"] == "fail"
     assert result["all_point_checks_passed"] is False
     assert result["bound_thresholds"] == protocol["diagnostic_gates"]["bound_thresholds"]
@@ -429,6 +431,72 @@ def test_checkpoint_resume_rejects_tampered_canonical_content(tamper, message):
             cohort,
             datasets,
         )
+
+
+def test_validate_artifact_fails_closed_on_missing_terminal_manifest(tmp_path):
+    with pytest.raises(ValueError, match="terminal manifest is missing"):
+        run.validate_artifact(tmp_path)
+
+
+def test_validate_artifact_checks_terminal_artifact_hashes(tmp_path):
+    protocol = run.load_protocol()
+    source_hashes = run.source_hashes()
+    counts = {
+        "archive_panels": 60,
+        "archive_candidates": 300,
+        "budget_panels": 56,
+        "budget_candidates": 280,
+        "new_budget_panels": 32,
+        "new_budget_candidates": 160,
+        "new_pca_fits": 160,
+        "new_head_family_calls": 640,
+        "new_sklearn_estimator_fits": 18880,
+        "reserved_backbones": 0,
+        "overlapindex_fits": 0,
+    }
+    manifest = {
+        "schema_version": 1,
+        "status": "completed_reference_envelope_reliability",
+        "protocol_sha256": run.sha256_path(run.PROTOCOL_PATH),
+        "source_hashes": source_hashes,
+        "artifacts": {
+            "raw_results.json": "0" * 64,
+            "summary.json": "0" * 64,
+            "report.md": "0" * 64,
+        },
+        "counts": counts,
+        "environment": {},
+        "archive_evaluation_predictions_available": False,
+        "budget_new_evaluation_predictions_available": True,
+        "reserved_backbones_evaluated": [],
+        "overlapindex_fit_count": 0,
+        "diagnostic_only": True,
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    for name in ("raw_results.json", "summary.json"):
+        (tmp_path / name).write_text("{}", encoding="utf-8")
+    (tmp_path / "report.md").write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="terminal artifact is missing or changed"):
+        run.validate_artifact(tmp_path)
+
+
+def test_validate_only_cli_does_not_call_outcome_runner(monkeypatch, tmp_path, capsys):
+    called = []
+
+    def fake_validate(path):
+        called.append(path)
+        return {"status": "validated"}
+
+    def forbidden_run(*_args, **_kwargs):
+        raise AssertionError("validate-only must not execute the experiment")
+
+    monkeypatch.setattr(run, "validate_artifact", fake_validate)
+    monkeypatch.setattr(run, "run", forbidden_run)
+
+    assert run.main(["--validate-only", "--output-root", str(tmp_path)]) == 0
+    assert called == [tmp_path.resolve()]
+    assert json.loads(capsys.readouterr().out)["status"] == "validated"
 
 
 def test_protocol_is_json_serializable_and_unknown_budget_fails():

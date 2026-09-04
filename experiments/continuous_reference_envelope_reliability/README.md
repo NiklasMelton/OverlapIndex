@@ -53,3 +53,7 @@ LOKY_MAX_CPU_COUNT=1 \
 `--resume` validates the protocol/source hash identity before reusing any
 checkpoint. Final JSON, Markdown, checkpoint, and terminal-manifest writes
 are atomic. A source or protocol mismatch fails closed.
+
+Use `--validate-only --output-root <completed-artifact-root>` to validate the
+terminal manifest, artifact hashes, checkpoint grid/content, and reconstructed
+summary/report without fitting models or writing files.
