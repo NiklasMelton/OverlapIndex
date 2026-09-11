@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "status": "frozen_large_head_subset_generalization_before_subset_outcomes",
+  "objective": "Test whether the independently preselected quadratic-Ridge plus kNN training-CV envelope provides a fast, general backbone-ranking proxy for the held-out best-head envelope on every recoverable target in the larger real benchmark.",
+  "scope": {
+    "development_only": true,
+    "primary_subset_selected_from_prior_independent_panel": true,
+    "post_outcome_subset_selection_allowed": false,
+    "all_subsets_reported_diagnostically": true,
+    "new_model_fits": false,
+    "new_overlapindex_fits": false,
+    "heldout_envelope_access": "metrics only",
+    "reserved_backbone_evaluation": false,
+    "method_promotion_allowed": false
+  },
+  "source": {
+    "directory": "artifacts/continuous_large_structured_opportunity_benchmark/results",
+    "protocol_sha256": "db5879f0204141d5e6b4ed24b21e721e1c551b011036acb0a06266cd32435b94",
+    "runner_sha256": "9d7785f30012f2393d8e2c2c4ed94e3c99f6082d3ee477b5b186bcd5d1d7b7b4",
+    "raw_results_sha256": "cd258a518b9c30c790cc70993da608483c1be4b7f12e8b33e9df0d04a7d14375",
+    "summary_sha256": "5268db05359d37ebb0997de0d3211870fc9146cc60d32915e0f5a9ec9010d1b8",
+    "manifest_sha256": "8c8824f32bfdb9a26f6f6be4c275d678fa9b7527d81b350ee20d82c778128ade",
+    "expected_status": "completed_large_structured_opportunity_benchmark"
+  },
+  "selection_source": {
+    "directory": "artifacts/continuous_large_recoverable_ranker_comparison",
+    "protocol_sha256": "ee7a4864e8b229ce12d883fac9ae80718bd52514efde725fa6a98a547e5df79c",
+    "runner_sha256": "a4d363cb22556e9570ae793c6c0c76d90a0753a5f62453cdb4779dc8ba7ff029",
+    "summary_sha256": "ead4d39d3b35bf6e7b368a7a129fdad2ccd799a978e8785c3d269601d12c26a4",
+    "manifest_sha256": "a3ee721249f10b6ab154c3d72f1eabfa84fcc91ffefc89faacb24ec72ffc8234",
+    "expected_status": "completed_recoverable_ranker_comparison"
+  },
+  "prior_selection_basis": {
+    "directory": "artifacts/continuous_coi_head_subset_cost_diagnostic",
+    "protocol_sha256": "b2d97dbca9d4974001da73e6ae50cc7d70bf5a47804a21d14e24a9662ec3a3cb",
+    "runner_sha256": "c8fa10160eb72a0daabd1a0370d7a1f0d09cee1992743a4c083e0d2814e9869e",
+    "summary_sha256": "66b95802a017fe5edb4940d760272ec12a7d341f193fbbcf6e527a5cb611e4aa",
+    "manifest_sha256": "b799669c38d7499c207d3c11c568185bdb5a3499e1f9f156c5b2675144a3ecf2",
+    "finding": "quadratic Ridge plus kNN achieved 0.9039 overall Spearman and effectively zero top-one regret at 2.45 times archived linear cost on the prior balanced panel"
+  },
+  "strata": {
+    "rank_changing_nonlinear_opportunity": [
+      "lsp_2000_pose_geometry::ankle_span_over_torso_length",
+      "lsp_2000_pose_geometry::wrist_span_over_torso_length",
+      "pascal_voc_2007_largest_box_geometry::largest_box_area_fraction",
+      "pascal_voc_2007_largest_box_geometry::largest_box_log_aspect_ratio"
+    ],
+    "recoverable_lp_dominated_control": [
+      "coco_2017_person_pose_geometry::wrist_span_over_torso_length",
+      "cub_200_2011_part_geometry::leg_span_over_bbox_diagonal",
+      "cub_200_2011_part_geometry::wing_axis_cosine",
+      "oxford_iiit_pet_mask_geometry::foreground_compactness"
+    ]
+  },
+  "ablation": {
+    "heads": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "subsets": "all 15 nonempty subsets in increasing width and canonical head order",
+    "candidate_score": "maximum archived training-only inner_best_r2 over included heads",
+    "runtime": "sum of archived per-candidate wall_seconds over included heads",
+    "baseline_subset": ["linear_ridge"],
+    "primary_subset": ["quadratic_ridge", "knn"],
+    "accuracy_control_subset": ["quadratic_ridge", "rbf_svr"],
+    "full_reference_subset": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "tie_tolerance": 1e-12
+  },
+  "evaluation": {
+    "groups": ["all", "rank_changing_nonlinear_opportunity", "recoverable_lp_dominated_control"],
+    "metrics": ["complete_panel_spearman", "top1_envelope_regret_r2", "exact_best_rate", "top3_opportunity_regret_r2", "top3_mean_utility_regret_r2", "top3_set_recall", "material_pair_accuracy"],
+    "topk": 3,
+    "material_pair_difference_r2": 0.01,
+    "constant_spearman": "undefined_null",
+    "equal_panel_weighting": true
+  },
+  "success": {
+    "applies_only_to": "quadratic_ridge+knn",
+    "minimum_overall_spearman_gain_over_linear_cv": 0.05,
+    "minimum_opportunity_spearman_gain_over_linear_cv": 0.05,
+    "maximum_control_spearman_drop_from_linear_cv": 0.05,
+    "maximum_overall_top1_regret_increase_r2": 0.005,
+    "minimum_opportunity_top1_regret_reduction_r2": 0.005,
+    "maximum_control_top1_regret_increase_r2": 0.005,
+    "maximum_overall_top3_opportunity_regret_increase_r2": 0.002,
+    "maximum_aggregate_runtime_ratio_to_linear_cv": 3.0,
+    "result_if_pass": "cheap_quadratic_knn_envelope_passes_large_recoverable_gate",
+    "result_if_fail": "cheap_quadratic_knn_envelope_does_not_generalize",
+    "promotion": "none_development_only"
+  },
+  "expected_grid": {
+    "target_count": 8,
+    "panel_count": 24,
+    "candidate_count": 120,
+    "subset_count": 15,
+    "ranking_row_count": 360,
+    "ranking_summary_count": 45,
+    "cost_row_count": 15,
+    "new_model_fit_count": 0,
+    "new_overlapindex_fit_count": 0,
+    "reserved_backbone_count": 0
+  }
+}

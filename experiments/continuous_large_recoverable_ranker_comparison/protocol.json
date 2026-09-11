@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "status": "frozen_recoverable_ranker_comparison_before_selector_outcomes",
+  "scope": {
+    "claim": "development-only ranker comparison on the complete recoverable stratum of the frozen 20-target benchmark",
+    "selection": "include every target classified as rank_changing_nonlinear_opportunity or recoverable_lp_dominated_control; exclude every target classified unusable_for_ranking",
+    "selection_was_fixed_before_selector_outcomes": true,
+    "post_outcome_target_replacement_allowed": false,
+    "post_outcome_method_selection_allowed": false,
+    "reserved_backbone_claim_allowed": false,
+    "primary_question": "Can either fixed continuous ranking surface improve best-head-envelope ranking on nonlinear-opportunity targets while preserving linear-probe performance on recoverable controls at no more than three times linear-CV runtime?"
+  },
+  "source": {
+    "directory": "artifacts/continuous_large_structured_opportunity_benchmark/results",
+    "protocol_sha256": "db5879f0204141d5e6b4ed24b21e721e1c551b011036acb0a06266cd32435b94",
+    "prepare_sha256": "5a53cd878f491953080f4b858038336c96af0a31c23fa807bda94c84d5d10424",
+    "extract_sha256": "8d093c13ed19c67d6c2254e5d5a7d48d0e9726b8edca29686f48a8de77c182cf",
+    "runner_sha256": "9d7785f30012f2393d8e2c2c4ed94e3c99f6082d3ee477b5b186bcd5d1d7b7b4",
+    "raw_results_sha256": "cd258a518b9c30c790cc70993da608483c1be4b7f12e8b33e9df0d04a7d14375",
+    "summary_sha256": "5268db05359d37ebb0997de0d3211870fc9146cc60d32915e0f5a9ec9010d1b8",
+    "manifest_sha256": "8c8824f32bfdb9a26f6f6be4c275d678fa9b7527d81b350ee20d82c778128ade",
+    "expected_status": "completed_large_structured_opportunity_benchmark",
+    "expected_panels": 60,
+    "expected_candidates": 300
+  },
+  "strata": {
+    "rank_changing_nonlinear_opportunity": [
+      "lsp_2000_pose_geometry::ankle_span_over_torso_length",
+      "lsp_2000_pose_geometry::wrist_span_over_torso_length",
+      "pascal_voc_2007_largest_box_geometry::largest_box_area_fraction",
+      "pascal_voc_2007_largest_box_geometry::largest_box_log_aspect_ratio"
+    ],
+    "recoverable_lp_dominated_control": [
+      "coco_2017_person_pose_geometry::wrist_span_over_torso_length",
+      "cub_200_2011_part_geometry::leg_span_over_bbox_diagonal",
+      "cub_200_2011_part_geometry::wing_axis_cosine",
+      "oxford_iiit_pet_mask_geometry::foreground_compactness"
+    ]
+  },
+  "rankers": {
+    "methods": [
+      "linear_cv",
+      "continuous_broad_rff",
+      "continuous_save_rff",
+      "raw_cv_max"
+    ],
+    "candidate_methods": ["continuous_broad_rff", "continuous_save_rff"],
+    "baseline": "linear_cv",
+    "diagnostic_ceiling": "raw_cv_max",
+    "linear_cv": "training-only three-fold tuned linear Ridge inner-CV score archived by the source experiment",
+    "continuous_broad_rff": "four-fold prototype-free eight-map rank-64 RFF fusion with bandwidth-4 null-adjusted kernel alignment",
+    "continuous_save_rff": "four-fold shared SAVE plus eight-map-mean RFF geometry, FusedKMeans k=4 per target cell, eight target cells, soft-top5 adjacency, support-weighted aggregation, and common 32-permutation heldout null bank",
+    "raw_cv_max": "candidate-wise maximum training-only inner-CV score across linear Ridge, quadratic Ridge, kNN, and RBF SVR"
+  },
+  "selector": {
+    "folds": 4,
+    "shuffle": true,
+    "selector_seed": "replicate_seed + 100*dataset_position + 10*target_position",
+    "candidate_position": "zero-based frozen scout-backbone position",
+    "target_access": "training target only",
+    "heldout_envelope_access": "metrics only after every candidate score in a panel is fixed"
+  },
+  "evaluation": {
+    "truth": "held-out best-head envelope R2 from the frozen source",
+    "groups": ["all", "rank_changing_nonlinear_opportunity", "recoverable_lp_dominated_control"],
+    "metrics": [
+      "complete_panel_spearman",
+      "top1_envelope_regret_r2",
+      "exact_best_rate",
+      "top3_opportunity_regret_r2",
+      "top3_mean_utility_regret_r2",
+      "material_pair_accuracy"
+    ],
+    "topk": 3,
+    "material_pair_difference_r2": 0.01,
+    "tie_tolerance": 1e-12,
+    "aggregation": "equal panel weighting; every target has three panels so this is also equal target weighting"
+  },
+  "success": {
+    "candidate_rule": "one fixed candidate method must pass every ranking and runtime check independently",
+    "minimum_opportunity_spearman_gain_over_linear_cv": 0.05,
+    "minimum_opportunity_top1_regret_reduction_r2": 0.005,
+    "maximum_control_spearman_drop_from_linear_cv": 0.05,
+    "maximum_control_top1_regret_increase_r2": 0.005,
+    "maximum_overall_top3_opportunity_regret_increase_r2": 0.002,
+    "maximum_aggregate_runtime_ratio_to_linear_cv": 3.0,
+    "result_if_pass": "continuous_ranker_candidate_passes_recoverable_opportunity_control_gate",
+    "result_if_fail": "continuous_ranker_candidates_do_not_meet_combined_regret_preservation_runtime_goal"
+  },
+  "backbones": {
+    "scout": [
+      "dinov2-small",
+      "deit-tiny",
+      "mobilenetv3-large",
+      "resnet50",
+      "convnext-tiny"
+    ],
+    "reserved_evaluated": []
+  },
+  "expected_grid": {
+    "target_count": 8,
+    "targets_per_stratum": 4,
+    "replicates_per_target": 3,
+    "panel_count": 24,
+    "candidates_per_panel": 5,
+    "candidate_count": 120,
+    "ranking_method_count": 4,
+    "ranking_row_count": 96,
+    "ranking_summary_count": 12,
+    "continuous_oi_candidate_count": 120,
+    "continuous_oi_outer_fit_count": 480,
+    "reserved_backbone_count": 0
+  }
+}

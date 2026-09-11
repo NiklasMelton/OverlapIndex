@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "status": "frozen_development_broad_fusion_scaling_before_new_outcomes",
+  "objective": "Verify that the successful eight-map fused broad score is exactly prototype-independent, measure the speed gained by removing the unused SAVE/prototype path, and characterize row-count scaling against the full fused selector and a fixed linear Ridge probe.",
+  "scope": {
+    "downstream_head_outcomes": "immutable_reuse_only",
+    "postprojection_fusion_outcomes_previously_observed": true,
+    "prototype_free_runtime_previously_observed": false,
+    "synthetic_scaling_runtime_previously_observed": false,
+    "method_promotion_allowed": false,
+    "interpretation": "development_implementation_and_scaling_diagnostic"
+  },
+  "real_panel": {
+    "tasks": [
+      "smallnorb_elevation_nonlinear",
+      "gtsrb_box_area_linear_control"
+    ],
+    "replicate_seeds": [4103, 4201, 4303],
+    "panel_count": 6,
+    "candidate_panel_count": 45,
+    "methods": [
+      "postprojection_fusion8_full_path",
+      "broad_only_fusion8"
+    ],
+    "execution_order": "counterbalanced_by_frozen_global_candidate_ordinal_parity",
+    "warmup": "none",
+    "parity_absolute_tolerance": 1e-12
+  },
+  "broad_only_method": {
+    "map_offsets": [0, 1009, 2017, 3011, 4001, 5003, 6007, 7001],
+    "rff_components_per_map": 64,
+    "target_projection_mode": "mean",
+    "projection_rank_per_map": 8,
+    "residual_rank_per_map": 8,
+    "target_cells": 8,
+    "nonlinear_map_block_energy": "1/8",
+    "feature_kernel_bandwidth_multiplier": 4.0,
+    "target_kernel_bandwidth_multipliers": [0.25, 1.0, 4.0],
+    "null_permutations": 32,
+    "folds": 4,
+    "target_scaling": "training_fold_mean_and_population_standard_deviation",
+    "removed_work": [
+      "SAVE_geometry",
+      "target_cell_construction",
+      "prototype_fitting",
+      "prototype_adjacency",
+      "unused_feature_kernel_bandwidths"
+    ]
+  },
+  "synthetic_scaling": {
+    "sample_rows": [200, 500, 1000, 2000],
+    "feature_dimension": 128,
+    "data_seed": 20260909,
+    "panel_seed": 5101,
+    "candidate_position": 0,
+    "timing_repeats": 3,
+    "methods": [
+      "broad_only_fusion8",
+      "postprojection_fusion8_full_path",
+      "linear_ridge_cv"
+    ],
+    "execution_order": "three_method_cyclic_order_by_sample_size_position_plus_repeat",
+    "linear_ridge_cv": {
+      "feature_scaling": "StandardScaler",
+      "model": "Ridge",
+      "alphas": [0.01, 0.1, 1.0, 10.0, 100.0],
+      "inner_folds": 3,
+      "shuffle": true,
+      "n_jobs": 1,
+      "scoring": "r2"
+    },
+    "interpretation": "descriptive_runtime_scaling_only_not_a_ranking_result"
+  },
+  "success_rule": {
+    "all_45_broad_scores_exactly_match_prior_fused_diagnostic": true,
+    "all_45_recomputed_full_path_broad_scores_exactly_match_prior": true,
+    "ranking_metrics_exactly_match_prior": true,
+    "median_broad_only_to_full_path_wall_ratio_maximum": 0.75,
+    "minimum_fraction_real_candidate_rows_broad_only_faster": 0.9,
+    "median_broad_only_to_archived_score_bag8_wall_ratio_maximum": 0.25,
+    "synthetic_scaling_is_descriptive_only": true,
+    "result_if_all_pass": "broad_fusion_can_remove_prototype_path_without_changing_scores",
+    "result_if_any_fail": "broad_fusion_prototype_removal_or_speed_claim_not_validated"
+  },
+  "expected_grid": {
+    "real_panel_count": 6,
+    "real_candidate_count": 45,
+    "real_method_calls": 90,
+    "real_fold_evaluations": 360,
+    "synthetic_sample_sizes": 4,
+    "synthetic_timing_rows": 36,
+    "ranking_rows": 18
+  },
+  "source_evidence": {
+    "postprojection_protocol": {
+      "path": "experiments/continuous_rff_postprojection_fusion/protocol.json",
+      "sha256": "30324be51ac48cd6c20277a53ca0b7527b4ae5f50c421d63e23bf89a017489be"
+    },
+    "postprojection_runner": {
+      "path": "experiments/continuous_rff_postprojection_fusion/run.py",
+      "sha256": "3be8b59d4146a33118848b345c5d376d6c1ede2cabf73eb3346261f417aff267"
+    },
+    "postprojection_raw": {
+      "path": "artifacts/continuous_rff_postprojection_fusion/raw_results.json",
+      "sha256": "de57e26631fed506e4626c1966bc7aa6989b616cbf4bf105747afce2ca0ad651"
+    },
+    "postprojection_summary": {
+      "path": "artifacts/continuous_rff_postprojection_fusion/summary.json",
+      "sha256": "8be1a596af026d3384a4324d3650230744e1ce67c2f98f63df7a40f9fd28f2f8"
+    },
+    "postprojection_manifest": {
+      "path": "artifacts/continuous_rff_postprojection_fusion/manifest.json",
+      "sha256": "5aae88b963231f276b6c658d99c85596f8d751256837643f09ad09336c9fc60b"
+    }
+  }
+}

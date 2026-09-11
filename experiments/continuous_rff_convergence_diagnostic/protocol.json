@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "status": "frozen_development_diagnostic_before_selector_outcomes",
+  "objective": "Determine whether the current continuous broad-RFF and SAVE-plus-RFF ranking errors are caused primarily by finite random-feature approximation or persist under a high-rank and empirical exact-RBF reference.",
+  "scope": {
+    "downstream_head_outcomes": "immutable_reuse_only",
+    "selector_outcomes_previously_observed_at_rff64_offset0": true,
+    "new_selector_outcomes_previously_observed": false,
+    "method_promotion_allowed": false,
+    "interpretation": "development_diagnostic_only"
+  },
+  "tasks": [
+    {
+      "task_id": "smallnorb_elevation_nonlinear",
+      "dataset_id": "smallnorb_v1_left_camera_pose",
+      "target_id": "elevation_degrees",
+      "role": "validated_nonlinear_target",
+      "candidate_ids": [
+        "dinov2-small",
+        "deit-tiny",
+        "mobilenetv3-large",
+        "resnet50",
+        "convnext-tiny",
+        "openclip-vit-b-32",
+        "efficientnet-b0",
+        "swin-tiny",
+        "vit-small-16",
+        "densenet121"
+      ]
+    },
+    {
+      "task_id": "gtsrb_box_area_linear_control",
+      "dataset_id": "torchvision_gtsrb",
+      "target_id": "box_area_fraction",
+      "role": "strongly_linear_control",
+      "candidate_ids": [
+        "dinov2-small",
+        "deit-tiny",
+        "mobilenetv3-large",
+        "resnet50",
+        "convnext-tiny"
+      ]
+    }
+  ],
+  "replicate_seeds": [4103, 4201, 4303],
+  "geometry": {
+    "folds": 4,
+    "target_cells": 8,
+    "residual_rank": 8,
+    "projection_rank": 8,
+    "rff_components": [64, 128, 256],
+    "rff_map_seed_offsets": [0, 1009, 2017, 3011],
+    "rff_bandwidth": "training_only_median_positive_squared_distance",
+    "exact_reference": {
+      "id": "empirical_exact_rbf_training_span",
+      "description": "Finite-sample exact RBF RKHS coordinates spanning the fold-training Gram matrix; held-out rows are Nyström-projected into that exact training span.",
+      "relative_eigenvalue_tolerance": 1e-10,
+      "row_normalize_projected_coordinates": false,
+      "interpretation_limit": "This is an empirical exact training-span reference, not proof about the population infinite-dimensional kernel."
+    },
+    "rff_seed_isolation": "Only the Fourier weights and phases vary with map offset; fold splits, target-cell transform seed, fused-prototype fit seed, and held-out permutation bank remain fixed.",
+    "save_block": "unchanged_current_save_block",
+    "multiview_weighting": "equal_unit_norm_blocks",
+    "broad_feature_bandwidth_multiplier": 4.0,
+    "null_permutations": 32
+  },
+  "ranking": {
+    "truth": "fixed_best_heldout_head_envelope_r2",
+    "linear_comparator": "fixed_inner_cv_linear_ridge_r2",
+    "tie_atol": 1e-12,
+    "map_ensemble": "mean_candidate_score_across_the_four_predeclared_map_offsets_then_rank",
+    "metrics": ["spearman", "top1_regret_r2", "exact_best_rate"],
+    "map_instability": "within_panel_fraction_of_map_offsets_selecting_the_modal_top1_set"
+  },
+  "diagnostic_rule": {
+    "nonlinear_task": "smallnorb_elevation_nonlinear",
+    "linear_safety_task": "gtsrb_box_area_linear_control",
+    "baseline_components": 64,
+    "high_components": 256,
+    "minimum_high_rank_regret_improvement_r2": 0.01,
+    "high_rank_regret_must_not_exceed_linear_cv": true,
+    "exact_reference_regret_must_not_exceed_linear_cv": true,
+    "linear_safety_max_regret_increase_r2": 0.01,
+    "linear_safety_max_spearman_drop": 0.1,
+    "map_seed_instability_modal_agreement_below": 0.75,
+    "classification": "approximation_limited only if both high-rank and exact-reference nonlinear regret are no worse than linear CV and high-rank improves on RFF64 by at least 0.01 R2; otherwise exact-reference failure is evidence for an objective-or-aggregation limitation."
+  },
+  "parity": {
+    "configuration": "rff_components=64 and map_seed_offset=0",
+    "required": true,
+    "absolute_tolerance": 1e-12,
+    "reference_fields": ["continuous_broad_rff", "continuous_save_rff"]
+  },
+  "expected_grid": {
+    "task_count": 2,
+    "panel_count": 6,
+    "candidate_panel_count": 45,
+    "rff_configurations_per_candidate": 12,
+    "exact_configurations_per_candidate": 1,
+    "geometry_candidate_rows": 585,
+    "method_score_rows": 1170,
+    "fold_geometry_evaluations": 2340
+  },
+  "source_evidence": {
+    "structured_raw": {
+      "path": "artifacts/continuous_structured_head_discovery/raw_results.json",
+      "sha256": "3225dafe22d7e9f65771331aeaa74fc7d8ffc39569180fa5f7efaffe0f8da7da"
+    },
+    "structured_summary": {
+      "path": "artifacts/continuous_structured_head_discovery/summary.json",
+      "sha256": "ad1d5cfe2cabf1cc48c08091357c026bf7e160c5e6f553dc59e530468ab2658d"
+    },
+    "structured_manifest": {
+      "path": "artifacts/continuous_structured_head_discovery/manifest.json",
+      "sha256": "39b7685cb626b0534d0ca16f297d4a0625aaa1913222c97f73914be04cdc0274"
+    },
+    "smallnorb_discovery_raw": {
+      "path": "artifacts/continuous_smallnorb_head_discovery/results/raw_results.json",
+      "sha256": "a2c5e6922c6b61fc624c7c4999b9861182e185ec3c0e47306bbed1b9094bf0a4"
+    },
+    "smallnorb_discovery_summary": {
+      "path": "artifacts/continuous_smallnorb_head_discovery/results/summary.json",
+      "sha256": "10bc23837d4645a6cd3baaba4f85b9db2c5a78a636f15c7eeb7f8922b17df9d1"
+    },
+    "smallnorb_discovery_manifest": {
+      "path": "artifacts/continuous_smallnorb_head_discovery/results/manifest.json",
+      "sha256": "242816b0e5cc1fdf76cec21add37a63d06636281bebbaa8765671c91653a950c"
+    },
+    "smallnorb_validation_protocol": {
+      "path": "experiments/continuous_smallnorb_head_discovery/validation_protocol.json",
+      "sha256": "41264256bd3bf13c45fe4bfcb7077321671eb15983f60ad4fee470d6d02b8c1a"
+    },
+    "smallnorb_validation_raw": {
+      "path": "artifacts/continuous_smallnorb_head_validation/results/raw_results.json",
+      "sha256": "77f85696d8fb18d9b0360531b57b8cec9e5e2beb840c87bb8ae24b55d41fd565"
+    },
+    "smallnorb_validation_summary": {
+      "path": "artifacts/continuous_smallnorb_head_validation/results/summary.json",
+      "sha256": "c77c6fc51f07c73ba59dab9b7d549a8187154773c6a9e963d6c737aedf9b765b"
+    },
+    "smallnorb_validation_manifest": {
+      "path": "artifacts/continuous_smallnorb_head_validation/results/manifest.json",
+      "sha256": "a20b4583f68dc4bfa6982587d9f0ea9817faa1b1adde86c3e83c35435f4e1883"
+    },
+    "smallnorb_scout_embeddings": {
+      "path": "artifacts/continuous_smallnorb_head_discovery/embeddings/manifest.json",
+      "sha256": "a85fb0152fa81e6e3a6e4613dc1635fcc8a2847f4e7e88cc4b877dbc898b0d19"
+    },
+    "smallnorb_reserved_embeddings": {
+      "path": "artifacts/continuous_smallnorb_head_validation/embeddings/manifest.json",
+      "sha256": "f46b5e35fb6106261916fbc32f3aca4b67143dcd55dbbf1d0e27f1937b92315f"
+    }
+  }
+}

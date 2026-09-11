@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "status": "frozen_development_structured_head_discovery_before_target_outcomes",
+  "scope": {
+    "claim": "development-only dataset discovery; no confirmation, promotion, or public API decision",
+    "question": "Which real-image structured targets are recoverable from frozen embeddings and show a stable material advantage for a nonlinear head over a linear ridge head?",
+    "hardness_policy": "absolute task difficulty is not an admission criterion; the screen selects nonlinear-but-recoverable target geometry rather than generally unsolved tasks",
+    "outcomes_previously_observed": "the source embeddings and earlier occupancy targets have been analyzed, but the new center/aspect target head outcomes have not",
+    "future_validation": "all admitted tasks remain development evidence; an untouched validation must use the reserved backbones and preferably new structured datasets"
+  },
+  "datasets": {
+    "torchvision_gtsrb": {
+      "source_cohort": "artifacts/continuous_real_bbox_panels/inputs/cohort.json",
+      "source_cohort_sha256": "485135316d576a20309a3cd50d209118f410d1b5f7a73bc629b502f11b5980c5",
+      "targets": [
+        "box_area_fraction",
+        "box_center_x",
+        "box_center_y",
+        "box_log_aspect_ratio"
+      ]
+    },
+    "torchvision_fgvc_aircraft": {
+      "source_cohort": "artifacts/continuous_real_bbox_panels/inputs/cohort.json",
+      "source_cohort_sha256": "485135316d576a20309a3cd50d209118f410d1b5f7a73bc629b502f11b5980c5",
+      "targets": [
+        "box_area_fraction",
+        "box_center_x",
+        "box_center_y",
+        "box_log_aspect_ratio"
+      ]
+    },
+    "oxford_iiit_pet": {
+      "source_cohort": "artifacts/continuous_real_pet_area_panel/inputs/cohort.json",
+      "source_cohort_sha256": "de44c91481890b348ed8bf53bd096c24e4a80700601b90b9f48adc4b5a9ef7cb",
+      "source_embedding_manifest": "artifacts/continuous_real_pet_area_panel/embeddings/manifest.json",
+      "source_embedding_manifest_sha256": "214c4064ad3a3b9b7ed2bbf44accad3304c3ea4099ae1034d1fe4b7f0656efac",
+      "targets": [
+        "mask_area_fraction",
+        "mask_centroid_x",
+        "mask_centroid_y",
+        "mask_log_bbox_aspect_ratio"
+      ]
+    }
+  },
+  "external_embedding_registry": {
+    "path": "/Users/niklasmelton/.codex/worktrees/b2ea/OverlapIndex/artifacts/fused3_confirmation_v2/inputs/audited_registry.json",
+    "sha256": "a6fd86518562cca32851e8ddf2ae0d874b61c32433614ba3ee91a8bbc86861b9"
+  },
+  "target_recipes": {
+    "box_area_fraction": "inclusive annotation-box pixel area divided by image pixel area",
+    "box_center_x": "mean of inclusive x endpoints divided by width-1",
+    "box_center_y": "mean of inclusive y endpoints divided by height-1",
+    "box_log_aspect_ratio": "natural log of ((inclusive box width/image width)/(inclusive box height/image height))",
+    "mask_area_fraction": "fraction of official trimap pixels labeled foreground or boundary",
+    "mask_centroid_x": "mean foreground-or-boundary x coordinate divided by width-1",
+    "mask_centroid_y": "mean foreground-or-boundary y coordinate divided by height-1",
+    "mask_log_bbox_aspect_ratio": "natural log of ((inclusive foreground bbox width/image width)/(inclusive foreground bbox height/image height))"
+  },
+  "backbones": {
+    "scout": [
+      "dinov2-small",
+      "deit-tiny",
+      "mobilenetv3-large",
+      "resnet50",
+      "convnext-tiny"
+    ],
+    "reserved": [
+      "openclip-vit-b-32",
+      "efficientnet-b0",
+      "swin-tiny",
+      "vit-small-16",
+      "densenet121"
+    ],
+    "reserved_outcomes_must_not_be_computed": true
+  },
+  "replicate_seeds": [4103, 4201, 4303],
+  "seed_derivation": {
+    "pca": "replicate_seed*10000 + dataset_position*100 + backbone_position",
+    "head_search": "replicate_seed*100000 + dataset_position*10000 + target_position*100 + backbone_position",
+    "continuous_selector_panel": "replicate_seed + dataset_position*100 + target_position*10; the selector owns its separate backbone-position expansion"
+  },
+  "rows": {
+    "training_per_replicate": 200,
+    "evaluation": 200,
+    "source_cohort_note": "each source cohort is disjoint across training replicates and evaluation; the bbox cohorts were originally stratified by area, so all results are discovery evidence"
+  },
+  "preprocessing": {
+    "row_l2": true,
+    "pca_rank": 32,
+    "pca_fit_scope": "training rows only, separately per dataset, seed, and backbone",
+    "reuse": "the fitted PCA geometry is shared by all four targets for a dataset-seed-backbone cell"
+  },
+  "heads": {
+    "families": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "selection": "three-fold shuffled training-only GridSearchCV maximizing R2, followed by one fixed held-out evaluation",
+    "linear_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0, 100.0]},
+    "quadratic_ridge": {"degree": 2, "include_bias": false, "alpha": [0.01, 0.1, 1.0, 10.0]},
+    "knn": {"n_neighbors": [3, 5, 9, 15, 31], "weights": ["distance"]},
+    "rbf_svr": {"C": [1.0, 10.0, 100.0], "gamma": ["scale", 0.03, 0.1, 0.3], "epsilon": [0.05, 0.1]}
+  },
+  "descriptive_rankers": [
+    "continuous_broad_rff",
+    "continuous_save_rff",
+    "linear_cv",
+    "raw_cv_max"
+  ],
+  "admission": {
+    "median_best_head_r2_minimum": 0.10,
+    "median_nonlinear_minus_linear_r2_minimum": 0.02,
+    "material_nonlinear_row_fraction_minimum": 0.60,
+    "material_nonlinear_row_threshold_r2": 0.02,
+    "stable_nonlinear_backbone_count_minimum": 3,
+    "stable_backbone_definition": "the same unique nonlinear held-out winner occurs in at least two of three replicate seeds",
+    "median_backbone_envelope_span_minimum": 0.02,
+    "inner_cv_family_accuracy_minimum": 0.60,
+    "all_checks_required": true
+  },
+  "reporting": {
+    "tie_atol": 1e-12,
+    "undefined_spearman": "JSON null",
+    "candidate_unit": "dataset-target-seed-backbone",
+    "panel_unit": "dataset-target-seed across five scout backbones",
+    "selection_policy": "report every admitted task and family coverage; do not manufacture missing nonlinear families or inspect reserved-backbone outcomes"
+  },
+  "expected_grid": {
+    "dataset_count": 3,
+    "targets_per_dataset": 4,
+    "task_count": 12,
+    "replicates_per_task": 3,
+    "panel_count": 36,
+    "scout_backbones": 5,
+    "candidate_rows": 180
+  }
+}

@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "status": "frozen_smallnorb_elevation_reserved_backbone_validation_before_outcomes",
+  "scope": {
+    "claim": "development validation of the admitted SmallNORB elevation target on the previously untouched reserved-backbone roster; no OI method promotion or general confirmation claim",
+    "question": "Does the nonlinear-but-recoverable elevation result reproduce across five backbones that were excluded from task discovery, and how do the already-defined continuous rankers behave descriptively?",
+    "selection_rule": "elevation_degrees was the sole target admitted by the immutable discovery protocol; no runner-up target may enter validation",
+    "outcomes_previously_observed_for_reserved_backbones": false,
+    "method_ranking_is_descriptive": true
+  },
+  "development_lineage": {
+    "protocol_sha256": "f70a093feed8a8ae9c1ff2e30af6551bac90e4b62170dfe0e51b21f6ae773c64",
+    "input_manifest_sha256": "fa249b02469a01753422a0b1aed25441c27da6d41d1901f9d643c37e824fd6fb",
+    "cohort_sha256": "cdc8c2bc7a1abdedc032bcc07e04335832cb4fbf98fda82218fa0fcff2a7f3ce",
+    "scout_embedding_manifest_sha256": "a85fb0152fa81e6e3a6e4613dc1635fcc8a2847f4e7e88cc4b877dbc898b0d19",
+    "result_manifest_sha256": "242816b0e5cc1fdf76cec21add37a63d06636281bebbaa8765671c91653a950c",
+    "raw_results_sha256": "a2c5e6922c6b61fc624c7c4999b9861182e185ec3c0e47306bbed1b9094bf0a4",
+    "summary_sha256": "10bc23837d4645a6cd3baaba4f85b9db2c5a78a636f15c7eeb7f8922b17df9d1",
+    "admitted_target": "elevation_degrees",
+    "admitted_modal_nonlinear_head": "rbf_svr"
+  },
+  "dataset": {
+    "id": "smallnorb_v1_left_camera_pose",
+    "target": "elevation_degrees",
+    "target_recipe": "30 + 5*elevation_code",
+    "official_split": "training instances 4,6,7,8,9 versus testing instances 0,1,2,3,5",
+    "stereo_policy": "left camera only"
+  },
+  "cohort": {
+    "selection_seed": 2026091601,
+    "replicate_seeds": [4103, 4201, 4303],
+    "training_rows_per_replicate": 500,
+    "evaluation_rows": 1000,
+    "union_rows": 2500,
+    "training_replicates_disjoint": true,
+    "evaluation_from_official_test_only": true
+  },
+  "backbones": {
+    "reserved": [
+      "openclip-vit-b-32",
+      "efficientnet-b0",
+      "swin-tiny",
+      "vit-small-16",
+      "densenet121"
+    ],
+    "source": "the exact reserved roster frozen before discovery outcomes",
+    "weights": "the exact cached pretrained weight specifications hash-locked by the real-image continuous panels"
+  },
+  "preprocessing": {
+    "image": "official 96x96 grayscale left-camera image converted to RGB; each extractor applies its frozen native preprocessing",
+    "embedding_row_l2": true,
+    "pca_rank": 32,
+    "pca_fit_scope": "training rows only per seed and reserved backbone"
+  },
+  "seed_derivation": {
+    "pca": "replicate_seed*10000 + reserved_backbone_position",
+    "head_search": "replicate_seed*100000 + reserved_backbone_position",
+    "continuous_selector_panel": "replicate_seed; selector owns reserved-backbone-position expansion"
+  },
+  "heads": {
+    "families": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "selection": "three-fold shuffled training-only GridSearchCV maximizing R2, followed by official-test-cohort evaluation",
+    "linear_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0, 100.0]},
+    "quadratic_ridge": {"degree": 2, "include_bias": false, "alpha": [0.01, 0.1, 1.0, 10.0]},
+    "knn": {"n_neighbors": [3, 5, 9, 15, 31], "weights": ["distance"]},
+    "rbf_svr": {"C": [1.0, 10.0, 100.0], "gamma": ["scale", 0.03, 0.1, 0.3], "epsilon": [0.05, 0.1]}
+  },
+  "descriptive_rankers": [
+    "continuous_broad_rff",
+    "continuous_save_rff",
+    "linear_cv",
+    "raw_cv_max"
+  ],
+  "validation": {
+    "median_best_head_r2_minimum": 0.10,
+    "median_nonlinear_minus_linear_r2_minimum": 0.02,
+    "material_nonlinear_row_fraction_minimum": 0.60,
+    "material_nonlinear_row_threshold_r2": 0.02,
+    "stable_nonlinear_backbone_count_minimum": 3,
+    "stable_backbone_definition": "the same unique nonlinear held-out winner occurs in at least two of three replicate seeds",
+    "median_backbone_envelope_span_minimum": 0.02,
+    "inner_cv_family_accuracy_minimum": 0.60,
+    "all_checks_required": true
+  },
+  "reporting": {
+    "tie_atol": 1e-12,
+    "undefined_spearman": "JSON null",
+    "ranker_interpretation": "report global Spearman, top-1 regret, and exact-best rate separately; no post-outcome composite or promotion gate"
+  },
+  "expected_grid": {
+    "dataset_count": 1,
+    "target_count": 1,
+    "replicates": 3,
+    "panel_count": 3,
+    "reserved_backbones": 5,
+    "candidate_rows": 15
+  }
+}

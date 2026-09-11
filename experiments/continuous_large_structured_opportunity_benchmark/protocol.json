@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "status": "frozen_large_structured_opportunity_benchmark_before_outcomes",
+  "frozen_at_utc": "2026-09-04T18:00:00Z",
+  "scope": {
+    "claim": "development-only prevalence benchmark for real continuous backbone-ranking opportunity",
+    "question": "Across a predeclared matrix of 20 structured annotation targets in five image domains, how often does the best frozen nonlinear head materially outperform a linear ridge head and change the ranking of five frozen scout backbones?",
+    "known_dataset_reuse": "CUB, LSP, COCO, and Oxford-IIIT Pet datasets appeared in earlier experiments, but none of the 16 target channels defined here were previously evaluated; Pascal VOC and all four of its target channels are fresh",
+    "previous_target_outcomes_included": false,
+    "overlapindex_methods_evaluated": false,
+    "method_selection_allowed": false,
+    "confirmation_claim_allowed": false,
+    "post_outcome_target_replacement_allowed": false,
+    "future_gate": "this benchmark measures availability of nonlinear ranking opportunity; it does not by itself validate an OverlapIndex ranker"
+  },
+  "datasets": {
+    "cub_200_2011_part_geometry": {
+      "domain": "fine-grained bird part geometry",
+      "source": {
+        "official_page": "https://www.vision.caltech.edu/datasets/cub_200_2011/",
+        "archive_name": "CUB_200_2011.tgz",
+        "official_md5": "97eceeb196236b17998738112f37df78",
+        "archive_sha256": "0c685df5597a8b24909f6a7c9db6d11e008733779a671760afef78feb49bf081",
+        "pretraining_overlap_warning": "the official source warns that CUB images overlap ImageNet"
+      },
+      "split": "official train_test_split.txt",
+      "selection": "target-specific deterministic SHA-256 order within ten equal-count target-rank strata; training replicates are disjoint",
+      "targets": [
+        "wing_axis_sine",
+        "wing_axis_cosine",
+        "wing_span_over_bbox_diagonal",
+        "leg_span_over_bbox_diagonal"
+      ],
+      "target_recipes": {
+        "wing_axis_sine": "y component of the unit vector from visible left-wing part 9 to visible right-wing part 13 in image coordinates",
+        "wing_axis_cosine": "x component of the same unit wing vector",
+        "wing_span_over_bbox_diagonal": "Euclidean distance between visible wing parts divided by the official bounding-box diagonal",
+        "leg_span_over_bbox_diagonal": "Euclidean distance between visible left-leg part 8 and right-leg part 12 divided by the official bounding-box diagonal"
+      }
+    },
+    "lsp_2000_pose_geometry": {
+      "domain": "single-person sports pose",
+      "source": {
+        "original_project": "http://sam.johnson.io/research/lsp.html",
+        "pinned_rehost": "https://huggingface.co/datasets/LiuRunky/Leeds_Sports_Pose",
+        "revision": "12cb14b6efd01374de7335654870697268997976",
+        "joints_sha256": "ddcfcbe904106bfbf26561c8d11720ca62a11c7a861548064b3bae84cb396b2a",
+        "parent_protocol_sha256": "c414a4809f816192f589d07b3e95cd62abff2ff37d8970903ec95e70fcc9de8f",
+        "parent_cohort_sha256": "9409d2f284ecb569bd0815c02d71941d921e9a231bdb4cf285df211921155956"
+      },
+      "split": "images im0001-im1000 are training and im1001-im2000 are evaluation",
+      "visibility": "LSP occlusion flag 0 is required for every joint used by a target",
+      "selection": "target-specific deterministic SHA-256 order within ten equal-count target-rank strata; training replicates are disjoint",
+      "targets": [
+        "bilateral_elbow_extension_cosine",
+        "wrist_span_over_torso_length",
+        "ankle_span_over_torso_length",
+        "shoulder_to_hip_width_ratio"
+      ]
+    },
+    "coco_2017_person_pose_geometry": {
+      "domain": "multi-person natural-image pose",
+      "source": {
+        "official_page": "https://cocodataset.org/",
+        "annotations_archive_sha256": "113a836d90195ee1f884e704da6304dfaaecff1f023f49b6ca93c4aaae470268",
+        "parent_protocol_sha256": "88868969b723d5baf16f46b018d62b283ee54482b61318c8100330adeb1199e6",
+        "parent_cohort_sha256": "a6246c658218799f66a1f00c133e0648dff57e3122807d7bffe078cc449af822"
+      },
+      "split": "COCO train2017 rows are training and val2017 rows are evaluation within the previously frozen 2044-image embedding cohort",
+      "person_selection": "largest-area finite non-crowd person annotation per image, tie-broken by annotation id",
+      "visibility": "COCO visibility code 2 is required for every joint used by a target",
+      "selection": "target-specific deterministic SHA-256 order within ten equal-count target-rank strata; training replicates are disjoint",
+      "targets": [
+        "bilateral_elbow_extension_cosine",
+        "wrist_span_over_torso_length",
+        "ankle_span_over_torso_length",
+        "shoulder_to_hip_width_ratio"
+      ]
+    },
+    "oxford_iiit_pet_mask_geometry": {
+      "domain": "animal foreground shape",
+      "source": {
+        "official_page": "https://www.robots.ox.ac.uk/~vgg/data/pets/",
+        "parent_cohort_sha256": "de44c91481890b348ed8bf53bd096c24e4a80700601b90b9f48adc4b5a9ef7cb",
+        "parent_embedding_manifest_sha256": "214c4064ad3a3b9b7ed2bbf44accad3304c3ea4099ae1034d1fe4b7f0656efac"
+      },
+      "split": "reuse only evaluation plus training replicates 4103, 4201, and 4303 from the previously frozen mask cohort",
+      "foreground": "official trimap values 1 and 3 are foreground/boundary; value 2 is background",
+      "perimeter": "four-neighbor exposed-edge count including image boundaries",
+      "selection": "within each already-disjoint split/replicate pool, deterministic SHA-256 order within ten equal-count target-rank strata",
+      "targets": [
+        "foreground_compactness",
+        "foreground_bbox_fill",
+        "foreground_eccentricity",
+        "foreground_boundary_roughness"
+      ],
+      "target_recipes": {
+        "foreground_compactness": "4*pi*area/perimeter^2",
+        "foreground_bbox_fill": "foreground area divided by its tight axis-aligned bounding-box area",
+        "foreground_eccentricity": "sqrt(1-lambda_min/lambda_max) from the foreground-pixel coordinate covariance",
+        "foreground_boundary_roughness": "foreground perimeter divided by the perimeter of its tight bounding box"
+      }
+    },
+    "pascal_voc_2007_largest_box_geometry": {
+      "domain": "natural-image object layout",
+      "source": {
+        "official_page": "https://www.robots.ox.ac.uk/~vgg/projects/pascal/VOC/voc2007/",
+        "trainval_url": "https://thor.robots.ox.ac.uk/pascal/VOC/voc2007/VOCtrainval_06-Nov-2007.tar",
+        "trainval_md5": "c52e279531787c972589f7e41ab4ae64",
+        "trainval_sha256": "7d8cd951101b0957ddfd7a530bdc8a94f06121cfc1e511bb5937e973020c7508",
+        "test_url": "https://thor.robots.ox.ac.uk/pascal/VOC/voc2007/VOCtest_06-Nov-2007.tar",
+        "test_md5": "b6e924de25625d8de591ea690078ad9f",
+        "test_sha256": "6836888e2e01dca84577a849d339fa4f73e1e4f135d312430c4856b5609b4892"
+      },
+      "split": "official trainval is training and annotated official test is evaluation",
+      "object_selection": "largest-area non-difficult object per image using inclusive VOC coordinates, tie-broken by XML object order",
+      "selection": "target-specific deterministic SHA-256 order within ten equal-count target-rank strata; training replicates are disjoint",
+      "targets": [
+        "largest_box_area_fraction",
+        "largest_box_center_x",
+        "largest_box_center_y",
+        "largest_box_log_aspect_ratio"
+      ]
+    }
+  },
+  "shared_pose_target_recipes": {
+    "bilateral_elbow_extension_cosine": "negative mean cosine between elbow-to-shoulder and elbow-to-wrist vectors; straight arms approach +1",
+    "wrist_span_over_torso_length": "distance between wrists divided by distance between shoulder and hip midpoints",
+    "ankle_span_over_torso_length": "distance between ankles divided by distance between shoulder and hip midpoints",
+    "shoulder_to_hip_width_ratio": "distance between shoulders divided by distance between hips"
+  },
+  "cohort": {
+    "selection_seed": 2026090401,
+    "replicate_seeds": [4103, 4201, 4303],
+    "training_rows_per_replicate": 100,
+    "evaluation_rows": 200,
+    "target_bins": 10,
+    "shortfall_policy": "fail closed before outcomes unless every target has 300 unique training rows and 200 evaluation rows"
+  },
+  "backbones": {
+    "scout": [
+      "dinov2-small",
+      "deit-tiny",
+      "mobilenetv3-large",
+      "resnet50",
+      "convnext-tiny"
+    ],
+    "reserved": [
+      "openclip-vit-b-32",
+      "efficientnet-b0",
+      "swin-tiny",
+      "vit-small-16",
+      "densenet121"
+    ],
+    "weights": "exact cached pretrained checkpoint specifications already hash-locked by prior real-image panels",
+    "reserved_outcomes_must_not_be_computed": true
+  },
+  "preprocessing": {
+    "image": "raw RGB image with each extractor's frozen native preprocessing",
+    "embedding_row_l2": true,
+    "pca_rank": 32,
+    "pca_fit_scope": "training rows only per dataset, target, seed, and scout backbone"
+  },
+  "heads": {
+    "families": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "selection": "three-fold shuffled training-only GridSearchCV maximizing R2, followed by fixed-cohort evaluation",
+    "linear_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0, 100.0]},
+    "quadratic_ridge": {"degree": 2, "include_bias": false, "alpha": [0.01, 0.1, 1.0, 10.0]},
+    "knn": {"n_neighbors": [3, 5, 9, 15, 31], "weights": ["distance"]},
+    "rbf_svr": {"C": [1.0, 10.0, 100.0], "gamma": ["scale", 0.03, 0.1, 0.3], "epsilon": [0.05, 0.1]}
+  },
+  "opportunity_definition": {
+    "linear_component": "held-out linear_ridge test R2",
+    "envelope": "maximum held-out test R2 over the four frozen head families",
+    "material_uplift_r2": 0.01,
+    "material_pair_difference_r2": 0.01,
+    "topk": 3,
+    "tie_tolerance": 1e-12
+  },
+  "admission": {
+    "median_candidate_best_head_r2_minimum": 0.10,
+    "median_panel_envelope_span_r2_minimum": 0.05,
+    "material_nonlinear_candidate_fraction_minimum": 0.20,
+    "rank_change_any_of": {
+      "linear_winner_change_rate_minimum": 0.20,
+      "mean_linear_top1_regret_r2_minimum": 0.005,
+      "mean_material_pair_reversal_rate_minimum": 0.10,
+      "linear_top3_miss_rate_minimum": 0.20
+    },
+    "target_rule": "all three base checks and at least one rank-change check must pass",
+    "dataset_rule": "at least one of four frozen targets passes",
+    "benchmark_primary": "report admitted target and dataset prevalence with Wilson 95% intervals; do not substitute targets after outcomes"
+  },
+  "reporting": {
+    "primary_unit": "dataset-target-seed scout-backbone panel",
+    "constant_spearman": "undefined JSON null",
+    "runtime": "head fitting time is descriptive and not a promotion criterion",
+    "pretraining_overlap": "development-only because pretrained-source overlap cannot be excluded",
+    "all_targets_reported": true
+  },
+  "expected_grid": {
+    "dataset_count": 5,
+    "targets_per_dataset": 4,
+    "target_count": 20,
+    "replicates_per_target": 3,
+    "panel_count": 60,
+    "scout_backbones": 5,
+    "candidate_rows": 300,
+    "head_family_fits_before_cv_grid_expansion": 1200,
+    "overlapindex_fit_count": 0
+  }
+}

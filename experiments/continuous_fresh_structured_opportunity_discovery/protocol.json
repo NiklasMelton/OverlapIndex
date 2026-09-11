@@ -1,0 +1,189 @@
+{
+  "schema_version": 1,
+  "status": "frozen_fresh_structured_opportunity_discovery_before_outcomes",
+  "scope": {
+    "claim": "prospective development-only identification of real continuous backbone-ranking opportunity panels",
+    "question": "Do two independently selected real structured targets contain recoverable nonlinear head advantage that materially changes backbone rankings relative to a linear probe?",
+    "outcomes_previously_observed": false,
+    "overlapindex_methods_evaluated": false,
+    "method_selection_allowed": false,
+    "confirmation_claim_allowed": false,
+    "future_gate": "a later ranker experiment requires at least two admitted datasets and a separately frozen protocol before reserved-backbone outcomes"
+  },
+  "datasets": {
+    "cub_200_2011_beak_tail": {
+      "source": {
+        "official_page": "https://www.vision.caltech.edu/datasets/cub_200_2011/",
+        "record": "https://data.caltech.edu/records/65de6-vp158",
+        "archive_url": "https://data.caltech.edu/records/65de6-vp158/files/CUB_200_2011.tgz?download=1",
+        "archive_name": "CUB_200_2011.tgz",
+        "official_md5": "97eceeb196236b17998738112f37df78",
+        "archive_sha256": "0c685df5597a8b24909f6a7c9db6d11e008733779a671760afef78feb49bf081",
+        "license_scope": "noncommercial research and educational use",
+        "pretraining_overlap_warning": "the official source warns that CUB images overlap ImageNet"
+      },
+      "expected": {
+        "images": 11788,
+        "classes": 200,
+        "training_images": 5994,
+        "testing_images": 5794,
+        "part_count": 15,
+        "beak_part_id": 2,
+        "tail_part_id": 14
+      },
+      "split": "official train_test_split.txt",
+      "eligibility": "beak and tail visibility flags both equal 1; finite distinct coordinates; positive finite bounding-box width and height",
+      "targets": [
+        "beak_tail_axis_sine",
+        "beak_tail_axis_cosine",
+        "beak_tail_length_over_bbox_diagonal"
+      ],
+      "target_recipes": {
+        "beak_tail_axis_sine": "(beak_y-tail_y)/euclidean_distance(beak,tail) in image coordinates",
+        "beak_tail_axis_cosine": "(beak_x-tail_x)/euclidean_distance(beak,tail) in image coordinates",
+        "beak_tail_length_over_bbox_diagonal": "euclidean_distance(beak,tail)/sqrt(bbox_width^2+bbox_height^2)"
+      },
+      "cohort": {
+        "replicate_training_rows": 400,
+        "evaluation_rows": 800,
+        "training_replicates_disjoint": true,
+        "stratification": "exactly two eligible official-training images per species per replicate and four eligible official-test images per species",
+        "shortfall_policy": "fail closed if any species lacks six eligible training or four eligible testing images"
+      }
+    },
+    "lsp_2000_pose": {
+      "source": {
+        "original_project": "http://sam.johnson.io/research/lsp.html",
+        "original_archive": "http://sam.johnson.io/research/lsp_dataset_original.zip",
+        "availability_note": "original project host was unreachable before acquisition; use the explicitly pinned public rehost",
+        "rehost": "https://huggingface.co/datasets/LiuRunky/Leeds_Sports_Pose",
+        "repository_id": "LiuRunky/Leeds_Sports_Pose",
+        "revision": "12cb14b6efd01374de7335654870697268997976",
+        "repository_file_count": 2003,
+        "repository_total_bytes": 10936863,
+        "repository_inventory_sha256": "e6f9cbdf4e83d1824c0db0bab2a94510853f2a39cbad0e80e0367d264b8c6350",
+        "joints_sha256": "ddcfcbe904106bfbf26561c8d11720ca62a11c7a861548064b3bae84cb396b2a",
+        "readme_sha256": "96af41c9042a4e9598ef9266ae257ffe8765115369e2ac54db3bf42b741f2336"
+      },
+      "expected": {
+        "images": 2000,
+        "joints_shape": [3, 14, 2000],
+        "joint_order": [
+          "right_ankle",
+          "right_knee",
+          "right_hip",
+          "left_hip",
+          "left_knee",
+          "left_ankle",
+          "right_wrist",
+          "right_elbow",
+          "right_shoulder",
+          "left_shoulder",
+          "left_elbow",
+          "left_wrist",
+          "neck",
+          "head_top"
+        ],
+        "visibility_values": [0, 1]
+      },
+      "split": "images im0001-im1000 are training; im1001-im2000 are evaluation",
+      "visibility_semantics": "the third joint channel is treated as an occlusion flag: 0 is eligible and 1 is excluded",
+      "targets": [
+        "torso_axis_sine",
+        "torso_axis_cosine",
+        "bilateral_knee_extension_cosine"
+      ],
+      "target_recipes": {
+        "torso_axis_sine": "y component of the unit vector from hip midpoint to shoulder midpoint in image coordinates",
+        "torso_axis_cosine": "x component of the unit vector from hip midpoint to shoulder midpoint in image coordinates",
+        "bilateral_knee_extension_cosine": "negative mean of left and right cosines between the knee-to-hip and knee-to-ankle vectors; a straight leg approaches +1"
+      },
+      "eligibility": {
+        "torso_axis_sine": "right/left hips and shoulders all have occlusion flag 0 and define a nonzero finite torso vector",
+        "torso_axis_cosine": "same fixed cohort as torso_axis_sine",
+        "bilateral_knee_extension_cosine": "both hips, knees, and ankles have occlusion flag 0 and all four limb segments have nonzero finite length"
+      },
+      "cohort": {
+        "replicate_training_rows": 200,
+        "evaluation_rows": 500,
+        "training_replicates_disjoint": true,
+        "selection": "deterministic SHA-256 order within ten source-split quantile strata; torso sine/cosine share strata defined by torso angle and knee extension uses its own target quantiles",
+        "shortfall_policy": "fail closed unless each target supports 600 unique training rows and 500 evaluation rows"
+      }
+    }
+  },
+  "cohort": {
+    "selection_seed": 2026092401,
+    "replicate_seeds": [4103, 4201, 4303]
+  },
+  "backbones": {
+    "scout": [
+      "dinov2-small",
+      "deit-tiny",
+      "mobilenetv3-large",
+      "resnet50",
+      "convnext-tiny"
+    ],
+    "reserved": [
+      "openclip-vit-b-32",
+      "efficientnet-b0",
+      "swin-tiny",
+      "vit-small-16",
+      "densenet121"
+    ],
+    "weights": "exact cached pretrained checkpoint specifications already hash-locked by prior real-image panels",
+    "reserved_outcomes_must_not_be_computed": true
+  },
+  "preprocessing": {
+    "image": "raw RGB image with each extractor's frozen native preprocessing",
+    "embedding_row_l2": true,
+    "pca_rank": 32,
+    "pca_fit_scope": "training rows only per dataset, target, seed, and scout backbone"
+  },
+  "heads": {
+    "families": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "selection": "three-fold shuffled training-only GridSearchCV maximizing R2, followed by fixed-cohort evaluation",
+    "linear_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0, 100.0]},
+    "quadratic_ridge": {"degree": 2, "include_bias": false, "alpha": [0.01, 0.1, 1.0, 10.0]},
+    "knn": {"n_neighbors": [3, 5, 9, 15, 31], "weights": ["distance"]},
+    "rbf_svr": {"C": [1.0, 10.0, 100.0], "gamma": ["scale", 0.03, 0.1, 0.3], "epsilon": [0.05, 0.1]}
+  },
+  "opportunity_definition": {
+    "linear_component": "held-out linear_ridge test R2",
+    "envelope": "maximum held-out test R2 over the four frozen head families",
+    "material_uplift_r2": 0.01,
+    "material_pair_difference_r2": 0.01,
+    "topk": 3,
+    "tie_tolerance": 1e-12
+  },
+  "admission": {
+    "median_candidate_best_head_r2_minimum": 0.10,
+    "median_panel_envelope_span_r2_minimum": 0.05,
+    "material_nonlinear_candidate_fraction_minimum": 0.20,
+    "rank_change_any_of": {
+      "linear_winner_change_rate_minimum": 0.20,
+      "mean_linear_top1_regret_r2_minimum": 0.005,
+      "mean_material_pair_reversal_rate_minimum": 0.10,
+      "linear_top3_miss_rate_minimum": 0.20
+    },
+    "target_rule": "all three base checks and at least one rank-change check must pass",
+    "dataset_rule": "at least one frozen target passes the target rule",
+    "experiment_rule": "both independent datasets pass before any later OI-ranker comparison"
+  },
+  "reporting": {
+    "primary_unit": "dataset-target-seed scout-backbone panel",
+    "constant_spearman": "undefined JSON null",
+    "runtime": "head fitting time is descriptive and not a promotion criterion",
+    "pretraining_overlap": "both datasets are discovery-only because pretrained-source overlap cannot be excluded"
+  },
+  "expected_grid": {
+    "dataset_count": 2,
+    "target_count": 6,
+    "replicates_per_target": 3,
+    "panel_count": 18,
+    "scout_backbones": 5,
+    "candidate_rows": 90,
+    "head_family_fits_before_cv_grid_expansion": 360,
+    "overlapindex_fit_count": 0
+  }
+}

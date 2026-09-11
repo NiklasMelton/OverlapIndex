@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "status": "frozen_post_outcome_real_opportunity_discovery_before_joint_analysis",
+  "objective": "Identify reusable real continuous task/roster cells where nonlinear head uplift materially changes backbone rankings, while retaining recoverable LP-dominated cells as negative controls.",
+  "scope": {
+    "development_discovery_only": true,
+    "source_outcomes_previously_observed": true,
+    "joint_opportunity_classification_previously_computed": false,
+    "new_embedding_fits": false,
+    "new_head_fits": false,
+    "new_selector_fits": false,
+    "new_overlapindex_fits": false,
+    "method_promotion_allowed": false,
+    "confirmation_claim_allowed": false,
+    "public_overlapindex_changes": false
+  },
+  "sources": {
+    "legacy_real_panel": {
+      "directory": "artifacts/continuous_real_head_subset_falsification",
+      "roster": "all_ten_backbones",
+      "expected_status": "completed_real_head_subset_falsification",
+      "expected_panels": 30,
+      "expected_candidates": 300,
+      "files": {
+        "experiments/continuous_real_head_subset_falsification/protocol.json": "df04e68beb9f018cc906b297812b5312027213cbe4d55d8fa4fc26046b64ba72",
+        "experiments/continuous_real_head_subset_falsification/run.py": "1571caba0b901d1fbd55079f0f07ca383e2649576939d9a1dff615e6661dcae2",
+        "artifacts/continuous_real_head_subset_falsification/raw_results.json": "d69ad99558bedc1e54b720a5e57dfbb8c39a998bfacb5a3125f5b9ace75db2de",
+        "artifacts/continuous_real_head_subset_falsification/summary.json": "e93777f284db1e21f10da73aa63079cea2dc91bcb7091f6bb3e90920bba0c6a3",
+        "artifacts/continuous_real_head_subset_falsification/report.md": "e672cb38415b8336c2f55722fedd8a3902f734294de096c316a2a3dd7aa86bac",
+        "artifacts/continuous_real_head_subset_falsification/manifest.json": "35aabef1cc13e5f9053158e8fa02ee04f5330b2f42583d395d138ce8eeea3428"
+      }
+    },
+    "structured_annotations_scout": {
+      "directory": "artifacts/continuous_structured_head_discovery",
+      "roster": "scout_five_backbones",
+      "expected_status": "completed",
+      "expected_panels": 36,
+      "expected_candidates": 180,
+      "files": {
+        "experiments/continuous_structured_head_discovery/protocol.json": "302aa3f4f5e5b6ff85673b4b68082b91b9d849381646f4c83a949fdda19ed98d",
+        "experiments/continuous_structured_head_discovery/run.py": "549dc5254ba64768487069cb2d38b60512b482806b1b32b5a5ebfe8f247b5449",
+        "artifacts/continuous_structured_head_discovery/raw_results.json": "3225dafe22d7e9f65771331aeaa74fc7d8ffc39569180fa5f7efaffe0f8da7da",
+        "artifacts/continuous_structured_head_discovery/summary.json": "ad1d5cfe2cabf1cc48c08091357c026bf7e160c5e6f553dc59e530468ab2658d",
+        "artifacts/continuous_structured_head_discovery/report.md": "06eed25002f431b33328631c59256da63eed2d0fdbf57eb22798384f9830d146",
+        "artifacts/continuous_structured_head_discovery/manifest.json": "39b7685cb626b0534d0ca16f297d4a0625aaa1913222c97f73914be04cdc0274"
+      }
+    },
+    "smallnorb_pose_scout": {
+      "directory": "artifacts/continuous_smallnorb_head_discovery/results",
+      "roster": "scout_five_backbones",
+      "expected_status": "completed",
+      "expected_panels": 9,
+      "expected_candidates": 45,
+      "files": {
+        "experiments/continuous_smallnorb_head_discovery/protocol.json": "f70a093feed8a8ae9c1ff2e30af6551bac90e4b62170dfe0e51b21f6ae773c64",
+        "experiments/continuous_smallnorb_head_discovery/run.py": "796beea97dc7e64ee4203dcf2e46eff7b1dc3c02935f3f64bab602be16f3e711",
+        "artifacts/continuous_smallnorb_head_discovery/results/raw_results.json": "a2c5e6922c6b61fc624c7c4999b9861182e185ec3c0e47306bbed1b9094bf0a4",
+        "artifacts/continuous_smallnorb_head_discovery/results/summary.json": "10bc23837d4645a6cd3baaba4f85b9db2c5a78a636f15c7eeb7f8922b17df9d1",
+        "artifacts/continuous_smallnorb_head_discovery/results/report.md": "9e552a069acf2892830ffaa5d5b1c8410caaac4a2fa0646d2d8451b0c898a334",
+        "artifacts/continuous_smallnorb_head_discovery/results/manifest.json": "242816b0e5cc1fdf76cec21add37a63d06636281bebbaa8765671c91653a950c"
+      }
+    },
+    "smallnorb_elevation_reserved": {
+      "directory": "artifacts/continuous_smallnorb_head_validation/results",
+      "roster": "reserved_five_backbones",
+      "expected_status": "completed",
+      "expected_panels": 3,
+      "expected_candidates": 15,
+      "files": {
+        "experiments/continuous_smallnorb_head_discovery/validation_protocol.json": "41264256bd3bf13c45fe4bfcb7077321671eb15983f60ad4fee470d6d02b8c1a",
+        "experiments/continuous_smallnorb_head_discovery/validate_reserved.py": "db1d427c1e99f018b3dd99e1adbd0913d421eeacbbd4ed3f345701eb5a455b6d",
+        "artifacts/continuous_smallnorb_head_validation/results/raw_results.json": "77f85696d8fb18d9b0360531b57b8cec9e5e2beb840c87bb8ae24b55d41fd565",
+        "artifacts/continuous_smallnorb_head_validation/results/summary.json": "c77c6fc51f07c73ba59dab9b7d549a8187154773c6a9e963d6c737aedf9b765b",
+        "artifacts/continuous_smallnorb_head_validation/results/report.md": "35f260d9afd892f69b8eb999cc6bf18500c64cf30161ea80af0d2c49b9f58aae",
+        "artifacts/continuous_smallnorb_head_validation/results/manifest.json": "a20b4583f68dc4bfa6982587d9f0ea9817faa1b1adde86c3e83c35435f4e1883"
+      }
+    }
+  },
+  "common_training_only_rankers": [
+    "continuous_broad_rff",
+    "continuous_save_rff",
+    "linear_cv",
+    "raw_cv_max"
+  ],
+  "opportunity_definition": {
+    "linear_component": "held-out linear_ridge test_r2",
+    "envelope": "maximum held-out test_r2 over linear_ridge, quadratic_ridge, knn, and rbf_svr",
+    "material_uplift_r2": 0.01,
+    "material_pair_difference_r2": 0.01,
+    "topk": 3,
+    "tie_tolerance": 1e-12
+  },
+  "admission": {
+    "median_candidate_best_head_r2_minimum": 0.10,
+    "median_panel_envelope_span_r2_minimum": 0.05,
+    "material_nonlinear_candidate_fraction_minimum": 0.20,
+    "rank_change_any_of": {
+      "linear_winner_change_rate_minimum": 0.20,
+      "mean_linear_top1_regret_r2_minimum": 0.005,
+      "mean_material_pair_reversal_rate_minimum": 0.10,
+      "linear_top3_miss_rate_minimum": 0.20
+    },
+    "opportunity_rule": "recoverability, envelope spread, material nonlinear prevalence, and at least one rank-change check must pass",
+    "control_rule": "recoverability and envelope spread pass, but the full opportunity rule fails",
+    "unusable_rule": "recoverability or envelope spread fails"
+  },
+  "reporting": {
+    "primary_unit": "equal weight per source-task-roster cell",
+    "panel_summary": "also report unweighted panels within each stratum",
+    "constant_spearman": "undefined_null",
+    "runtime": "not pooled because source timings were collected under different execution protocols",
+    "source_overlap": "task/roster cells from the same dataset are not treated as statistically independent confirmation datasets"
+  },
+  "decision": {
+    "multi_dataset_status": "multi_dataset_rank_changing_opportunity_stratum_found",
+    "single_dataset_status": "single_dataset_rank_changing_opportunity_stratum_only",
+    "none_status": "no_rank_changing_opportunity_stratum_found",
+    "multi_dataset_minimum_opportunity_tasks": 2,
+    "multi_dataset_minimum_dataset_count": 2,
+    "promotion": "none_discovery_only"
+  },
+  "expected_grid": {
+    "source_count": 4,
+    "panel_count": 78,
+    "candidate_count": 540,
+    "task_roster_count": 22,
+    "ranker_count": 4,
+    "ranking_row_count": 312,
+    "task_ranker_summary_count": 88,
+    "stratum_count_including_all": 4,
+    "stratum_ranker_summary_count": 16,
+    "new_fit_count": 0
+  }
+}

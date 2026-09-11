@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "status": "frozen_continuous_residual_anchor_n300_before_outcomes",
+  "parent_protocol": "continuous_information_ladder_n300",
+  "objective": "retain raw linear signal with a leakage-safe nonlinear residual correction",
+  "roster": {
+    "targets": "exact ordered targets from the parent frozen n300 protocol",
+    "backbones": "exact scout roster from the parent frozen n300 protocol",
+    "reserved_backbones": [],
+    "cohort": "exact parent n300 union cohort"
+  },
+  "outer_split": {
+    "splitter": "KFold",
+    "source_training_rows": 300,
+    "n_splits": 4,
+    "shuffle": true,
+    "train_rows": 225,
+    "holdout_rows": 75,
+    "seed_formula": "2026092001 + target_position",
+    "row_identity": "parent frozen relative n300 row order plus sample ID"
+  },
+  "inner_residual_protocol": {
+    "base_model": "raw outer-training PCA plus train-only Ridge alpha CV",
+    "base_oof_splitter": "KFold(n_splits=3, shuffle=True)",
+    "base_oof_seed_formula": "fit_seed + 1103",
+    "residual": "y_outer_train - base_oof_prediction",
+    "geometry_fit_rows": "outer-training rows with OOF residual targets only",
+    "shrinkage_selection": "one deterministic 80/20 split of outer-training OOF residuals; fit geometry/readout on 80% and score y on disjoint 20%",
+    "shrinkage_grid": [0.0, 0.25, 0.5, 0.75, 1.0],
+    "selection_metric": "heldout R2 of base_oof + shrinkage * residual correction",
+    "tie_break": "smallest shrinkage, so zero is an explicit no-harm option",
+    "readout_alpha": 1.0
+  },
+  "methods": [
+    "outer_linear_ridge",
+    "linear_plus_save_residual",
+    "linear_plus_rff_mean_residual",
+    "linear_plus_save_rff_equal_residual",
+    "linear_plus_prototype_squared_distance_residual",
+    "linear_plus_prototype_orthogonal_log_contrast_residual"
+  ],
+  "geometry": {
+    "save_and_rff": "parent frozen SAVE and RFF-mean blocks",
+    "prototype_space": "equal-weight SAVE+RFF fit once per residual outer fold",
+    "prototype_features": ["squared_distance", "orthogonal_log_contrast"],
+    "target_access": "outer-training OOF residuals only",
+    "holdout_target_access": false
+  },
+  "controls": {
+    "conditional_association": "permute fitted residual feature rows while keeping base holdout and correction targets fixed",
+    "target_permutation_geometry": "permute outer-training residual targets before fitting residual geometry, then read out against true residuals",
+    "excluded_from_ranking": true,
+    "excluded_from_runtime": true
+  },
+  "truth": "parent validated n300 heldout four-head envelope R2; source-selected and not an independent target draw",
+  "no_promotion": true,
+  "source_hashes": "recorded in this protocol before outcomes",
+  "runtime_contract": {
+    "python_major_minor": "3.9",
+    "numpy": "2.0.2",
+    "scipy": "1.13.1",
+    "scikit_learn": "1.6.1",
+    "thread_environment": {
+      "OPENBLAS_NUM_THREADS": "1",
+      "OMP_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1",
+      "VECLIB_MAXIMUM_THREADS": "1",
+      "NUMEXPR_MAX_THREADS": "1",
+      "NUMEXPR_NUM_THREADS": "1",
+      "LOKY_MAX_CPU_COUNT": "1"
+    }
+  },
+  "expected_grid": {
+    "target_count": 8,
+    "backbone_count": 5,
+    "panel_count": 8,
+    "candidate_count": 40,
+    "outer_fold_count": 160,
+    "ranking_method_count": 6,
+    "ranking_row_count": 48,
+    "reserved_backbone_count": 0
+  },
+  "parent_protocol_sha256": "005f60bd871cff01ce8d97235ac2718885ca20a638bf5f7fe3e7d14f71a622dd",
+  "source_hashes": {
+    "parent_ladder_runner": "0b0e87808b37e5b907c14375ccae3a85278a865fd243d9766a2aab4cb3bea14a",
+    "parent_ladder_protocol": "005f60bd871cff01ce8d97235ac2718885ca20a638bf5f7fe3e7d14f71a622dd",
+    "parent_ladder_protocol_sidecar": "774273a8078c868e8a8b9dc1405c30a713d67e2cedc088a9c60ac852f124cc51",
+    "parent_stable_runner": "7b558908734dc04381580095bff2d9a5d0cfeb67667c820843481053537e7137",
+    "parent_geometry_runner": "549dc5254ba64768487069cb2d38b60512b482806b1b32b5a5ebfe8f247b5449",
+    "residual_runner": "ec23403f82dfca3d18173ebef736f9684c39b0e0bbba892bca254916afe4970e"
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "status": "frozen_smallnorb_structured_pose_discovery_before_outcomes",
+  "scope": {
+    "claim": "development-only nonlinear-head dataset discovery; no method promotion or confirmation",
+    "question": "Do fixed pretrained image embeddings encode held-out SmallNORB pose through a stable nonlinear-but-recoverable readout, and does that create a useful backbone-ranking panel?",
+    "reason_for_dataset": "SmallNORB directly varies object instance, elevation, azimuth, and lighting; it tests structured readout complexity rather than using low absolute accuracy as a proxy for nonlinearity",
+    "outcomes_previously_observed": false,
+    "future_validation": "the five reserved backbones remain untouched and no threshold may be changed after execution"
+  },
+  "dataset": {
+    "id": "smallnorb_v1_left_camera_pose",
+    "official_url": "https://cs.nyu.edu/~yann/data/norb-v1.0-small/",
+    "official_split": "training instances 4,6,7,8,9 versus testing instances 0,1,2,3,5",
+    "stereo_policy": "left camera only",
+    "raw_files": {
+      "smallnorb-5x46789x9x18x6x2x96x96-training-dat.mat.gz": "5ffd6272a07d32695ee1082a26a41a93a37aab8c28da047f8c34ed348d214873",
+      "smallnorb-5x46789x9x18x6x2x96x96-training-cat.mat.gz": "2784e542c1922060691090952b6cd6278879a216c90f81476f0f00256d42cdaa",
+      "smallnorb-5x46789x9x18x6x2x96x96-training-info.mat.gz": "de7eb932ebe7a4ee16217fead60660d0eb3d23632c2f4d1c51f88c501c17bf32",
+      "smallnorb-5x01235x9x18x6x2x96x96-testing-dat.mat.gz": "cf7104eed3e51174d2f65b66d1e5878b9da233b886f161b0d88f4510ba2c7474",
+      "smallnorb-5x01235x9x18x6x2x96x96-testing-cat.mat.gz": "ecaf6d5bb8c3bc5eab9cf0258f6d2198dd474e016e374836fc097f2e5ff509ff",
+      "smallnorb-5x01235x9x18x6x2x96x96-testing-info.mat.gz": "16adf314226327ee006d1a44db8cfef52773c06c829951d5653a9f6f310248a2"
+    },
+    "expected_rows_per_official_split": 24300,
+    "expected_dat_shape": [24300, 2, 96, 96],
+    "expected_info_shape": [24300, 4],
+    "targets": [
+      "elevation_degrees",
+      "azimuth_sine",
+      "azimuth_cosine"
+    ],
+    "target_recipes": {
+      "elevation_degrees": "30 + 5*elevation_code",
+      "azimuth_sine": "sin(2*pi*(10*azimuth_code)/360)",
+      "azimuth_cosine": "cos(2*pi*(10*azimuth_code)/360)"
+    }
+  },
+  "cohort": {
+    "selection_seed": 2026091601,
+    "replicate_seeds": [4103, 4201, 4303],
+    "training_rows_per_replicate": 500,
+    "evaluation_rows": 1000,
+    "union_rows": 2500,
+    "stratification": "category x elevation; deterministic hash order within each stratum",
+    "training_replicates_disjoint": true,
+    "evaluation_from_official_test_only": true
+  },
+  "backbones": {
+    "scout": [
+      "dinov2-small",
+      "deit-tiny",
+      "mobilenetv3-large",
+      "resnet50",
+      "convnext-tiny"
+    ],
+    "reserved": [
+      "openclip-vit-b-32",
+      "efficientnet-b0",
+      "swin-tiny",
+      "vit-small-16",
+      "densenet121"
+    ],
+    "weights": "the exact cached pretrained weight specifications already hash-locked by the real-image continuous panels",
+    "reserved_outcomes_must_not_be_computed": true
+  },
+  "preprocessing": {
+    "image": "official 96x96 grayscale left-camera image converted to RGB; each extractor applies its frozen native preprocessing",
+    "embedding_row_l2": true,
+    "pca_rank": 32,
+    "pca_fit_scope": "training rows only per seed and scout backbone; identical geometry reused across all three targets"
+  },
+  "seed_derivation": {
+    "pca": "replicate_seed*10000 + backbone_position",
+    "head_search": "replicate_seed*100000 + target_position*100 + backbone_position",
+    "continuous_selector_panel": "replicate_seed + target_position*10; selector owns backbone-position expansion"
+  },
+  "heads": {
+    "families": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "selection": "three-fold shuffled training-only GridSearchCV maximizing R2, followed by official-test-cohort evaluation",
+    "linear_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0, 100.0]},
+    "quadratic_ridge": {"degree": 2, "include_bias": false, "alpha": [0.01, 0.1, 1.0, 10.0]},
+    "knn": {"n_neighbors": [3, 5, 9, 15, 31], "weights": ["distance"]},
+    "rbf_svr": {"C": [1.0, 10.0, 100.0], "gamma": ["scale", 0.03, 0.1, 0.3], "epsilon": [0.05, 0.1]}
+  },
+  "descriptive_rankers": [
+    "continuous_broad_rff",
+    "continuous_save_rff",
+    "linear_cv",
+    "raw_cv_max"
+  ],
+  "admission": {
+    "median_best_head_r2_minimum": 0.10,
+    "median_nonlinear_minus_linear_r2_minimum": 0.02,
+    "material_nonlinear_row_fraction_minimum": 0.60,
+    "material_nonlinear_row_threshold_r2": 0.02,
+    "stable_nonlinear_backbone_count_minimum": 3,
+    "stable_backbone_definition": "the same unique nonlinear held-out winner occurs in at least two of three replicate seeds",
+    "median_backbone_envelope_span_minimum": 0.02,
+    "inner_cv_family_accuracy_minimum": 0.60,
+    "all_checks_required": true
+  },
+  "reporting": {
+    "tie_atol": 1e-12,
+    "undefined_spearman": "JSON null",
+    "selection_policy": "report every admitted pose target; do not inspect or substitute reserved-backbone outcomes"
+  },
+  "expected_grid": {
+    "dataset_count": 1,
+    "targets_per_dataset": 3,
+    "task_count": 3,
+    "replicates_per_task": 3,
+    "panel_count": 9,
+    "scout_backbones": 5,
+    "candidate_rows": 45
+  }
+}
+

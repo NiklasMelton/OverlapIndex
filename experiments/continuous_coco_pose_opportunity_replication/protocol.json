@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "status": "frozen_coco_pose_opportunity_replication_before_outcomes",
+  "scope": {
+    "claim": "prospective development-only independent-image replication of the LSP torso ranking opportunity",
+    "question": "Does a COCO person-pose target create a recoverable nonlinear best-head envelope that materially changes scout-backbone rankings relative to a linear probe?",
+    "coco_outcomes_previously_observed": false,
+    "overlapindex_methods_evaluated": false,
+    "method_selection_allowed": false,
+    "confirmation_claim_allowed": false,
+    "pretraining_overlap": "cannot be excluded; discovery evidence only"
+  },
+  "prior_evidence": {
+    "experiment": "continuous_fresh_structured_opportunity_discovery",
+    "protocol_sha256": "c414a4809f816192f589d07b3e95cd62abff2ff37d8970903ec95e70fcc9de8f",
+    "summary_sha256": "5beb497e5293c18e4819b5977ae7f7c1a268e8bb77f4eac6c59a9549cbc1bede",
+    "admitted_dataset": "lsp_2000_pose",
+    "admitted_target": "torso_axis_sine",
+    "selection_consequence": "one independent additional admitted dataset is required before a separately frozen reserved-backbone ranker comparison"
+  },
+  "dataset": {
+    "id": "coco_2017_person_pose",
+    "official_page": "https://cocodataset.org/",
+    "annotation_url": "http://images.cocodataset.org/annotations/annotations_trainval2017.zip",
+    "annotation_archive": "annotations_trainval2017.zip",
+    "annotation_archive_sha256": "113a836d90195ee1f884e704da6304dfaaecff1f023f49b6ca93c4aaae470268",
+    "train_image_url_template": "http://images.cocodataset.org/train2017/{file_name}",
+    "validation_image_url_template": "http://images.cocodataset.org/val2017/{file_name}",
+    "expected": {
+      "train_images": 118287,
+      "validation_images": 5000,
+      "keypoints": 17,
+      "joint_order": [
+        "nose",
+        "left_eye",
+        "right_eye",
+        "left_ear",
+        "right_ear",
+        "left_shoulder",
+        "right_shoulder",
+        "left_elbow",
+        "right_elbow",
+        "left_wrist",
+        "right_wrist",
+        "left_hip",
+        "right_hip",
+        "left_knee",
+        "right_knee",
+        "left_ankle",
+        "right_ankle"
+      ]
+    },
+    "person_selection": "within each image and target group, choose the eligible category_id=1, iscrowd=0 annotation with greatest positive bbox area; break exact ties by smallest annotation id",
+    "visibility": "every required keypoint must have COCO visibility code 2",
+    "targets": [
+      "torso_axis_sine",
+      "torso_axis_cosine",
+      "bilateral_knee_extension_cosine"
+    ],
+    "target_recipes": {
+      "torso_axis_sine": "y component of the unit vector from hip midpoint to shoulder midpoint in image coordinates",
+      "torso_axis_cosine": "x component of the same unit torso vector",
+      "bilateral_knee_extension_cosine": "negative mean of left and right cosines between knee-to-hip and knee-to-ankle vectors; a straight leg approaches +1"
+    }
+  },
+  "cohort": {
+    "selection_seed": 2026092501,
+    "replicate_seeds": [4103, 4201, 4303],
+    "training_rows_per_replicate": 200,
+    "evaluation_rows": 500,
+    "training_replicates_disjoint": true,
+    "official_split": "training rows from train2017 and evaluation rows from val2017",
+    "selection": "deterministic SHA-256 order within ten source-split quantile strata; torso sine/cosine share strata defined by torso angle and knee extension uses its own target quantiles",
+    "shortfall_policy": "fail closed unless each target group supports 600 unique training images and 500 unique validation images"
+  },
+  "backbones": {
+    "scout": [
+      "dinov2-small",
+      "deit-tiny",
+      "mobilenetv3-large",
+      "resnet50",
+      "convnext-tiny"
+    ],
+    "reserved": [
+      "openclip-vit-b-32",
+      "efficientnet-b0",
+      "swin-tiny",
+      "vit-small-16",
+      "densenet121"
+    ],
+    "weights": "exact cached pretrained checkpoint specifications already hash-locked by prior real-image panels",
+    "reserved_outcomes_must_not_be_computed": true
+  },
+  "preprocessing": {
+    "image": "official JPEG with each extractor's frozen native preprocessing",
+    "embedding_row_l2": true,
+    "pca_rank": 32,
+    "pca_fit_scope": "training rows only per target, seed, and scout backbone"
+  },
+  "heads": {
+    "families": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "selection": "three-fold shuffled training-only GridSearchCV maximizing R2, followed by official-validation-cohort evaluation",
+    "linear_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0, 100.0]},
+    "quadratic_ridge": {"degree": 2, "include_bias": false, "alpha": [0.01, 0.1, 1.0, 10.0]},
+    "knn": {"n_neighbors": [3, 5, 9, 15, 31], "weights": ["distance"]},
+    "rbf_svr": {"C": [1.0, 10.0, 100.0], "gamma": ["scale", 0.03, 0.1, 0.3], "epsilon": [0.05, 0.1]}
+  },
+  "opportunity_definition": {
+    "linear_component": "held-out linear_ridge test R2",
+    "envelope": "maximum held-out test R2 over the four frozen head families",
+    "material_uplift_r2": 0.01,
+    "material_pair_difference_r2": 0.01,
+    "topk": 3,
+    "tie_tolerance": 1e-12
+  },
+  "admission": {
+    "median_candidate_best_head_r2_minimum": 0.10,
+    "median_panel_envelope_span_r2_minimum": 0.05,
+    "material_nonlinear_candidate_fraction_minimum": 0.20,
+    "rank_change_any_of": {
+      "linear_winner_change_rate_minimum": 0.20,
+      "mean_linear_top1_regret_r2_minimum": 0.005,
+      "mean_material_pair_reversal_rate_minimum": 0.10,
+      "linear_top3_miss_rate_minimum": 0.20
+    },
+    "target_rule": "all three base checks and at least one rank-change check must pass",
+    "dataset_rule": "at least one frozen COCO target passes",
+    "combined_rule": "COCO passes and the hash-locked prior LSP opportunity remains admitted"
+  },
+  "expected_grid": {
+    "dataset_count": 1,
+    "target_count": 3,
+    "replicates_per_target": 3,
+    "panel_count": 9,
+    "scout_backbones": 5,
+    "candidate_rows": 45,
+    "overlapindex_fit_count": 0
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "status": "frozen_development_postprojection_fusion_before_new_outcomes",
+  "objective": "Determine whether eight independently regularized RFF64 target projections can be fused before a single prototype fit while retaining the ranking quality of eight independently fitted selectors at substantially lower runtime.",
+  "scope": {
+    "downstream_head_outcomes": "immutable_reuse_only",
+    "score_bagging_outcomes_previously_observed": true,
+    "postprojection_fusion_outcomes_previously_observed": false,
+    "method_promotion_allowed": false,
+    "interpretation": "development_scalability_diagnostic"
+  },
+  "tasks": [
+    "smallnorb_elevation_nonlinear",
+    "gtsrb_box_area_linear_control"
+  ],
+  "replicate_seeds": [4103, 4201, 4303],
+  "methods": {
+    "primary_score": "save_rff",
+    "diagnostic_score": "broad_rff",
+    "map_offsets": [0, 1009, 2017, 3011, 4001, 5003, 6007, 7001],
+    "rff_components_per_map": 64,
+    "projection_rank_per_map": 8,
+    "residual_rank_per_map": 8,
+    "target_cells": 8,
+    "score_bag8": "Fit eight independent SAVE-plus-RFF selectors and average their final scalar scores.",
+    "postprojection_fusion4": "Fit four independent RFF64 rank-8 target projections, concatenate them with equal within-nonlinear energy, balance that nonlinear block 50/50 with one unchanged SAVE block, then fit one selector.",
+    "postprojection_fusion8": "Fit eight independent RFF64 rank-8 target projections, concatenate them with equal within-nonlinear energy, balance that nonlinear block 50/50 with one unchanged SAVE block, then fit one selector.",
+    "two_level_weighting": {
+      "nonlinear_map_block_energy": "1/map_count",
+      "save_block_energy": 0.5,
+      "combined_nonlinear_block_energy": 0.5
+    },
+    "configurations": [
+      "score_bag8_mean",
+      "postprojection_fusion4",
+      "postprojection_fusion8",
+      "linear_cv"
+    ]
+  },
+  "runtime": {
+    "primary_comparison": "direct_outer_wall_seconds_for_score_bag8_mean_vs_postprojection_fusion8",
+    "execution_order": "counterbalanced_by_frozen_global_candidate_ordinal_parity",
+    "warmup": "none",
+    "included": "all_eight_RFF_maps_target_moment_transforms_SAVE_geometry_and_required_prototype_fits",
+    "excluded": "embedding_loading_PCA_and_fixed_head_outcomes",
+    "score_bag_prototype_fits_per_fold": 8,
+    "postprojection_fusion_prototype_fits_per_fold": 1,
+    "postprojection_fusion4_order": "diagnostic_after_primary_pair",
+    "timing_interpretation": "paired_development_measurement_not_a_production_benchmark"
+  },
+  "ranking": {
+    "truth": "fixed_best_heldout_head_envelope_r2",
+    "linear_comparator": "fixed_inner_cv_linear_ridge_r2",
+    "tie_atol": 1e-12,
+    "metrics": ["spearman", "top1_regret_r2", "exact_best_rate"]
+  },
+  "success_rule": {
+    "candidate": "save_rff_postprojection_fusion8",
+    "nonlinear_regret_no_worse_than_linear_cv": true,
+    "nonlinear_exact_best_rate_no_worse_than_linear_cv": true,
+    "nonlinear_spearman_max_drop_from_linear_cv": 0.05,
+    "linear_control_max_mean_top1_regret_r2": 0.01,
+    "linear_control_minimum_mean_spearman": 0.9,
+    "nonlinear_regret_max_increase_from_score_bag8_r2": 0.01,
+    "nonlinear_spearman_max_drop_from_score_bag8": 0.05,
+    "linear_regret_max_increase_from_score_bag8_r2": 0.01,
+    "median_paired_wall_ratio_to_score_bag8_maximum": 0.5,
+    "minimum_fraction_candidate_rows_faster": 0.9,
+    "result_if_all_pass": "promising_scalable_postprojection_fusion_for_independent_validation",
+    "result_if_any_fail": "postprojection_fusion_does_not_retain_bagged_ranking_and_speed"
+  },
+  "determinism": {
+    "score_bag_recomputation_must_match_source_absolute_tolerance": 1e-12,
+    "candidate_execution_order_recorded": true,
+    "no_outcome_dependent_configuration_selection": true
+  },
+  "expected_grid": {
+    "panel_count": 6,
+    "candidate_panel_count": 45,
+    "primary_method_calls": 90,
+    "diagnostic_fusion4_calls": 45,
+    "score_bag_individual_selector_calls": 360,
+    "postprojection_selector_calls": 90,
+    "total_selector_fits_across_four_folds": 1800,
+    "ranking_rows": 42
+  },
+  "source_evidence": {
+    "bagging_protocol": {
+      "path": "experiments/continuous_rff_bagging_experiment/protocol.json",
+      "sha256": "7b628f12e0bd3ff229840cfd146f889eeb6dc6b195887831b07e0e3989d38bff"
+    },
+    "bagging_runner": {
+      "path": "experiments/continuous_rff_bagging_experiment/run.py",
+      "sha256": "98c30b5cec37d9106bbe694cb9c490afb3515a87e6b8feecd5f2e5e5e2e106f9"
+    },
+    "bagging_raw": {
+      "path": "artifacts/continuous_rff_bagging_experiment/raw_results.json",
+      "sha256": "a7525d920f4c68d55a93f31bb680ff6d99d296f2695ffe75e2ef1a972c6ec60c"
+    },
+    "bagging_summary": {
+      "path": "artifacts/continuous_rff_bagging_experiment/summary.json",
+      "sha256": "d01397e13b6cfe458f7ee92a1b8077cc394e7b6de6d428f51a28daebec44654d"
+    },
+    "bagging_manifest": {
+      "path": "artifacts/continuous_rff_bagging_experiment/manifest.json",
+      "sha256": "8182b39b7e546d81a984c570d0a96b6239ea7c2845057506578ee4cd931164fe"
+    }
+  }
+}
