@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "status": "frozen_continuous_ranking_reliability_recoverability_before_outcomes",
+  "frozen_at_utc": "2026-09-11T00:00:00Z",
+  "scope": {
+    "claim": "development-only diagnostic of target reliability and nonlinear ranking recoverability",
+    "method_selection_allowed": false,
+    "overlapindex_evaluated": false,
+    "reserved_backbones_evaluated": false,
+    "post_outcome_target_or_budget_changes_allowed": false,
+    "public_behavior_changes_allowed": false
+  },
+  "objective": "Determine whether a stable approximately 600-label best-head backbone ranking exists on the eight frozen recoverable targets and whether honest training-only evaluation can recover it at 300, 600, and, where supported, 1200 labels.",
+  "targets": {
+    "rank_changing_nonlinear_opportunity": [
+      "lsp_2000_pose_geometry::ankle_span_over_torso_length",
+      "lsp_2000_pose_geometry::wrist_span_over_torso_length",
+      "pascal_voc_2007_largest_box_geometry::largest_box_area_fraction",
+      "pascal_voc_2007_largest_box_geometry::largest_box_log_aspect_ratio"
+    ],
+    "recoverable_lp_dominated_control": [
+      "coco_2017_person_pose_geometry::wrist_span_over_torso_length",
+      "cub_200_2011_part_geometry::leg_span_over_bbox_diagonal",
+      "cub_200_2011_part_geometry::wing_axis_cosine",
+      "oxford_iiit_pet_mask_geometry::foreground_compactness"
+    ]
+  },
+  "backbones": [
+    "dinov2-small",
+    "deit-tiny",
+    "mobilenetv3-large",
+    "resnet50",
+    "convnext-tiny"
+  ],
+  "cohort": {
+    "selection_seed": 2026092101,
+    "target_bins": 10,
+    "evaluation_rows": 200,
+    "nested_training_prefixes": true,
+    "maximum_training_rows_by_target": {
+      "cub_200_2011_part_geometry::leg_span_over_bbox_diagonal": 1200,
+      "cub_200_2011_part_geometry::wing_axis_cosine": 900,
+      "lsp_2000_pose_geometry::ankle_span_over_torso_length": 600,
+      "lsp_2000_pose_geometry::wrist_span_over_torso_length": 590,
+      "coco_2017_person_pose_geometry::wrist_span_over_torso_length": 600,
+      "oxford_iiit_pet_mask_geometry::foreground_compactness": 600,
+      "pascal_voc_2007_largest_box_geometry::largest_box_area_fraction": 1200,
+      "pascal_voc_2007_largest_box_geometry::largest_box_log_aspect_ratio": 1200
+    }
+  },
+  "preprocessing": {
+    "embedding_row_l2": true,
+    "pca_rank": 32,
+    "pca_fit_scope": "training rows only for every target, budget, candidate, and outer split"
+  },
+  "heads": {
+    "families": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "inner_folds": 3,
+    "linear_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0, 100.0]},
+    "quadratic_ridge": {"degree": 2, "include_bias": false, "alpha": [0.01, 0.1, 1.0, 10.0]},
+    "knn": {"n_neighbors": [3, 5, 9, 15, 31], "weights": ["distance"]},
+    "rbf_svr": {"C": [1.0, 10.0, 100.0], "gamma": ["scale", 0.03, 0.1, 0.3], "epsilon": [0.05, 0.1]}
+  },
+  "ranking_target": {
+    "default_downstream_training_rows": 600,
+    "training_row_overrides": {
+      "lsp_2000_pose_geometry::wrist_span_over_torso_length": 590
+    },
+    "training_bootstrap_repeats": 3,
+    "bootstrap_seeds": [2026092201, 2026092202, 2026092203],
+    "evaluation_rows": 200,
+    "uncertainty_resamples": 1000,
+    "uncertainty_seed": 2026092204,
+    "candidate_head_value": "mean held-out R2 across stratified training bootstraps",
+    "candidate_envelope": "maximum candidate-head value across the four frozen families",
+    "material_pair_difference_r2": 0.01,
+    "stable_target_minimum_bootstrap_rank_spearman": 0.75,
+    "stable_target_minimum_top1_probability": 0.70,
+    "stable_target_minimum_material_pair_sign_probability": 0.80
+  },
+  "recoverability": {
+    "methods": ["linear_nested_cv", "four_head_nested_cv_envelope"],
+    "outer_folds": 3,
+    "outer_seed": 2026092301,
+    "budgets": [300, 600, 1200],
+    "budget_eligibility": {
+      "300": "all_eight_targets",
+      "600": "all_targets_except_LSP_wrist_span",
+      "1200": "CUB_leg_span_and_both_Pascal_VOC_targets_only"
+    },
+    "truth": "fixed 600-label ranking target, with an outcome-independent 590-label override for LSP wrist span because only 596 training rows are eligible",
+    "minimum_material_spearman_gain_over_linear": 0.05,
+    "minimum_material_top1_regret_reduction_r2": 0.005
+  },
+  "synthetic_controls": {
+    "families": ["linear", "quadratic", "smooth_local"],
+    "candidate_count": 5,
+    "dimension": 32,
+    "training_budgets": [300, 600, 1200],
+    "evaluation_rows": 2000,
+    "seed": 2026092401,
+    "minimum_nonlinear_family_spearman_gain_at_n300": 0.15,
+    "maximum_linear_family_spearman_drop_at_n300": 0.05
+  },
+  "reporting": {
+    "constant_spearman": "undefined_json_null",
+    "all_targets_and_budgets_reported": true,
+    "runtime_descriptive_only": true,
+    "uncertainty_limit": "conditional on the frozen datasets, backbone roster, head library, and evaluation cohort"
+  },
+  "expected_grid": {
+    "real_target_count": 8,
+    "backbone_count": 5,
+    "ranking_target_candidate_repeat_count": 120,
+    "ranking_target_head_evaluation_count": 480,
+    "recoverability_target_budget_count": 18,
+    "recoverability_candidate_count": 90,
+    "recoverability_outer_candidate_fold_count": 270,
+    "synthetic_family_budget_count": 9,
+    "synthetic_candidate_count": 45,
+    "reserved_backbone_count": 0,
+    "overlapindex_fit_count": 0
+  }
+}
