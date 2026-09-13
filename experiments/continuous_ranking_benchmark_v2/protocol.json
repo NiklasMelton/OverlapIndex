@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "status": "frozen_continuous_ranking_benchmark_v2_evaluator_pilot_before_outcomes",
+  "frozen_at_utc": "2026-09-13T00:00:00Z",
+  "scope": {
+    "claim": "development-only validation of the corrected best-head reference evaluator",
+    "overlapindex_evaluated": false,
+    "method_selection_allowed": false,
+    "reserved_backbones_evaluated": false,
+    "post_outcome_changes_allowed": false
+  },
+  "ancestry": {
+    "v1_input_cohort_sha256": "ed2c8dee995ea8058dd00578f28e24bf9482bd06e5ef18f902b924cfc694baf0",
+    "v1_input_manifest_sha256": "b54f8cf985863705ee20f320a34c54f04ffd25e3aff8473e97b01493a445ecdf",
+    "v1_embedding_manifest_sha256": "4a63a31b0c7be0486e4c0ea41c68d9bb51c3b22f4d67713659d512261e8c063e",
+    "v1_raw_results_sha256": "a2a07ecf78b8e3e083ada2f065ad4bddecf84e60966494c67a12609579d683a3",
+    "v1_manifest_sha256": "dd126ea01db4a42210e6268604a859b954804c24e1da8fa0654bb5f7a931842f",
+    "v1_executed_commit": "b1f0776355ab565cdbc57aefb7526f2193e332c9"
+  },
+  "backbones": [
+    "dinov2-small",
+    "deit-tiny",
+    "mobilenetv3-large",
+    "resnet50",
+    "convnext-tiny"
+  ],
+  "targets": [
+    {
+      "target_key": "cub_200_2011_part_geometry::leg_span_over_bbox_diagonal",
+      "training_pool_rows": 1200,
+      "training_rows_per_draw": 600,
+      "draw_seeds": [2026093001, 2026093002, 2026093003, 2026093004, 2026093005, 2026093006, 2026093007, 2026093008, 2026093009, 2026093010],
+      "evaluation_rows": 200,
+      "expected_v1_behavior": "stable_linear_control"
+    },
+    {
+      "target_key": "cub_200_2011_part_geometry::wing_axis_cosine",
+      "training_pool_rows": 900,
+      "training_rows_per_draw": 600,
+      "draw_seeds": [2026093101, 2026093102, 2026093103, 2026093104, 2026093105, 2026093106, 2026093107, 2026093108, 2026093109, 2026093110],
+      "evaluation_rows": 200,
+      "expected_v1_behavior": "stable_linear_control"
+    },
+    {
+      "target_key": "lsp_2000_pose_geometry::wrist_span_over_torso_length",
+      "training_pool_rows": 590,
+      "training_rows_per_draw": 590,
+      "draw_seeds": [2026093201],
+      "evaluation_rows": 200,
+      "expected_v1_behavior": "stable_rank_changing_nonlinear_lead"
+    }
+  ],
+  "training_draws": {
+    "selection": "without replacement within each draw, equal rows from ten frozen target bins",
+    "same_rows_across_backbones_and_heads": true,
+    "cross_draw_overlap_allowed": true,
+    "duplicate_sample_ids_within_draw_allowed": false,
+    "lsp_limitation": "one complete 590-row draw because the recovered embedded pool has exactly 590 eligible rows"
+  },
+  "preprocessing": {
+    "row_l2": true,
+    "pca_rank": 32,
+    "pca_solver": "full_float64_deterministic",
+    "post_pca_scaling": "StandardScaler fitted on training rows",
+    "fit_scope": "separately inside every inner fold and once on the complete training draw for final evaluation",
+    "evaluation_rows_used_for_fit": false
+  },
+  "heads": {
+    "families": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "inner_folds": 5,
+    "inner_split": "target-bin-stratified, shuffled with frozen candidate/draw seed",
+    "common_inner_folds_across_families": true,
+    "linear_ridge": {"alpha": [0.01, 0.1, 1.0, 10.0, 100.0], "solver": "svd"},
+    "quadratic_ridge": {"degree": 2, "include_bias": false, "alpha": [0.01, 0.1, 1.0, 10.0], "solver": "svd"},
+    "knn": {"n_neighbors": [3, 5, 9, 15, 31], "weights": ["distance"]},
+    "rbf_svr": {"C": [1.0, 10.0, 100.0], "gamma": ["scale", 0.03, 0.1, 0.3], "epsilon": [0.05, 0.1]},
+    "relationship_to_v1": "same family and hyperparameter grids; corrected sample identities and preprocessing fit scope; five rather than three inner folds; float64 stable Ridge solver"
+  },
+  "reference": {
+    "candidate_head_value": "mean held-out R2 across unique-sample training draws",
+    "candidate_envelope": "maximum candidate-head mean across the four frozen families",
+    "uncertainty_resamples": 2000,
+    "uncertainty_seed": 2026093301,
+    "paired_units": ["training draw", "evaluation row"],
+    "material_difference_r2": 0.01,
+    "stable_minimum_median_rank_spearman": 0.75,
+    "stable_minimum_top1_probability": 0.70,
+    "stable_minimum_material_pair_sign_probability": 0.80,
+    "lsp_uncertainty_scope": "evaluation rows only because the pilot has one complete training draw"
+  },
+  "synthetic_controls": {
+    "families": ["linear", "quadratic", "smooth_periodic"],
+    "candidate_ids": ["clean_latent", "mild_latent_noise", "linear_shortcut", "degraded_latent", "noise_only"],
+    "confirmation_seeds": [2026093401, 2026093402, 2026093403, 2026093404, 2026093405],
+    "training_rows": 600,
+    "evaluation_rows": 5000,
+    "target_noise_sd": 0.03,
+    "mild_angle_noise_sd": 0.08,
+    "shortcut_noise_sd": 0.30,
+    "degraded_angle_noise_sd": 0.55,
+    "mechanisms": {
+      "linear": "cos(theta) + 0.5*sin(theta)",
+      "quadratic": "sin(2*theta), equal to 2*cos(theta)*sin(theta)",
+      "smooth_periodic": "sin(3*theta) + 0.4*cos(5*theta)"
+    },
+    "eligibility": {
+      "minimum_best_envelope_r2": 0.50,
+      "minimum_material_candidate_gap_r2": 0.05,
+      "minimum_material_gap_count": 2,
+      "minimum_clean_latent_top_probability": 0.80,
+      "maximum_linear_control_top1_regret_r2": 0.02,
+      "minimum_nonlinear_linear_probe_top1_regret_r2": 0.05
+    }
+  },
+  "comparison": {
+    "v1_values_are_descriptive_only": true,
+    "lsp_reversal_replication": "corrected envelope best backbone differs from corrected linear best backbone and corrected linear top1 regret exceeds 0.01 R2",
+    "cub_control_preservation": "corrected linear top1 regret is at most 0.01 R2 on each CUB target"
+  },
+  "expected_grid": {
+    "real_target_count": 3,
+    "real_candidate_draw_count": 105,
+    "real_final_head_fit_count": 420,
+    "synthetic_panel_count": 15,
+    "synthetic_candidate_draw_count": 75,
+    "synthetic_final_head_fit_count": 300,
+    "overlapindex_fit_count": 0,
+    "reserved_backbone_count": 0
+  },
+  "decision": {
+    "pilot_pass": "all synthetic controls eligible, both CUB controls preserved, and LSP wrist reversal replicated",
+    "interpretation": "a pass validates expansion of the reference benchmark; it does not promote a continuous OI method"
+  }
+}
