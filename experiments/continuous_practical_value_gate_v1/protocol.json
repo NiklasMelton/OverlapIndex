@@ -1,0 +1,142 @@
+{
+  "schema_version": 1,
+  "status": "frozen_prospective_practical_value_gate_before_outcomes",
+  "scope": {
+    "purpose": "admit at most one continuous-ranker formulation to an independent broad benchmark",
+    "overlapindex_evaluated": false,
+    "outcome_comparison_executed": false,
+    "public_library_modified": false,
+    "prior_artifacts_modified": false,
+    "method_promotion_allowed": false,
+    "on_admission_failure": "stop and report the failed gate; do not tune against the same data"
+  },
+  "estimand": {
+    "comparator": "linear_cv_training_only",
+    "target": "best_heldout_head_envelope",
+    "primary_metric": "top1_selection_regret_r2",
+    "secondary_metrics": [
+      "top3_opportunity_regret_r2",
+      "top3_mean_utility_regret_r2",
+      "material_pair_accuracy",
+      "spearman",
+      "exact_best_rate"
+    ],
+    "regret_definition": "best heldout envelope R2 minus the best envelope R2 retained by the selected backbone or shortlist",
+    "aggregation": "pool candidates within a source-task group, then average source-task groups before cross-source summaries"
+  },
+  "uncertainty": {
+    "confidence_level": 0.95,
+    "resampling_units": ["training_draws", "evaluation_groups"],
+    "material_pair_difference_r2": 0.01,
+    "tie_definition": "a pair is practically equivalent when its complete 95% difference interval lies inside [-0.01, 0.01] R2",
+    "unresolved_definition": "a pair is unresolved when neither material order nor practical equivalence is established",
+    "selection_rule": "use conservative regret intervals; do not force unresolved pairs into a total order"
+  },
+  "step2_entry": {
+    "required_status": "passed",
+    "required_method_config_frozen_before_outcomes": true,
+    "step2_outcomes_may_not_tune_method": true,
+    "required_locked_method_config_hash": true,
+    "maximum_formulation_changes_after_mechanism": 1,
+    "one_change_requires": [
+      "a diagnosis-to-change mapping declared before Step-2 outcomes",
+      "a new locked method-config hash",
+      "proof that Step-2 outcomes were not used to tune the change",
+      "independent evaluation after the change"
+    ],
+    "diagnosis_to_change_mapping": {
+      "must_be_declared_before_step2_outcomes": true,
+      "allowed_change_id": "one_predeclared_formulation_change"
+    },
+    "failure_action": "a method that does not survive the mechanism diagnostic cannot enter this gate"
+  },
+  "reference_admission": {
+    "minimum_best_reference_r2_point": 0.2,
+    "minimum_best_reference_r2_lower95": 0.0,
+    "minimum_nonlinear_gain_lower95_r2": 0.02,
+    "minimum_training_only_linear_cv_top1_regret_lower95_r2": 0.01,
+    "minimum_training_only_linear_cv_material_pair_reversals": 2,
+    "minimum_top3_boundary_identified": true,
+    "rank_change_rule": "a nonlinear opportunity needs sufficient training-only Linear CV regret headroom and either a lower-bound Linear CV top1 regret above 0.01 R2 or at least two material pair reversals",
+    "headroom_rule": "a nonlinear advantage claim is inadmissible when the 95% lower bound on deployable training-only Linear CV top1 regret is at or below 0.01 R2, even if a point estimate or a nonlinear head gain is large"
+  },
+  "data_design": {
+    "minimum_new_dataset_groups": 2,
+    "minimum_new_qualified_nonlinear_source_datasets": 2,
+    "minimum_new_linear_control_source_datasets": 2,
+    "minimum_reserved_backbones": 2,
+    "reserved_backbone_definition": "backbones absent from mechanism development and all scout outcomes, evaluated only after method and data roles are locked",
+    "required_roles": ["nonlinear_opportunity", "linear_control"],
+    "source_group_is_statistical_unit": true,
+    "same_source_tasks_are_not_independent_groups": true,
+    "confirmation_is_separate": "a future general claim still needs at least three qualified nonlinear and three linear-control source datasets, plus an unopened confirmation roster"
+  },
+  "capacity_grid": {
+    "embedding_dimensions": [384, 768, 1536],
+    "representative_synthetic_dimensions": [128, 512, 1024],
+    "dimension_semantics": "native dimensions are measured and reported per backbone; these real-embedding checkpoints are expected scaling targets when supported, while the synthetic grid is supplementary and cannot replace native dimensions",
+    "sample_sizes": [300, 600, 1200],
+    "sample_semantics": "training rows per draw; no row cloning or repeated addition after results",
+    "all_supported_cells_required": true
+  },
+  "runtime": {
+    "include": [
+      "loaded_embeddings",
+      "training_only_preprocessing",
+      "target_transform",
+      "selector_fit",
+      "ranking_score",
+      "required_resampling"
+    ],
+    "exclude": ["embedding_extraction", "heldout_head_envelope_generation"],
+    "warmup_runs_excluded": 1,
+    "timed_repeats": 5,
+    "thread_control": "one documented CPU thread configuration shared by methods",
+    "summary": ["geometric_mean_ratio_to_linear_cv", "p90_ratio_to_linear_cv", "peak_memory_bytes"],
+    "time_competitive_geomean_ratio_maximum": 1.0,
+    "time_competitive_p90_ratio_maximum": 1.0,
+    "preferred_geomean_ratio_maximum": 0.5,
+    "complete_grid_required": true
+  },
+  "success": {
+    "linear_control": {
+      "upper95_excess_top1_regret_r2_maximum": 0.005,
+      "upper95_excess_top3_opportunity_regret_r2_maximum": 0.005,
+      "upper95_material_pair_accuracy_loss_maximum": 0.02
+    },
+    "nonlinear_opportunity": {
+      "upper95_method_minus_linear_top1_regret_r2_maximum": -0.01,
+      "upper95_method_minus_linear_top3_opportunity_regret_r2_maximum": 0.005
+    },
+    "broad_panel": {
+      "upper95_excess_top1_regret_r2_maximum": 0.005,
+      "upper95_excess_top3_opportunity_regret_r2_maximum": 0.005
+    },
+    "runtime": {
+      "geometric_mean_ratio_maximum": 1.0,
+      "p90_ratio_maximum": 1.0,
+      "preferred_geometric_mean_ratio_maximum": 0.5
+    },
+    "decision": "all required strata, separate shortlist metrics, material-pair ordering, complete runtime cells, and uncertainty fields must pass"
+  },
+  "stop_rule": {
+    "method_comparison": "one method may be independently evaluated only after entry passes",
+    "after_failure": "stop the formulation family; do not tune, reselect, add rows, remove disagreement, or reopen the same benchmark",
+    "after_one_formulation_change": "run the independent evaluation once; any further formulation change is disallowed under this protocol",
+    "near_ties": "retain unresolved candidates in the report and do not call a winner",
+    "no_claim_without_headroom": "a positive nonlinear-head gain without sufficient achievable LP-regret headroom is not a nonlinear backbone-ranking opportunity"
+  },
+  "rationale": {
+    "source_notes": [
+      "experiments/continuous_ranking_benchmark_v2/DESIGN.md",
+      "experiments/continuous_ranking_reliability_recoverability/RESULTS.md",
+      "experiments/continuous_real_opportunity_stratified_discovery/RESULTS.md",
+      "experiments/continuous_large_recoverable_ranker_comparison/RESULTS.md",
+      "experiments/continuous_early_mean_lsp_holdout_v1/RESULTS.md"
+    ],
+    "threshold_changes": "No quality or uncertainty margin was relaxed. The newer gate adds an explicit 0.01 R2 lower-bound LP-headroom check, requires two fresh source groups and two reserved backbones before broad comparison, and treats 1.0x as the time-competitive ceiling while retaining 0.5x as the preferred target.",
+    "why_headroom_is_required": "The latest holdout had nonlinear head wins but only 0.0022 R2 LP selection regret; an apparent nonlinear opportunity could not deliver the claimed improvement at that margin.",
+    "why_new_groups_and_reserved_backbones_are_required": "Repeated scout panels and same-source target channels cannot establish cross-source or unseen-roster generalization; prior broad comparisons had zero reserved backbones.",
+    "why_shortlist_is_separate": "A method can improve top-three opportunity regret while worsening top-one regret, so shortlist utility cannot substitute for winner selection."
+  }
+}
