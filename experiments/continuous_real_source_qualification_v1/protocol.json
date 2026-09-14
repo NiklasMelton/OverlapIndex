@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "status": "frozen_continuous_real_source_qualification_v1_before_outcomes",
+  "frozen_at_utc": "2026-09-14T03:00:00Z",
+  "scope": {
+    "claim": "development-only source qualification for real continuous targets with recoverable nonlinear backbone-ranking opportunity",
+    "reference_heads_only": true,
+    "overlapindex_evaluated": false,
+    "method_selection_allowed": false,
+    "reserved_backbones_evaluated": false,
+    "confirmation_claim_allowed": false,
+    "post_outcome_changes_allowed": false
+  },
+  "ancestry": {
+    "qualification_v3_protocol_sha256": "807b9687a48d8025c9df54d742a06613e4bd89ecd04f7a934861c3e561961eb3",
+    "qualification_v3_raw_results_sha256": "9dc3a96a7297048bc2f926298fa4d3fe7988e0a48391ff4266492c87c62f344d",
+    "qualification_v3_manifest_sha256": "c4c496986db626e5a6e1cd1ade7a6688f51c459b0400db1d96c1fee2126fe1cd"
+  },
+  "sources": {
+    "substitution_record": "SPAQ discovery was replaced before predictive outcomes because its official Google Drive object returned 404 and the maintained mirror is 34.8 GB; KonIQ-10k is discovery and SPAQ remains untouched replication.",
+    "archives": {
+      "koniq_images": {"size_bytes": 766965996, "sha256": "d8f6a0eac53a8f2ce26a2812688c03f7adb8656804e52e2296188afc15e21b97", "url": "https://datasets.vqa.mmsp-kn.de/archives/koniq10k_512x384.zip"},
+      "koniq_scores": {"size_bytes": 303515, "sha256": "d895af9428523f4f14723ed28beaf7ddcff00b5c54ab78697d9d4001a417b440", "url": "https://datasets.vqa.mmsp-kn.de/archives/koniq10k_scores_and_distributions.zip"},
+      "jhu": {"size_bytes": 3080825298, "sha256": "886fbb75ab543977e12fe8c0491ff52e728da37b93457a03f8878682e70075e9", "url": "https://drive.usercontent.google.com/download?id=1pA7ZeXU3hh-1txS9lFQiCek1ts3MdBaj&export=download"},
+      "sunrgbd": {"size_bytes": 6885481608, "sha256": "1a6dbf2a1c9044c4805a35ee648d616ea39a231fd5bd6f77e84cd2b8287fe41c", "url": "https://rgbd.cs.princeton.edu/data/SUNRGBD.zip"},
+      "sunrgbd_toolbox": {"size_bytes": 570324301, "sha256": "946ee4dada878d508bcc0b754066c6d20e80160563d0277782cddaaee7b6e193", "url": "https://rgbd.cs.princeton.edu/data/SUNRGBDtoolbox.zip"},
+      "rsna_images": {"size_bytes": 9799344140, "sha256": "9eab917f59bf520b4eb10803d33e7007ea3b3c2bd4df1c55aff45bc339b2736a", "url": "https://s3.amazonaws.com/east1.public.rsna.org/AI/2017/Bone+Age+Training+Set.zip"},
+      "rsna_annotations": {"size_bytes": 44679, "sha256": "f6373249b6ec85d182c62ab83f05fa76dff90ba03315e455dd6de332dffc7215", "url": "https://s3.amazonaws.com/east1.public.rsna.org/AI/2017/Bone+Age+Training+Set+Annotations.zip"}
+    }
+  },
+  "backbones": ["dinov2-small", "deit-tiny", "mobilenetv3-large", "resnet50", "convnext-tiny"],
+  "targets": [
+    {"target_key": "koniq10k_iqa::mos", "training_pool_rows": 2000, "training_rows_per_draw": 600, "draw_seeds": [2026100101,2026100102,2026100103,2026100104,2026100105,2026100106,2026100107,2026100108,2026100109,2026100110], "evaluation_rows": 1000, "split": "deterministic target-decile-stratified disjoint partition of the published full set"},
+    {"target_key": "jhu_crowd_v2::log1p_head_count", "training_pool_rows": 2000, "training_rows_per_draw": 600, "draw_seeds": [2026100201,2026100202,2026100203,2026100204,2026100205,2026100206,2026100207,2026100208,2026100209,2026100210], "evaluation_rows": 1000, "split": "target-decile-stratified subsets of publisher train and test"},
+    {"target_key": "sunrgbd_scene_depth::log_median_depth_m", "training_pool_rows": 2000, "training_rows_per_draw": 600, "draw_seeds": [2026100301,2026100302,2026100303,2026100304,2026100305,2026100306,2026100307,2026100308,2026100309,2026100310], "evaluation_rows": 1000, "split": "target-decile-stratified subsets of publisher alltrain and alltest"},
+    {"target_key": "rsna_bone_age::bone_age_months", "training_pool_rows": 2000, "training_rows_per_draw": 600, "draw_seeds": [2026100401,2026100402,2026100403,2026100404,2026100405,2026100406,2026100407,2026100408,2026100409,2026100410], "evaluation_rows": 1000, "split": "deterministic target-decile-stratified disjoint partition of the publisher training set; sex is audit metadata only"}
+  ],
+  "cohort": {
+    "selection_seed": 2026100001,
+    "target_bins": 10,
+    "training_pool_rows": 2000,
+    "training_rows_per_draw": 600,
+    "evaluation_rows": 1000,
+    "same_target_distribution": true,
+    "distribution_shift_claimed": false
+  },
+  "reference_library": {
+    "source": "continuous_reference_library_qualification_v3/protocol.json",
+    "consume_exactly_without_tuning": true,
+    "families": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"]
+  },
+  "uncertainty": {
+    "resamples": 2000,
+    "seed": 2026100501,
+    "paired_units": ["training_draw", "evaluation_row"],
+    "familywise_alpha": 0.05,
+    "utility_count_per_target": 20,
+    "material_r2": 0.01,
+    "top1_probability_threshold": 0.70,
+    "reversal_probability_threshold": 0.80
+  },
+  "classification": {
+    "learnable_best_envelope_point_r2": 0.20,
+    "learnable_best_envelope_lower_bound_r2": 0.0,
+    "near_leading_gap_r2": 0.05,
+    "nonlinear_gain_lower_bound_r2": 0.02,
+    "linear_regret_lower_bound_r2": 0.01,
+    "minimum_material_pair_reversals": 2,
+    "linear_control_regret_upper_bound_r2": 0.01,
+    "linear_control_nonlinear_gain_upper_bound_r2": 0.02,
+    "labels": ["nonlinear_challenge_lead", "linear_control", "mixed", "unresolved"]
+  },
+  "expected_grid": {
+    "target_count": 4,
+    "candidate_count": 20,
+    "candidate_draw_count": 200,
+    "selected_image_count": 12000,
+    "embedding_matrix_count": 20,
+    "overlapindex_fit_count": 0,
+    "reserved_backbone_count": 0
+  },
+  "decision": {
+    "sufficient_real_nonlinear_diversity": "at least three nonlinear challenge leads from at least three independent source datasets",
+    "on_sufficient": "freeze these sources for the later OI development benchmark without evaluating reserved backbones",
+    "on_insufficient": "report the shortfall and add sources; do not relax thresholds or evaluate OI"
+  }
+}
