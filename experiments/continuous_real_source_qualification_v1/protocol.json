@@ -44,6 +44,13 @@
     "same_target_distribution": true,
     "distribution_shift_claimed": false
   },
+  "extraction": {
+    "device": "cpu",
+    "batch_size": 16,
+    "torch_intraop_threads": 4,
+    "torch_interop_threads": 1,
+    "evaluated_runtime_component": false
+  },
   "reference_library": {
     "source": "continuous_reference_library_qualification_v3/protocol.json",
     "consume_exactly_without_tuning": true,

@@ -24,6 +24,8 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT_ROOT = ROOT / "artifacts" / "continuous_real_source_qualification_v1" / "embeddings"
 BATCH_SIZE = 16
 DEVICE = "cpu"
+TORCH_INTRAOP_THREADS = 4
+TORCH_INTEROP_THREADS = 1
 SPECS_BY_ID = {str(spec["backbone_id"]): spec for spec in model_source.BACKBONE_SPECS}
 
 
@@ -136,6 +138,17 @@ def run_extraction(
         raise TypeError("resume must be a strict bool")
     prepared_root, output_root = prepared_root.resolve(), output_root.resolve()
     protocol = prepare.load_protocol()
+    extraction = protocol["extraction"]
+    if extraction != {
+        "device": DEVICE, "batch_size": BATCH_SIZE,
+        "torch_intraop_threads": TORCH_INTRAOP_THREADS,
+        "torch_interop_threads": TORCH_INTEROP_THREADS,
+        "evaluated_runtime_component": False,
+    }:
+        raise ValueError("frozen extraction controls changed")
+    import torch
+    torch.set_num_threads(TORCH_INTRAOP_THREADS)
+    torch.set_num_interop_threads(TORCH_INTEROP_THREADS)
     git = _git_identity()
     if git["dirty"]:
         raise ValueError("embedding extraction requires a clean committed source tree")
@@ -179,6 +192,12 @@ def run_extraction(
         "torchvision": importlib.metadata.version("torchvision"), "timm": importlib.metadata.version("timm"),
         "transformers": importlib.metadata.version("transformers"), "vertebrae": importlib.metadata.version("vertebrae"),
         "device": DEVICE, "batch_size": BATCH_SIZE,
+        "torch_intraop_threads": int(torch.get_num_threads()),
+        "torch_interop_threads": int(torch.get_num_interop_threads()),
+        "thread_environment": {
+            key: os.environ.get(key)
+            for key in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS")
+        },
         "HF_HUB_OFFLINE": os.environ.get("HF_HUB_OFFLINE"), "TRANSFORMERS_OFFLINE": os.environ.get("TRANSFORMERS_OFFLINE"),
     }
     manifest = {

@@ -24,6 +24,10 @@ def test_protocol_is_frozen_reference_only_and_exactly_sized():
     assert sum(len(row["draw_seeds"]) for row in protocol["targets"]) == 40
     assert protocol["expected_grid"]["candidate_draw_count"] == 200
     assert protocol["expected_grid"]["selected_image_count"] == 12000
+    assert protocol["extraction"] == {
+        "device": "cpu", "batch_size": 16, "torch_intraop_threads": 4,
+        "torch_interop_threads": 1, "evaluated_runtime_component": False,
+    }
 
 
 def _rows(count=100):
