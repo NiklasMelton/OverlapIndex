@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "status": "frozen_continuous_cached_embedding_smooth_head_audit_v1_before_outcomes",
+  "frozen_at_utc": "2026-09-14T19:00:00Z",
+  "scope": {
+    "claim": "development-only test of whether higher-information cached embedding views reveal a smooth nonlinear backbone-ranking opportunity",
+    "reference_heads_only": true,
+    "overlapindex_evaluated": false,
+    "method_selection_allowed": false,
+    "reserved_backbones_evaluated": false,
+    "confirmation_claim_allowed": false,
+    "post_outcome_changes_allowed": false
+  },
+  "ancestry": {
+    "information_audit_protocol_sha256": "119d44db27186573a36f40039057eb6011061b43b24eadb0127dcf645134be6e",
+    "information_audit_raw_results_sha256": "af9a0bf2e7cf32d8742a8abb4ffb474eecc35be025499660dcdb9c356e76c991",
+    "information_audit_summary_sha256": "912303c3b3578bff75e8f7caab7661afa374713120a24c8a7fbea45a8e280e43",
+    "information_audit_manifest_sha256": "2d41ce82dd64ef971f6ab5b03f2f3d987356598f0a955fc5d7cd63329a67af39",
+    "information_audit_terminal_sha256": "7ce6279157f2b9374a476b729efcfa8e947f38644f1c7a63616d1667b1ffbbdb",
+    "archived_real_source_raw_results_sha256": "675f9f3454a2b1de6c03d635cdf18ea00a36a5f4be677146d2863be2d951cb6b"
+  },
+  "targets": [
+    {"target_key": "jhu_crowd_v2::log1p_head_count", "draw_seed": 2026100201, "training_pool_rows": 2000, "archived_training_rows": 600, "evaluation_rows": 1000},
+    {"target_key": "sunrgbd_scene_depth::log_median_depth_m", "draw_seed": 2026100301, "training_pool_rows": 2000, "archived_training_rows": 600, "evaluation_rows": 1000}
+  ],
+  "backbones": ["dinov2-small", "resnet50", "convnext-tiny"],
+  "evaluated_views": [
+    {"view_id": "n600_l2_pca128", "training_rows": 600, "row_l2": true, "pca_rank": 128},
+    {"view_id": "n600_l2_full", "training_rows": 600, "row_l2": true, "pca_rank": null},
+    {"view_id": "n2000_l2_pca128", "training_rows": 2000, "row_l2": true, "pca_rank": 128},
+    {"view_id": "n2000_l2_full", "training_rows": 2000, "row_l2": true, "pca_rank": null}
+  ],
+  "preprocessing": {
+    "source": "continuous_cached_embedding_information_audit_v1",
+    "fit_scope": "separately inside every inner fold and once on the complete training draw",
+    "pca_solver": "randomized float64 with frozen seed, four power iterations, and ten oversamples",
+    "post_representation_scaling": "StandardScaler fitted on training rows"
+  },
+  "rbf_svr": {
+    "inner_folds": 3,
+    "inner_split": "same target-bin-stratified split seed as the matching information-audit cell",
+    "target_standardization": "training-fold mean and population standard deviation",
+    "C_standardized_target_units": [1.0, 3.0, 10.0],
+    "epsilon_standardized_target_units": [0.05, 0.15, 0.3, 0.5],
+    "bandwidth_factors": [0.5, 1.0, 2.0],
+    "bandwidth": "factor multiplied by exact median nonzero training distance",
+    "implementation": "exact SVR with fold-local precomputed RBF kernels; each distance matrix is shared across hyperparameters"
+  },
+  "calibration": {
+    "cells": 6,
+    "recipe": "replay each archived 600-row PCA-32 RBF-SVR best parameter with the exact archived full-solver preprocessing and compare direct versus precomputed kernels",
+    "maximum_absolute_standardized_prediction_delta": 0.002,
+    "maximum_absolute_evaluation_r2_delta": 0.0005
+  },
+  "ranking_diagnostics": {
+    "material_nonlinear_gain_r2": 0.02,
+    "material_linear_top1_regret_r2": 0.01,
+    "material_linear_to_envelope_spearman_upper": 0.5,
+    "interpretation": "a material rank conflict nominates a repeated all-five-backbone, multiple-draw study; otherwise proceed to intermediate-layer and pooling views"
+  },
+  "expected_grid": {
+    "target_count": 2,
+    "backbone_count": 3,
+    "view_count": 4,
+    "calibration_count": 6,
+    "cell_count": 24,
+    "overlapindex_fit_count": 0,
+    "reserved_backbone_count": 0
+  }
+}
