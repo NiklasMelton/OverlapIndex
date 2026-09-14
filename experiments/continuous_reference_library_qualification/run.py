@@ -464,7 +464,7 @@ def run(output_root: Path = DEFAULT_OUTPUT_ROOT, *, resume: bool = False) -> dic
     identity = _checkpoint_identity(protocol, source_hashes)
     checkpoint_path = output_root / "checkpoint.json"
     checkpoint = _load_checkpoint(checkpoint_path, identity, resume=resume)
-    cohort, matrices, _ = v1_extract.load_bank()
+    cohort, matrices = v1_extract.load_bank()
     v2_raw = json.loads((V2_ROOT / "raw_results.json").read_text(encoding="utf-8"))
 
     completed_real = {row["target_key"] for row in checkpoint["real_panels"]}
@@ -591,4 +591,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

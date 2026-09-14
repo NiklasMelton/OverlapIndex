@@ -133,9 +133,17 @@ def test_validate_grid_rejects_incomplete_execution():
         run.validate_grid(protocol, checkpoint)
 
 
+def test_archived_embedding_loader_contract_is_available():
+    loaded = run.v1_extract.load_bank()
+    assert isinstance(loaded, tuple)
+    assert len(loaded) == 2
+    cohort, matrices = loaded
+    assert set(matrices) == set(cohort["datasets"])
+    assert set(next(iter(matrices.values()))) == set(run.BACKBONES)
+
+
 def test_experiment_package_does_not_import_overlapindex():
     for path in run.PACKAGE_DIR.glob("*.py"):
         source = path.read_text(encoding="utf-8").lower()
         assert "import overlapindex" not in source
         assert "from overlapindex" not in source
-
