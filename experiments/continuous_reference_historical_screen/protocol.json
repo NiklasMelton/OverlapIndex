@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "status": "frozen_continuous_reference_historical_screen_before_outcomes",
+  "frozen_at_utc": "2026-09-13T00:00:00Z",
+  "scope": {
+    "claim": "development-only screening of eight historical targets under the qualified best-head library",
+    "overlapindex_evaluated": false,
+    "method_selection_allowed": false,
+    "reserved_backbones_evaluated": false,
+    "confirmation_claim_allowed": false,
+    "post_outcome_changes_allowed": false
+  },
+  "ancestry": {
+    "qualification_v3_protocol_sha256": "807b9687a48d8025c9df54d742a06613e4bd89ecd04f7a934861c3e561961eb3",
+    "qualification_v3_raw_results_sha256": "9dc3a96a7297048bc2f926298fa4d3fe7988e0a48391ff4266492c87c62f344d",
+    "qualification_v3_manifest_sha256": "c4c496986db626e5a6e1cd1ade7a6688f51c459b0400db1d96c1fee2126fe1cd"
+  },
+  "backbones": ["dinov2-small", "deit-tiny", "mobilenetv3-large", "resnet50", "convnext-tiny"],
+  "targets": [
+    {"target_key": "coco_2017_person_pose_geometry::wrist_span_over_torso_length", "training_pool_rows": 600, "training_rows_per_draw": 600, "draw_seeds": [2026094001], "evaluation_rows": 200, "draw_limitation": "single complete archived pool"},
+    {"target_key": "cub_200_2011_part_geometry::leg_span_over_bbox_diagonal", "training_pool_rows": 1200, "training_rows_per_draw": 600, "draw_seeds": [2026093001, 2026093002, 2026093003, 2026093004, 2026093005, 2026093006, 2026093007, 2026093008, 2026093009, 2026093010], "evaluation_rows": 200, "draw_limitation": null},
+    {"target_key": "cub_200_2011_part_geometry::wing_axis_cosine", "training_pool_rows": 900, "training_rows_per_draw": 600, "draw_seeds": [2026093101, 2026093102, 2026093103, 2026093104, 2026093105, 2026093106, 2026093107, 2026093108, 2026093109, 2026093110], "evaluation_rows": 200, "draw_limitation": null},
+    {"target_key": "lsp_2000_pose_geometry::ankle_span_over_torso_length", "training_pool_rows": 600, "training_rows_per_draw": 600, "draw_seeds": [2026094101], "evaluation_rows": 200, "draw_limitation": "single complete archived pool"},
+    {"target_key": "lsp_2000_pose_geometry::wrist_span_over_torso_length", "training_pool_rows": 590, "training_rows_per_draw": 590, "draw_seeds": [2026093201], "evaluation_rows": 200, "draw_limitation": "single complete archived pool below the nominal 600-row budget"},
+    {"target_key": "oxford_iiit_pet_mask_geometry::foreground_compactness", "training_pool_rows": 600, "training_rows_per_draw": 600, "draw_seeds": [2026094201], "evaluation_rows": 200, "draw_limitation": "single complete archived pool"},
+    {"target_key": "pascal_voc_2007_largest_box_geometry::largest_box_area_fraction", "training_pool_rows": 1200, "training_rows_per_draw": 600, "draw_seeds": [2026094301, 2026094302, 2026094303, 2026094304, 2026094305, 2026094306, 2026094307, 2026094308, 2026094309, 2026094310], "evaluation_rows": 200, "draw_limitation": null},
+    {"target_key": "pascal_voc_2007_largest_box_geometry::largest_box_log_aspect_ratio", "training_pool_rows": 1200, "training_rows_per_draw": 600, "draw_seeds": [2026094401, 2026094402, 2026094403, 2026094404, 2026094405, 2026094406, 2026094407, 2026094408, 2026094409, 2026094410], "evaluation_rows": 200, "draw_limitation": null}
+  ],
+  "reference_library": {
+    "source": "continuous_reference_library_qualification_v3/protocol.json",
+    "consume_exactly_without_tuning": true,
+    "families": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"]
+  },
+  "uncertainty": {
+    "resamples": 2000,
+    "seed": 2026094501,
+    "paired_units": ["training_draw", "evaluation_row"],
+    "familywise_alpha": 0.05,
+    "utility_count_per_target": 20,
+    "utility_interval": "paired percentile bootstrap with Bonferroni tail alpha over five backbones times four heads",
+    "material_r2": 0.01,
+    "top1_probability_threshold": 0.70,
+    "reversal_probability_threshold": 0.80
+  },
+  "classification": {
+    "learnable_best_envelope_point_r2": 0.20,
+    "learnable_best_envelope_lower_bound_r2": 0.0,
+    "near_leading_gap_r2": 0.05,
+    "nonlinear_gain_lower_bound_r2": 0.02,
+    "linear_regret_lower_bound_r2": 0.01,
+    "minimum_material_pair_reversals": 2,
+    "linear_control_regret_upper_bound_r2": 0.01,
+    "linear_control_nonlinear_gain_upper_bound_r2": 0.02,
+    "labels": ["nonlinear_challenge_lead", "linear_control", "mixed", "unresolved"]
+  },
+  "expected_grid": {
+    "target_count": 8,
+    "candidate_count": 40,
+    "candidate_draw_count": 220,
+    "overlapindex_fit_count": 0,
+    "reserved_backbone_count": 0
+  },
+  "decision": {
+    "sufficient_historical_nonlinear_diversity": "at least two nonlinear challenge leads from at least two source datasets",
+    "on_sufficient": "design the larger new-data and ten-backbone precision panel without evaluating OI",
+    "on_insufficient": "report the shortfall and expand sources; do not relax thresholds or evaluate OI"
+  }
+}
+
