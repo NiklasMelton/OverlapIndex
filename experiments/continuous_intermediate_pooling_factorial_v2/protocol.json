@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "status": "frozen_continuous_intermediate_pooling_factorial_v2_before_outcomes",
+  "frozen_at_utc": "2026-09-15T05:00:00Z",
+  "scope": {
+    "claim": "development-only five-backbone, repeated-draw test of intermediate depth jointly with mean versus mean-plus-standard-deviation pooling",
+    "reference_heads_only": true,
+    "overlapindex_evaluated": false,
+    "method_selection_allowed": false,
+    "view_nomination_for_future_benchmark_allowed": true,
+    "same-outcome_oi_execution_allowed": false,
+    "public_overlapindex_changes_allowed": false,
+    "vertebrae_changes_allowed": false,
+    "confirmation_claim_allowed": false
+  },
+  "ancestry": {
+    "early_mean_protocol_sha256": "f2eadae5098b7107b74f5c878be102f98a061b216e1059ad22c7ff2a2c1b69b7",
+    "early_mean_embedding_manifest_sha256": "8d0a94f23752c1955cb3508ea4e6946a6727cc616a4c1e536b6483f719efffac",
+    "early_mean_reference_raw_sha256": "f8ba0da6d652175ce6a2884171e097a41786269e79fd55651a6a88f9866ec6f5",
+    "early_mean_reference_summary_sha256": "402874dc11ce665957559abf3524e480c114941d2e3f40e6f50222dfccf8a80c",
+    "early_mean_reference_terminal_sha256": "39c932bb30ff9869ad51d9555e1e52f1a90096d1c3dbe24a5e5a18968c75ae7f",
+    "parent_intermediate_embedding_manifest_sha256": "5becc217680ca123f70c51550e226fd2e7788706451ef859b62e4cf4a9f5f94f",
+    "prepared_cohort_sha256": "75e1e04acf9f95ec8e580ec7746ce93969e0ba1b770f84504c60f03b67004561",
+    "prepared_manifest_sha256": "5cbcff27e04dc4db2121b3b483e5f13bd50c225150f775afbb6f2f1044fee90f",
+    "model_spec_source_sha256": "7d76e400aa1da33fbb12b6d7748e7d7577dca8f9744db22c999969f63895f400"
+  },
+  "targets": [
+    {
+      "target_key": "jhu_crowd_v2::log1p_head_count",
+      "training_pool_rows": 2000,
+      "training_rows": 600,
+      "evaluation_rows": 1000,
+      "draw_seeds": [2026100201, 2026100202, 2026100203, 2026100204, 2026100205]
+    },
+    {
+      "target_key": "sunrgbd_scene_depth::log_median_depth_m",
+      "training_pool_rows": 2000,
+      "training_rows": 600,
+      "evaluation_rows": 1000,
+      "draw_seeds": [2026100301, 2026100302, 2026100303, 2026100304, 2026100305]
+    }
+  ],
+  "backbones": [
+    {
+      "backbone_id": "dinov2-small",
+      "provider": "huggingface",
+      "special_tokens": 1,
+      "relative_depths": [
+        {"depth_id": "early", "hidden_layer": 4, "channels": 384},
+        {"depth_id": "middle", "hidden_layer": 8, "channels": 384},
+        {"depth_id": "late", "hidden_layer": 12, "channels": 384}
+      ]
+    },
+    {
+      "backbone_id": "deit-tiny",
+      "provider": "huggingface",
+      "special_tokens": 1,
+      "relative_depths": [
+        {"depth_id": "early", "hidden_layer": 4, "channels": 192},
+        {"depth_id": "middle", "hidden_layer": 8, "channels": 192},
+        {"depth_id": "late", "hidden_layer": 12, "channels": 192}
+      ]
+    },
+    {
+      "backbone_id": "mobilenetv3-large",
+      "provider": "timm",
+      "relative_depths": [
+        {"depth_id": "early", "feature_index": 2, "channels": 40, "spatial_reduction": 8},
+        {"depth_id": "middle", "feature_index": 3, "channels": 112, "spatial_reduction": 16},
+        {"depth_id": "late", "feature_index": 4, "channels": 960, "spatial_reduction": 32}
+      ]
+    },
+    {
+      "backbone_id": "resnet50",
+      "provider": "timm",
+      "relative_depths": [
+        {"depth_id": "early", "feature_index": 2, "channels": 512, "spatial_reduction": 8},
+        {"depth_id": "middle", "feature_index": 3, "channels": 1024, "spatial_reduction": 16},
+        {"depth_id": "late", "feature_index": 4, "channels": 2048, "spatial_reduction": 32}
+      ]
+    },
+    {
+      "backbone_id": "convnext-tiny",
+      "provider": "timm",
+      "relative_depths": [
+        {"depth_id": "early", "feature_index": 1, "channels": 192, "spatial_reduction": 8},
+        {"depth_id": "middle", "feature_index": 2, "channels": 384, "spatial_reduction": 16},
+        {"depth_id": "late", "feature_index": 3, "channels": 768, "spatial_reduction": 32}
+      ]
+    }
+  ],
+  "pooling": [
+    {
+      "pooling_id": "mean",
+      "definition": "channel-wise mean over non-CLS patch tokens or spatial positions",
+      "dimension_multiplier": 1
+    },
+    {
+      "pooling_id": "mean_std",
+      "definition": "concatenated channel-wise population mean and population standard deviation over the same units",
+      "dimension_multiplier": 2
+    }
+  ],
+  "views": ["early_mean", "early_mean_std", "middle_mean", "middle_mean_std", "late_mean", "late_mean_std"],
+  "extraction": {
+    "rows_per_target": 3000,
+    "row_order": "all 2000 training-pool rows followed by all 1000 evaluation rows in prepared-cohort order",
+    "batch_size": 16,
+    "device": "cpu",
+    "torch_intraop_threads": 4,
+    "torch_interop_threads": 1,
+    "offline_model_loading": true,
+    "early_mean_parity_maximum_absolute_delta": 0.00005,
+    "parent_three_backbone_all_view_parity_maximum_absolute_delta": 0.00005
+  },
+  "preprocessing": {
+    "row_l2": true,
+    "pca_rank": null,
+    "post_representation_scaling": "StandardScaler fitted on training rows",
+    "fit_scope": "separately inside every inner fold and once on the complete training draw"
+  },
+  "reference_heads": {
+    "families": ["linear_ridge", "rbf_svr"],
+    "inner_folds": 3,
+    "linear_ridge": {
+      "mean_loss_lambda": [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0],
+      "solver": "lsqr",
+      "tolerance": 0.000001
+    },
+    "rbf_svr": {
+      "target_standardization": "training-fold mean and population standard deviation",
+      "C_standardized_target_units": [0.003, 0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0],
+      "epsilon_standardized_target_units": [0.01, 0.05, 0.15, 0.3, 0.5, 0.75, 1.0, 2.0],
+      "bandwidth_factors": [0.0625, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0],
+      "implementation": "exact SVR with fold-local precomputed RBF kernels"
+    }
+  },
+  "ranking_diagnostics": {
+    "material_nonlinear_gain_r2": 0.02,
+    "material_linear_top1_regret_r2": 0.01,
+    "material_linear_to_envelope_spearman_upper": 0.5,
+    "minimum_conflicting_draws_per_target_view": 3,
+    "minimum_material_nonlinear_draws_per_target_view": 3,
+    "cross_target_view_nomination": "a view is nominated only if it satisfies both draw-count requirements on both targets",
+    "factorial_estimands": [
+      "within-depth mean_std minus mean changes in LP-to-envelope Spearman, LP top-1 regret, and maximum nonlinear gain",
+      "within-pooling early-to-middle-to-late changes in the same metrics",
+      "backbone-specific nonlinear-uplift mean and standard deviation over draws"
+    ]
+  },
+  "expected_grid": {
+    "target_count": 2,
+    "draws_per_target": 5,
+    "backbone_count": 5,
+    "depth_count": 3,
+    "pooling_count": 2,
+    "view_count": 6,
+    "embedding_matrix_count": 60,
+    "candidate_cell_count": 300,
+    "ranking_panel_count": 60,
+    "overlapindex_fit_count": 0,
+    "reserved_backbone_count": 0
+  },
+  "decision": {
+    "on_cross_target_nomination": "freeze the nominated view only as a hypothesis for a fresh continuous-OI benchmark; do not evaluate OI on these same outcomes",
+    "otherwise": "retain the factorial mechanism findings but stop treating layer or pooling choice as a general real-benchmark solution",
+    "promotion": "none_reference_only"
+  }
+}

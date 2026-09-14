@@ -91,3 +91,29 @@ identify whether reversals arise from stable representation differences or
 sampling noise.  Then construct or source a panel with at least two independent
 targets for which the same candidate ordering reversal repeats.  Only that
 panel should unlock the already implemented full-vs-PCA32 OI comparison.
+
+## Follow-up uplift-stability diagnostic
+
+The recommended decomposition was subsequently completed from the frozen raw
+artifact without fitting any new head or OI model.  Nonlinear uplift was
+defined per cell as held-out envelope R2 minus held-out linear-Ridge R2.  A
+two-way backbone-plus-draw variance decomposition gave:
+
+| Target | Backbone fraction | Draw fraction | Residual interaction |
+|---|---:|---:|---:|
+| JHU Crowd log-count | 0.680 | 0.161 | 0.158 |
+| SUNRGBD log-depth | 0.729 | 0.171 | 0.100 |
+
+Thus the uplift itself is mostly a stable representation property, not noise.
+For JHU, mean uplift ranged from 0.0312 R2 for DINOv2 to 0.0661 for ConvNeXt;
+each backbone exceeded 0.02 on all five draws.  For SUNRGBD, ConvNeXt again had
+the largest and most stable uplift (mean 0.0618, material on 5/5 draws), while
+ResNet50 had essentially no material uplift (mean 0.0089, material on 0/5).
+
+What is unstable is whether these differences reorder the narrowly separated
+leading backbones.  No JHU candidate pair reversed on more than three of five
+draws, and the leading candidate varied among DeiT, DINOv2, and ResNet50.  SUN
+showed the same pattern around DeiT, DINOv2, and ResNet50 even though the
+ConvNeXt nonlinear uplift was highly stable.  The original gate failure is
+therefore best described as *unstable top-rank reversal over stable nonlinear
+uplift*, not disappearance of nonlinear information.
