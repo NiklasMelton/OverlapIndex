@@ -19,6 +19,14 @@ def test_protocol_hash_and_locked_contract():
     assert protocol["expected_grid"]["ranking_row_count"] == 150
 
 
+def test_panel_seed_is_deterministic_and_safe_for_inherited_arithmetic():
+    seed = run._panel_seed("panel", 2026091401, "early_mean")
+    assert seed == run._panel_seed("panel", 2026091401, "early_mean")
+    assert 0 < seed <= run.MAX_PANEL_SEED
+    assert shared.null_parent._candidate_fit_seed(seed, 4, 3) < 2**32
+    assert shared.null_parent._common_bank_seed(seed, 3) < 2**32
+
+
 def test_fresh_evaluation_selection_is_balanced_deterministic_and_excludes_used():
     records = [
         {

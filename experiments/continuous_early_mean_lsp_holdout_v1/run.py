@@ -38,6 +38,7 @@ PROTOCOL_PATH = PACKAGE_DIR / "protocol.json"
 DEFAULT_OUTPUT_ROOT = ROOT / "artifacts" / "continuous_early_mean_lsp_holdout_v1" / "results"
 HEADS = ("linear_ridge", "quadratic_kernel_ridge", "knn", "rbf_svr")
 TIE_ATOL = 1.0e-12
+MAX_PANEL_SEED = 4_000_000
 
 
 def load_protocol() -> dict[str, Any]:
@@ -66,6 +67,11 @@ def _source_hashes() -> dict[str, str]:
         "continuous_overlap_index": ROOT / "overlapindex" / "ContinuousOverlapIndex.py",
     }
     return {name: base.sha256_path(path) for name, path in paths.items()}
+
+
+def _panel_seed(*parts: Any) -> int:
+    """Return a deterministic seed safe for the inherited seed arithmetic."""
+    return 1 + int(base._seed(*parts)) % MAX_PANEL_SEED
 
 
 def _draw_rows(
@@ -350,7 +356,7 @@ def evaluate_cell(
     heads = evaluate_heads(protocol, X_train, y_train, bins, X_evaluation, y_evaluation, split_seed=split_seed)
     evaluation_scores = {head: float(row["evaluation_r2"]) for head, row in heads["heads"].items()}
     envelope = max(evaluation_scores.values())
-    panel_seed = base._seed("early-mean-lsp-holdout-oi", draw_seed, view)
+    panel_seed = _panel_seed("early-mean-lsp-holdout-oi", draw_seed, view)
     primitive = np.zeros((len(X_train), 2), dtype=np.float32)
     observed = shared.save.evaluate_selector("observed_k4", X_train, primitive, y_train, panel_seed)
     broad = evaluate_broad_only(X_train, y_train, panel_seed, candidate_position)
