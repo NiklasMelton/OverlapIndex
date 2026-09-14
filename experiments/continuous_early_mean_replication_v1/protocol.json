@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "status": "frozen_continuous_early_mean_replication_v1_before_outcomes",
+  "frozen_at_utc": "2026-09-15T03:00:00Z",
+  "scope": {
+    "claim": "development-only replication of the early-mean real-image rank conflict, followed conditionally by evaluation of previously specified continuous-OI candidates",
+    "reference_stage_precedes_oi_stage": true,
+    "method_selection_allowed": false,
+    "public_overlapindex_changes_allowed": false,
+    "vertebrae_changes_allowed": false,
+    "confirmation_claim_allowed": false
+  },
+  "ancestry": {
+    "prepared_cohort_sha256": "75e1e04acf9f95ec8e580ec7746ce93969e0ba1b770f84504c60f03b67004561",
+    "prepared_manifest_sha256": "5cbcff27e04dc4db2121b3b483e5f13bd50c225150f775afbb6f2f1044fee90f",
+    "intermediate_terminal_sha256": "6d7e7973b65db1b9d69e7fd0bd1bfdf5c490667c04b710e9fe5c1c2419482901",
+    "intermediate_summary_sha256": "687290fde4769b4dc1557356e9a901e72e95a0b3ed8589b466d2024a933111f7",
+    "intermediate_embedding_manifest_sha256": "5becc217680ca123f70c51550e226fd2e7788706451ef859b62e4cf4a9f5f94f",
+    "model_spec_source_sha256": "7d76e400aa1da33fbb12b6d7748e7d7577dca8f9744db22c999969f63895f400",
+    "shared_selector_source_sha256": "566232f07d508b05e23f7b72a307c389eab8ea41d780088327eab2b61d86fed7",
+    "continuous_overlap_index_sha256": "25fb5080fdb094761e0f6188a55f47ee83a48f041149b5172b39b816764b513b"
+  },
+  "targets": [
+    {
+      "target_key": "jhu_crowd_v2::log1p_head_count",
+      "training_pool_rows": 2000,
+      "training_rows": 600,
+      "evaluation_rows": 1000,
+      "draw_seeds": [2026100201, 2026100202, 2026100203, 2026100204, 2026100205]
+    },
+    {
+      "target_key": "sunrgbd_scene_depth::log_median_depth_m",
+      "training_pool_rows": 2000,
+      "training_rows": 600,
+      "evaluation_rows": 1000,
+      "draw_seeds": [2026100301, 2026100302, 2026100303, 2026100304, 2026100305]
+    }
+  ],
+  "backbones": [
+    {"backbone_id": "dinov2-small", "provider": "huggingface", "hidden_layer": 4, "special_tokens": 1, "channels": 384},
+    {"backbone_id": "deit-tiny", "provider": "huggingface", "hidden_layer": 4, "special_tokens": 1, "channels": 192},
+    {"backbone_id": "mobilenetv3-large", "provider": "timm", "feature_index": 2, "channels": 40, "spatial_reduction": 8},
+    {"backbone_id": "resnet50", "provider": "timm", "feature_index": 2, "channels": 512, "spatial_reduction": 8},
+    {"backbone_id": "convnext-tiny", "provider": "timm", "feature_index": 1, "channels": 192, "spatial_reduction": 8}
+  ],
+  "representation": {
+    "view_id": "early_mean",
+    "definition": "channel-wise mean over patch tokens after removing the single CLS token for the two transformer backbones, or over spatial positions at output-stride 8 for the CNN backbones",
+    "row_order": "all 2000 frozen training-pool rows followed by all 1000 frozen evaluation rows in prepared-cohort order",
+    "preprocessing_for_heads": "row L2 normalization followed by fold-local StandardScaler; no PCA",
+    "preprocessing_for_oi_full": "the existing selector's fold-local row normalization and geometry",
+    "preprocessing_for_oi_pca32": "row L2 normalization plus fold-local randomized PCA-32 before the otherwise unchanged existing selector"
+  },
+  "extraction": {
+    "rows_per_target": 3000,
+    "batch_size": 16,
+    "device": "cpu",
+    "torch_intraop_threads": 4,
+    "torch_interop_threads": 1,
+    "offline_model_loading": true,
+    "existing_three_backbone_overlap_parity_maximum_absolute_delta": 0.00005
+  },
+  "reference_heads": {
+    "families": ["linear_ridge", "rbf_svr"],
+    "inner_folds": 3,
+    "linear_ridge": {
+      "mean_loss_lambda": [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0],
+      "solver": "lsqr",
+      "tolerance": 0.000001
+    },
+    "rbf_svr": {
+      "target_standardization": "training-fold mean and population standard deviation",
+      "C_standardized_target_units": [0.003, 0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0],
+      "epsilon_standardized_target_units": [0.01, 0.05, 0.15, 0.3, 0.5, 0.75, 1.0, 2.0],
+      "bandwidth_factors": [0.0625, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0],
+      "implementation": "exact SVR with fold-local precomputed RBF kernels"
+    }
+  },
+  "reference_gate": {
+    "material_nonlinear_gain_r2": 0.02,
+    "material_linear_top1_regret_r2": 0.01,
+    "material_linear_to_envelope_spearman_upper": 0.5,
+    "minimum_conflicting_draws_per_target": 3,
+    "minimum_material_nonlinear_draws_per_target": 3,
+    "authorization": "evaluate continuous OI only if both targets satisfy both draw-count requirements"
+  },
+  "continuous_oi": {
+    "methods": [
+      "linear_cv_full",
+      "raw_cv_max_full",
+      "observed_oi_full",
+      "broad_rff_full",
+      "save_rff_full",
+      "broad_rff_pca32",
+      "save_rff_pca32"
+    ],
+    "eligible_methods": ["observed_oi_full", "broad_rff_full", "save_rff_full"],
+    "diagnostic_methods": ["linear_cv_full", "raw_cv_max_full", "broad_rff_pca32", "save_rff_pca32"],
+    "folds": 4,
+    "target_cells": 8,
+    "prototypes_per_cell": 4,
+    "adjacency": "soft_topk",
+    "top_k": 5,
+    "aggregation": "support_weighted",
+    "common_null_permutations": 32,
+    "broad_rff_feature_bandwidth_multiplier": 4.0,
+    "pca_rank_diagnostic": 32,
+    "no_outcome_tuning": true
+  },
+  "ranking": {
+    "truth": "held-out maximum R2 across the frozen linear Ridge and exact RBF-SVR head families",
+    "linear_cv_score": "inner-CV score of the selected full-space linear Ridge",
+    "raw_cv_max_score": "maximum inner-CV score across the two reference head families",
+    "material_pair_difference_r2": 0.01,
+    "tie_tolerance": 1e-12,
+    "primary_metrics": ["Spearman", "top1 regret R2", "exact-best rate", "top3 utility regret R2", "top3 recall", "runtime relative to linear CV"]
+  },
+  "expected_grid": {
+    "target_count": 2,
+    "draws_per_target": 5,
+    "backbone_count": 5,
+    "embedding_matrix_count": 10,
+    "reference_cell_count": 50,
+    "reference_panel_count": 10,
+    "oi_score_row_count": 350,
+    "oi_ranking_row_count": 70,
+    "reserved_backbone_count": 0
+  },
+  "decision": {
+    "if_reference_gate_fails": "stop; the original three-backbone early-mean conflict was not a stable development benchmark",
+    "if_reference_gate_passes": "run the frozen continuous-OI comparison without tuning or reselecting",
+    "promotion": "none; this is a development benchmark and diagnostic"
+  }
+}
