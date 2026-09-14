@@ -1,0 +1,122 @@
+{
+  "schema_version": 1,
+  "status": "frozen_continuous_cached_embedding_information_audit_v1_before_outcomes",
+  "frozen_at_utc": "2026-09-14T18:00:00Z",
+  "scope": {
+    "claim": "development-only audit of whether PCA rank, row normalization, or training sample size hides nonlinear backbone-ranking opportunity in the cached real embeddings",
+    "reference_heads_only": true,
+    "overlapindex_evaluated": false,
+    "method_selection_allowed": false,
+    "reserved_backbones_evaluated": false,
+    "confirmation_claim_allowed": false,
+    "post_outcome_changes_allowed": false
+  },
+  "ancestry": {
+    "real_source_protocol_sha256": "1cbf93ecbe2bb8546ed3033e08cfe12d7d48295ff6ac76136fc5ccc6bdbead5d",
+    "real_source_screen_raw_results_sha256": "675f9f3454a2b1de6c03d635cdf18ea00a36a5f4be677146d2863be2d951cb6b",
+    "real_source_screen_manifest_sha256": "d791e0590f366e373a6a1241820b0c24b133e46fc25f81bc7fa5587b2656279b",
+    "real_source_screen_terminal_sha256": "abb644e82fb21afa8d2035ae67ae54afedcba0baaaa94bdbfe893d8cd62a9f6b",
+    "embedding_manifest_sha256": "de22a9632fb7007b5492a4cecc8864b1b828575a54fc0cd29f1210874f02edf1",
+    "qualified_library_protocol_sha256": "807b9687a48d8025c9df54d742a06613e4bd89ecd04f7a934861c3e561961eb3"
+  },
+  "targets": [
+    {
+      "target_key": "jhu_crowd_v2::log1p_head_count",
+      "draw_seed": 2026100201,
+      "training_pool_rows": 2000,
+      "archived_training_rows": 600,
+      "evaluation_rows": 1000
+    },
+    {
+      "target_key": "sunrgbd_scene_depth::log_median_depth_m",
+      "draw_seed": 2026100301,
+      "training_pool_rows": 2000,
+      "archived_training_rows": 600,
+      "evaluation_rows": 1000
+    }
+  ],
+  "backbones": ["dinov2-small", "resnet50", "convnext-tiny"],
+  "archived_reference": {
+    "source": "continuous_real_source_qualification_v1/screen/raw_results.json",
+    "draw_position": 0,
+    "preprocessing": "row L2, deterministic full-solver PCA-32, StandardScaler, all fit fold-locally",
+    "heads": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "role": "context plus linear-score calibration only; its envelope is not pooled with the audit heads"
+  },
+  "evaluated_views": [
+    {"view_id": "n600_l2_pca32", "training_rows": 600, "row_l2": true, "pca_rank": 32},
+    {"view_id": "n600_l2_pca128", "training_rows": 600, "row_l2": true, "pca_rank": 128},
+    {"view_id": "n600_l2_full", "training_rows": 600, "row_l2": true, "pca_rank": null},
+    {"view_id": "n2000_l2_pca32", "training_rows": 2000, "row_l2": true, "pca_rank": 32},
+    {"view_id": "n2000_l2_pca128", "training_rows": 2000, "row_l2": true, "pca_rank": 128},
+    {"view_id": "n2000_l2_full", "training_rows": 2000, "row_l2": true, "pca_rank": null},
+    {"view_id": "n2000_raw_pca128", "training_rows": 2000, "row_l2": false, "pca_rank": 128},
+    {"view_id": "n2000_raw_full", "training_rows": 2000, "row_l2": false, "pca_rank": null}
+  ],
+  "preprocessing": {
+    "fit_scope": "separately inside every inner fold and once on the complete training draw",
+    "pca_solver": "randomized float64 with frozen seed, four power iterations, and ten oversamples",
+    "post_representation_scaling": "StandardScaler fitted on training rows",
+    "full": "no dimensionality reduction",
+    "calibration": "n600_l2_pca32 is compared to the archived full-solver linear score"
+  },
+  "heads": {
+    "families": ["linear_ridge", "knn", "extra_trees"],
+    "inner_folds": 3,
+    "inner_split": "target-bin-stratified with frozen target/backbone/view seed",
+    "linear_ridge": {
+      "mean_loss_lambda": [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0],
+      "solver_alpha": "training_rows multiplied by mean_loss_lambda",
+      "solver": "lsqr",
+      "tolerance": 0.000001
+    },
+    "knn": {
+      "n_neighbors": [3, 5, 9, 15, 31, 63, 127],
+      "weights": ["uniform", "distance"],
+      "implementation": "one exact brute-force neighbor query per fold reused across the grid"
+    },
+    "extra_trees": {
+      "n_estimators": 64,
+      "max_features": ["sqrt", 0.25],
+      "min_samples_leaf": [2, 8],
+      "bootstrap": false,
+      "n_jobs": 1,
+      "role": "tractable nonlinear full-dimensional diagnostic; not a proposed production head"
+    }
+  },
+  "effects": {
+    "material_nonlinear_gain_change_r2": 0.02,
+    "material_linear_probe_regret_r2": 0.01,
+    "material_linear_probe_regret_increase_r2": 0.005,
+    "material_envelope_improvement_r2": 0.02,
+    "material_linear_to_envelope_spearman_upper": 0.5,
+    "maximum_calibration_linear_score_delta_r2": 0.01,
+    "contrasts": {
+      "retained_dimension": [
+        ["n600_l2_pca32", "n600_l2_pca128"],
+        ["n600_l2_pca32", "n600_l2_full"],
+        ["n2000_l2_pca32", "n2000_l2_pca128"],
+        ["n2000_l2_pca32", "n2000_l2_full"]
+      ],
+      "training_sample_size": [
+        ["n600_l2_pca32", "n2000_l2_pca32"],
+        ["n600_l2_pca128", "n2000_l2_pca128"],
+        ["n600_l2_full", "n2000_l2_full"]
+      ],
+      "embedding_magnitude": [
+        ["n2000_l2_pca128", "n2000_raw_pca128"],
+        ["n2000_l2_full", "n2000_raw_full"]
+      ]
+    },
+    "interpretation": "envelope improvement is reported descriptively, but an effect is material for the ranking objective only when nonlinear gain grows or the linear ranking develops material regret or disagreement; material effects nominate a larger repeated cached-embedding study, while their absence nominates intermediate-layer and pooling extraction next"
+  },
+  "expected_grid": {
+    "target_count": 2,
+    "backbone_count": 3,
+    "view_count": 8,
+    "cell_count": 48,
+    "head_count_per_cell": 3,
+    "overlapindex_fit_count": 0,
+    "reserved_backbone_count": 0
+  }
+}
