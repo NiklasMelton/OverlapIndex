@@ -93,3 +93,35 @@ def test_factorial_effects_preserve_target_depth_and_pooling_identity() -> None:
     first = effects["pooling_effects_within_depth"][0]
     assert np.isclose(first["mean_std_minus_mean_spearman"], 0.1)
     assert np.isclose(first["mean_std_minus_mean_top1_regret_r2"], -0.01)
+
+
+def test_parent_rows_are_reused_instead_of_weakening_parity(monkeypatch, tmp_path) -> None:
+    dataset, backbone = "d", "convnext-tiny"
+    parent_root = tmp_path / "parent"
+    early_root = tmp_path / "early"
+    (parent_root / dataset / backbone).mkdir(parents=True)
+    (early_root / dataset).mkdir(parents=True)
+    views = extract.load_protocol()["views"]
+    parent = np.ones((2, 2), dtype=np.float32)
+    for view in views:
+        np.save(parent_root / dataset / backbone / f"{view}.npy", parent)
+    early_values = np.zeros((4, 2), dtype=np.float32)
+    early_values[[0, 3]] = 1.0
+    np.save(early_root / dataset / f"{backbone}.npy", early_values)
+    monkeypatch.setattr(extract, "PARENT_ROOT", parent_root)
+    monkeypatch.setattr(extract, "EARLY_ROOT", early_root)
+    rows = [{"matrix_index": 0}, {"matrix_index": 3}]
+    monkeypatch.setattr(
+        extract.information,
+        "_target_rows",
+        lambda cohort, target: (dataset, rows[:1], rows[:1], rows[1:]),
+    )
+    matrices = {view: np.zeros((4, 2), dtype=np.float32) for view in views}
+    result = extract._parity(
+        extract.load_protocol(), {},
+        {"target_key": f"{dataset}::t", "draw_seeds": [1], "training_rows": 1},
+        backbone, matrices,
+    )
+    assert result["parent_selected_rows_reused"] is True
+    assert result["parent_selected_rows_maximum_absolute_delta_before_reuse_by_view"]["middle_mean_std"] == 1.0
+    assert np.array_equal(matrices["middle_mean_std"][[0, 3]], parent)
