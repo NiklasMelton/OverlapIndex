@@ -47,6 +47,18 @@ def test_shared_knn_predictions_match_sklearn():
         np.testing.assert_allclose(prediction, estimator.predict(X_other), rtol=0.0, atol=1.0e-12)
 
 
+def test_endpoint_diagnostics_ignore_mixed_categorical_numeric_axis():
+    rows = [
+        {"params": {"max_features": "sqrt", "min_samples_leaf": 2}, "mean_r2": 0.1},
+        {"params": {"max_features": 0.25, "min_samples_leaf": 2}, "mean_r2": 0.2},
+        {"params": {"max_features": "sqrt", "min_samples_leaf": 8}, "mean_r2": 0.15},
+        {"params": {"max_features": 0.25, "min_samples_leaf": 8}, "mean_r2": 0.12},
+    ]
+    diagnostics = run._endpoint_diagnostics("extra_trees", rows[1], rows)
+    assert all(row["parameter"] != "max_features" for row in diagnostics)
+    assert {row["parameter"] for row in diagnostics} == {"min_samples_leaf"}
+
+
 def test_contrast_effect_detects_new_linear_probe_regret():
     def summary(view, linear, envelope):
         rho = float(np.corrcoef(np.argsort(np.argsort(linear)), np.argsort(np.argsort(envelope)))[0, 1])

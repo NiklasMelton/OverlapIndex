@@ -241,9 +241,10 @@ def _best_row(rows: Sequence[Mapping[str, Any]]) -> Mapping[str, Any]:
 def _endpoint_diagnostics(head: str, best: Mapping[str, Any], rows: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
     output = []
     for parameter, selected in best["params"].items():
-        if isinstance(selected, str):
+        raw_values = [row["params"][parameter] for row in rows]
+        if any(isinstance(value, str) or isinstance(value, bool) for value in raw_values):
             continue
-        values = sorted({float(row["params"][parameter]) for row in rows})
+        values = sorted({float(value) for value in raw_values})
         if len(values) < 2:
             continue
         endpoint = "minimum" if float(selected) == values[0] else "maximum" if float(selected) == values[-1] else None
