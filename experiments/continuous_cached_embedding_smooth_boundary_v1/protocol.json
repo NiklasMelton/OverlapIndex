@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "status": "frozen_continuous_cached_embedding_smooth_boundary_v1_before_outcomes",
+  "frozen_at_utc": "2026-09-14T20:00:00Z",
+  "scope": {
+    "claim": "development-only boundary resolution of the sole smooth-head audit backbone-ranking conflict",
+    "reference_heads_only": true,
+    "overlapindex_evaluated": false,
+    "method_selection_allowed": false,
+    "reserved_backbones_evaluated": false,
+    "confirmation_claim_allowed": false,
+    "post_outcome_changes_allowed": false
+  },
+  "ancestry": {
+    "smooth_protocol_sha256": "d131d54cc255f65e881d8d6039aab683ae94eb02a69297618a42d016ef1ed8bd",
+    "smooth_raw_results_sha256": "31363de217884ac5765b4fc305d9ada6ee96c7a1c30cc320dbdd7e1dac9b746e",
+    "smooth_summary_sha256": "b2444fe0808f3f5c4830d092beb034a25c5213263033dd81be76225298704f02",
+    "smooth_manifest_sha256": "d4ac8b83d4dce8a3bf2200dfd8a3e01f765db641d946b1dcc29c9663afbe9214",
+    "smooth_terminal_sha256": "74e4f6352a211592d441cecbb4c7e5f9d768a88243f83686cda59f50e1418267",
+    "information_raw_results_sha256": "af9a0bf2e7cf32d8742a8abb4ffb474eecc35be025499660dcdb9c356e76c991"
+  },
+  "targets": [
+    {"target_key": "jhu_crowd_v2::log1p_head_count", "draw_seed": 2026100201, "training_pool_rows": 2000, "archived_training_rows": 600, "evaluation_rows": 1000}
+  ],
+  "backbones": ["dinov2-small", "resnet50", "convnext-tiny"],
+  "evaluated_views": [
+    {"view_id": "n600_l2_pca128", "training_rows": 600, "row_l2": true, "pca_rank": 128}
+  ],
+  "preprocessing": {
+    "source": "continuous_cached_embedding_information_audit_v1",
+    "fit_scope": "separately inside every inner fold and once on the complete training draw",
+    "pca_solver": "randomized float64 with frozen seed, four power iterations, and ten oversamples",
+    "post_representation_scaling": "StandardScaler fitted on training rows"
+  },
+  "rbf_svr": {
+    "inner_folds": 3,
+    "inner_split": "identical to the matching smooth-head audit cell",
+    "target_standardization": "training-fold mean and population standard deviation",
+    "C_standardized_target_units": [0.003, 0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0],
+    "epsilon_standardized_target_units": [0.01, 0.05, 0.15, 0.3, 0.5, 0.75, 1.0, 2.0],
+    "bandwidth_factors": [0.0625, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0],
+    "bandwidth": "factor multiplied by exact median nonzero training distance",
+    "implementation": "exact SVR with fold-local precomputed RBF kernels"
+  },
+  "ranking_diagnostics": {
+    "material_nonlinear_gain_r2": 0.02,
+    "material_linear_top1_regret_r2": 0.01,
+    "material_linear_to_envelope_spearman_upper": 0.5
+  },
+  "expected_grid": {
+    "target_count": 1,
+    "backbone_count": 3,
+    "view_count": 1,
+    "cell_count": 3,
+    "rbf_parameter_count": 504,
+    "overlapindex_fit_count": 0,
+    "reserved_backbone_count": 0
+  },
+  "decision": {
+    "on_material_conflict": "repeat the higher-information smooth-head panel on all five backbones and multiple training draws",
+    "otherwise": "do not scale this weak conflict; proceed to intermediate-layer and pooling diagnostics"
+  }
+}
+
