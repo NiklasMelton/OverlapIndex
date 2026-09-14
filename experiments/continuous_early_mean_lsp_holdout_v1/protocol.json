@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "status": "frozen_continuous_early_mean_lsp_holdout_v1_before_outcomes",
+  "frozen_at_utc": "2026-09-14T19:34:41Z",
+  "scope": {
+    "claim": "untouched-evaluation test of a frozen early-layer representation hypothesis and previously specified continuous ranking methods",
+    "dataset_target_previously_observed": true,
+    "training_pool_previously_observed": true,
+    "selected_evaluation_rows_previously_observed_for_this_target": false,
+    "intermediate_view_outcomes_previously_observed_on_lsp_wrist": false,
+    "method_selection_allowed": false,
+    "view_reselection_allowed": false,
+    "public_overlapindex_changes_allowed": false,
+    "vertebrae_changes_allowed": false,
+    "library_integration_claim_allowed": false
+  },
+  "ancestry": {
+    "factorial_protocol_sha256": "4c773cf461230ad7c46b3e7ccc3f8df72c7692cb5ee3245764aea3d0a29bd84f",
+    "factorial_terminal_sha256": "b8f28a873231989bb78fe19b60853cbded012918e33ef23e46abd60931a19fe2",
+    "factorial_summary_sha256": "d0a37415919164a4c92aa21b903f79248caff431283fa44f139b1f657d507e47",
+    "prior_lsp_input_cohort_sha256": "ed2c8dee995ea8058dd00578f28e24bf9482bd06e5ef18f902b924cfc694baf0",
+    "prior_lsp_input_manifest_sha256": "b54f8cf985863705ee20f320a34c54f04ffd25e3aff8473e97b01493a445ecdf",
+    "prior_lsp_result_summary_sha256": "5df1b4d471c150ff09f06c10d06a84c80484f24fd390ff6f38e5a690a601cbf1",
+    "prior_lsp_result_terminal_sha256": "9620d098dd4a2f06ab9b98595f6911324d0d025e413a4dc4d6712e5d631cc990",
+    "lsp_joints_sha256": "ddcfcbe904106bfbf26561c8d11720ca62a11c7a861548064b3bae84cb396b2a",
+    "lsp_parent_manifest_sha256": "bc942cd6d96cfe0512d2c1cee6f0a7d1f2e125a5b1554403cb07a065c127b4ba",
+    "source_pose_recipe_sha256": "5a53cd878f491953080f4b858038336c96af0a31c23fa807bda94c84d5d10424",
+    "shared_selector_sha256": "566232f07d508b05e23f7b72a307c389eab8ea41d780088327eab2b61d86fed7",
+    "continuous_overlap_index_sha256": "25fb5080fdb094761e0f6188a55f47ee83a48f041149b5172b39b816764b513b"
+  },
+  "target": {
+    "dataset_id": "lsp_2000_pose_geometry",
+    "target_id": "wrist_span_over_torso_length",
+    "target_key": "lsp_2000_pose_geometry::wrist_span_over_torso_length",
+    "definition": "distance between wrists divided by distance between shoulder and hip midpoints, requiring all six implicated LSP joints to be visible",
+    "role": "previously established stable nonlinear rank-changing positive target with a new official-test evaluation cohort",
+    "training_pool_rows": 590,
+    "training_rows_per_draw": 300,
+    "evaluation_rows": 300,
+    "target_bins": 10,
+    "evaluation_selection_seed": 2026091400,
+    "draw_seeds": [2026091401, 2026091402, 2026091403, 2026091404, 2026091405]
+  },
+  "backbones": [
+    {
+      "backbone_id": "dinov2-small",
+      "provider": "huggingface",
+      "special_tokens": 1,
+      "relative_depths": [
+        {"depth_id": "early", "hidden_layer": 4, "channels": 384},
+        {"depth_id": "middle", "hidden_layer": 8, "channels": 384},
+        {"depth_id": "late", "hidden_layer": 12, "channels": 384}
+      ]
+    },
+    {
+      "backbone_id": "deit-tiny",
+      "provider": "huggingface",
+      "special_tokens": 1,
+      "relative_depths": [
+        {"depth_id": "early", "hidden_layer": 4, "channels": 192},
+        {"depth_id": "middle", "hidden_layer": 8, "channels": 192},
+        {"depth_id": "late", "hidden_layer": 12, "channels": 192}
+      ]
+    },
+    {
+      "backbone_id": "mobilenetv3-large",
+      "provider": "timm",
+      "relative_depths": [
+        {"depth_id": "early", "feature_index": 2, "channels": 40, "spatial_reduction": 8},
+        {"depth_id": "middle", "feature_index": 3, "channels": 112, "spatial_reduction": 16},
+        {"depth_id": "late", "feature_index": 4, "channels": 960, "spatial_reduction": 32}
+      ]
+    },
+    {
+      "backbone_id": "resnet50",
+      "provider": "timm",
+      "relative_depths": [
+        {"depth_id": "early", "feature_index": 2, "channels": 512, "spatial_reduction": 8},
+        {"depth_id": "middle", "feature_index": 3, "channels": 1024, "spatial_reduction": 16},
+        {"depth_id": "late", "feature_index": 4, "channels": 2048, "spatial_reduction": 32}
+      ]
+    },
+    {
+      "backbone_id": "convnext-tiny",
+      "provider": "timm",
+      "relative_depths": [
+        {"depth_id": "early", "feature_index": 1, "channels": 192, "spatial_reduction": 8},
+        {"depth_id": "middle", "feature_index": 2, "channels": 384, "spatial_reduction": 16},
+        {"depth_id": "late", "feature_index": 3, "channels": 768, "spatial_reduction": 32}
+      ]
+    }
+  ],
+  "pooling": [
+    {"pooling_id": "mean", "definition": "channel-wise mean over non-CLS patch tokens or spatial positions", "dimension_multiplier": 1},
+    {"pooling_id": "mean_std", "definition": "concatenated channel-wise population mean and population standard deviation over the same units", "dimension_multiplier": 2}
+  ],
+  "views": ["early_mean", "early_mean_std", "middle_mean", "middle_mean_std", "late_mean", "late_mean_std"],
+  "primary_view": "early_mean",
+  "negative_control_views": ["early_mean_std", "middle_mean", "middle_mean_std", "late_mean", "late_mean_std"],
+  "extraction": {
+    "row_order": "590 frozen training-pool rows followed by 300 newly selected evaluation rows",
+    "batch_size": 16,
+    "device": "cpu",
+    "torch_intraop_threads": 4,
+    "torch_interop_threads": 1,
+    "offline_model_loading": true
+  },
+  "reference_heads": {
+    "families": ["linear_ridge", "quadratic_kernel_ridge", "knn", "rbf_svr"],
+    "inner_folds": 3,
+    "preprocessing": "row L2 normalization followed by fold-local StandardScaler; no PCA",
+    "linear_ridge": {"mean_loss_lambda": [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0], "solver": "lsqr", "tolerance": 0.000001},
+    "quadratic_kernel_ridge": {"kernel": "(1 + dot(x,z)/feature_dimension)^2", "mean_loss_lambda": [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0]},
+    "knn": {"n_neighbors": [3, 5, 9, 15, 31], "weights": "distance"},
+    "rbf_svr": {
+      "target_standardization": "training-fold mean and population standard deviation",
+      "C_standardized_target_units": [0.003, 0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0],
+      "epsilon_standardized_target_units": [0.01, 0.05, 0.15, 0.3, 0.5, 0.75, 1.0, 2.0],
+      "bandwidth_factors": [0.0625, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0],
+      "implementation": "exact SVR with fold-local precomputed RBF kernels"
+    }
+  },
+  "continuous_ranking": {
+    "methods": ["linear_cv_full", "raw_cv_max_full", "observed_oi_full", "broad_rff_full", "save_rff_full"],
+    "locked_primary_method": "broad_rff_full",
+    "locked_secondary_methods": ["observed_oi_full", "save_rff_full"],
+    "folds": 4,
+    "target_cells": 8,
+    "prototypes_per_cell": 4,
+    "adjacency": "soft_topk",
+    "top_k": 5,
+    "aggregation": "support_weighted",
+    "common_null_permutations": 32,
+    "broad_rff_feature_bandwidth_multiplier": 4.0,
+    "broad_runtime_path": "prototype-free exact equivalent",
+    "no_outcome_tuning": true
+  },
+  "ranking": {
+    "truth": "held-out maximum R2 across all four frozen head families",
+    "material_nonlinear_gain_r2": 0.02,
+    "material_linear_top1_regret_r2": 0.01,
+    "material_linear_to_envelope_spearman_upper": 0.5,
+    "material_pair_difference_r2": 0.01,
+    "tie_tolerance": 1e-12,
+    "primary_metrics": ["Spearman", "top1 regret R2", "exact-best rate", "material-pair accuracy", "runtime relative to linear CV"]
+  },
+  "gates": {
+    "early_mean_opportunity": {"minimum_conflicting_draws": 3, "minimum_material_nonlinear_draws": 3},
+    "primary_method_competitive": {"mean_top1_regret_margin_over_linear_maximum_r2": 0.005, "mean_spearman_margin_below_linear_maximum": 0.05, "aggregate_runtime_relative_to_linear_cv_maximum": 1.25},
+    "primary_method_nonlinear_advantage_any_of": {"mean_top1_regret_improvement_over_linear_minimum_r2": 0.005, "exact_best_rate_improvement_over_linear_minimum": 0.2},
+    "decision_rule": "all opportunity and competitive checks plus at least one nonlinear-advantage check; every locked method is reported independently and no secondary method can replace the primary after outcomes"
+  },
+  "expected_grid": {
+    "cohort_rows": 890,
+    "embedding_matrix_count": 30,
+    "draw_count": 5,
+    "view_count": 6,
+    "backbone_count": 5,
+    "candidate_cell_count": 150,
+    "ranking_panel_count": 30,
+    "score_row_count": 750,
+    "ranking_row_count": 150,
+    "overlapindex_fit_count": 1200
+  },
+  "decision": {
+    "promotion": "none; untouched-evaluation experimental evidence only",
+    "on_pass": "replicate on a wholly new dataset before any integration decision",
+    "on_fail": "diagnose view-specific versus score-specific failure without retuning on this holdout"
+  }
+}
