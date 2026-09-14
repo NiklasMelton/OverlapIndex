@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "status": "frozen_continuous_reference_library_qualification_before_outcomes",
+  "frozen_at_utc": "2026-09-13T00:00:00Z",
+  "scope": {
+    "claim": "development-only qualification of a stronger four-head reference library",
+    "overlapindex_evaluated": false,
+    "method_selection_allowed": false,
+    "reserved_backbones_evaluated": false,
+    "post_outcome_grid_changes_allowed": false,
+    "next_stage_allowed_only_if_passed": true
+  },
+  "ancestry": {
+    "v2_protocol_sha256": "f355726c6713c33c005f1484d99c14b30652792917eddce53995287851684f0b",
+    "v2_raw_results_sha256": "0db956be6d845ae30ce70dbb3950dc495748c3cfdb7102a2dd8433891a069a87",
+    "v2_manifest_sha256": "0fa03659bc529067b922da590342484d2ed98c014bd6c147a450f65d8e94970e",
+    "v1_input_cohort_sha256": "ed2c8dee995ea8058dd00578f28e24bf9482bd06e5ef18f902b924cfc694baf0",
+    "v1_embedding_manifest_sha256": "4a63a31b0c7be0486e4c0ea41c68d9bb51c3b22f4d67713659d512261e8c063e"
+  },
+  "backbones": [
+    "dinov2-small",
+    "deit-tiny",
+    "mobilenetv3-large",
+    "resnet50",
+    "convnext-tiny"
+  ],
+  "targets": [
+    {
+      "target_key": "cub_200_2011_part_geometry::leg_span_over_bbox_diagonal",
+      "training_pool_rows": 1200,
+      "training_rows_per_draw": 600,
+      "draw_seeds": [2026093001, 2026093002],
+      "evaluation_rows": 200,
+      "role": "linear_control"
+    },
+    {
+      "target_key": "cub_200_2011_part_geometry::wing_axis_cosine",
+      "training_pool_rows": 900,
+      "training_rows_per_draw": 600,
+      "draw_seeds": [2026093101, 2026093102],
+      "evaluation_rows": 200,
+      "role": "linear_control"
+    },
+    {
+      "target_key": "lsp_2000_pose_geometry::wrist_span_over_torso_length",
+      "training_pool_rows": 590,
+      "training_rows_per_draw": 590,
+      "draw_seeds": [2026093201],
+      "evaluation_rows": 200,
+      "role": "nonlinear_head_control"
+    }
+  ],
+  "preprocessing": {
+    "row_l2": true,
+    "pca_rank": 32,
+    "pca_solver": "full_float64_deterministic",
+    "post_pca_scaling": "StandardScaler fitted on training rows",
+    "fit_scope": "separately inside every inner fold and once on the complete training draw",
+    "relationship_to_v2": "identical"
+  },
+  "heads": {
+    "families": ["linear_ridge", "quadratic_ridge", "knn", "rbf_svr"],
+    "inner_folds": 5,
+    "inner_split": "target-bin-stratified with frozen candidate/draw seed",
+    "linear_ridge": {
+      "mean_loss_lambda": [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0],
+      "solver_alpha": "training_rows multiplied by mean_loss_lambda",
+      "solver": "svd"
+    },
+    "quadratic_ridge": {
+      "degree": 2,
+      "include_bias": false,
+      "mean_loss_lambda": [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0],
+      "solver_alpha": "training_rows multiplied by mean_loss_lambda",
+      "solver": "svd"
+    },
+    "knn": {
+      "n_neighbors": [3, 5, 9, 15, 31, 63, 127],
+      "weights": ["uniform", "distance"]
+    },
+    "rbf_svr": {
+      "target_standardization": "training-fold mean and population standard deviation",
+      "C_standardized_target_units": [0.03, 0.1, 0.3, 1.0, 3.0, 10.0],
+      "epsilon_standardized_target_units": [0.01, 0.05, 0.15],
+      "bandwidth_factors": [0.25, 0.5, 1.0, 2.0, 4.0],
+      "bandwidth": "factor multiplied by exact median nonzero Euclidean distance among training rows",
+      "gamma": "1 / (2 * bandwidth^2)"
+    }
+  },
+  "grid_adequacy": {
+    "material_endpoint_advantage_r2": 0.01,
+    "maximum_material_endpoint_selections": 0,
+    "categorical_parameters_ignored": ["weights"],
+    "interpretation": "an endpoint is adequate when its mean inner-CV advantage over the best setting away from that same endpoint is less than 0.01 R2"
+  },
+  "synthetic_controls": {
+    "families": ["linear", "quadratic", "smooth_periodic"],
+    "candidate_ids": ["clean_latent", "mild_latent_noise", "linear_shortcut", "degraded_latent", "noise_only"],
+    "seeds": [2026093401, 2026093402, 2026093403],
+    "training_rows": 600,
+    "evaluation_rows": 5000,
+    "target_noise_sd": 0.03,
+    "mild_angle_noise_sd": 0.08,
+    "shortcut_noise_sd": 0.30,
+    "degraded_angle_noise_sd": 0.55,
+    "minimum_intended_clean_head_r2": 0.90,
+    "minimum_clean_latent_top_probability": 1.0,
+    "minimum_nonlinear_linear_probe_regret_r2": 0.05,
+    "maximum_linear_control_regret_r2": 0.02
+  },
+  "real_controls": {
+    "maximum_cub_linear_top1_regret_r2": 0.01,
+    "minimum_lsp_maximum_nonlinear_gain_r2": 0.05
+  },
+  "expected_grid": {
+    "real_target_count": 3,
+    "real_candidate_draw_count": 25,
+    "synthetic_panel_count": 9,
+    "synthetic_candidate_count": 45,
+    "overlapindex_fit_count": 0,
+    "reserved_backbone_count": 0
+  },
+  "decision": {
+    "pass": "zero material endpoint selections, all synthetic controls pass, both CUB controls pass, LSP retains material nonlinear head gain, and no model warnings occur",
+    "on_pass": "freeze this head recipe for the eight-target historical development screen",
+    "on_fail": "publish the failure and create a new protocol version; never expand the frozen grid after inspecting these outcomes"
+  }
+}
