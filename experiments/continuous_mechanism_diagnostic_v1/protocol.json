@@ -1,0 +1,90 @@
+{
+  "experiment_id": "continuous_mechanism_diagnostic_v1",
+  "status": "frozen_exploratory_before_outcomes",
+  "objective": "Separate continuous-OI estimand misalignment from algorithmic randomness and training-sample variability on matched synthetic representations.",
+  "scope": "Experiment-only. No public OverlapIndex or Vertebrae behavior is changed.",
+  "data": {
+    "families": [
+      "linear_mean",
+      "quadratic_mean",
+      "periodic_mean",
+      "variance_only",
+      "null_noise"
+    ],
+    "candidate_quality": [0.95, 0.65, 0.35],
+    "dimension": 8,
+    "train_rows": 512,
+    "evaluation_rows": 8192,
+    "target_noise_standard_deviation": 0.35,
+    "variance_only_scale": "0.4 + 0.8 * abs(U)",
+    "latent_distribution": "U standard normal; representation signal Z=U+tau*eta with tau=sqrt(1/q^2-1) for q>0",
+    "evaluation_seed": 99173,
+    "training_sample_seeds": [1001, 1002, 1003]
+  },
+  "selector": {
+    "methods": [
+      {
+        "method_id": "observed_oi",
+        "geometry": "observed",
+        "description": "Current continuous OI on row-L2-normalized observed features"
+      },
+      {
+        "method_id": "broad_rff",
+        "geometry": "rff_mean",
+        "rff_components": 64,
+        "description": "Locked broad-RFF prototype-free null-adjusted multibandwidth kernel-alignment score"
+      },
+      {
+        "method_id": "save_oi",
+        "geometry": "save",
+        "description": "Existing SAVE target-moment continuous OI diagnostic"
+      }
+    ],
+    "algorithm_seeds": [101, 202, 303],
+    "fold_seed": 4242,
+    "folds": 3,
+    "null_permutations": 32,
+    "shared_data_contract": "All methods and algorithm seeds use identical rows, targets, and fixed fold indices within a panel.",
+    "sampling_variance_contract": "Training sample seed varies while evaluation rows, candidate quality, family, folds, and algorithm seed remain fixed."
+  },
+  "predictive_truth": {
+    "source": "Analytic conditional-mean R2 evaluated on the fixed independent evaluation draw; no selector score or fitted head defines truth.",
+    "families": {
+      "linear_mean": "Y=U+epsilon; E[Y|Z]=q^2 Z",
+      "quadratic_mean": "Y=U^2-1+epsilon; E[Y|Z]=q^4 Z^2-q^2",
+      "periodic_mean": "Y=sin(U)+epsilon; E[Y|Z]=exp(-(1-q^2)/2)*sin(q^2 Z)",
+      "variance_only": "Y=(0.4+0.8*abs(U))*epsilon; E[Y|Z]=0 for every q",
+      "null_noise": "Y=epsilon independent of representation; E[Y|X]=0"
+    },
+    "truth_tolerance": 0.015,
+    "predictive_families": ["linear_mean", "quadratic_mean", "periodic_mean"],
+    "control_families": ["variance_only", "null_noise"]
+  },
+  "gates": {
+    "frozen_before_outcomes": true,
+    "systematic_misalignment": {
+      "predictive_mean_spearman_minimum": 0.80,
+      "predictive_top1_accuracy_minimum": 0.67,
+      "control_score_range_maximum": 0.05,
+      "interpretation": "Fail if a method systematically disagrees with analytic predictive truth or assigns materially separated scores to equal-utility control candidates."
+    },
+    "algorithmic_variance": {
+      "mean_score_sd_maximum": 0.025,
+      "interpretation": "Flag if algorithm seeds alone produce more than 0.025 mean score standard deviation."
+    },
+    "sampling_variance": {
+      "mean_score_sd_maximum": 0.050,
+      "interpretation": "Flag if independent training samples produce more than 0.050 mean score standard deviation."
+    },
+    "classification": "Systematic misalignment is assessed on seed-averaged candidate scores; algorithmic and sampling variance are assessed separately from their frozen perturbations. No post-outcome method or parameter is selected."
+  },
+  "artifact_contract": {
+    "expected_families": 5,
+    "expected_candidates_per_family": 3,
+    "expected_algorithm_seed_count": 3,
+    "expected_training_sample_seed_count": 3,
+    "expected_algorithm_panels": 45,
+    "expected_sampling_panels": 45,
+    "expected_method_rows": 270
+  }
+}
