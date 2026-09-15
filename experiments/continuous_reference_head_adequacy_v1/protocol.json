@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "experiment_id": "continuous_reference_head_adequacy_v1",
+  "status": "frozen_before_execution",
+  "source_raw_sha256": "2dc5c7c09ea3db3e3c4f5ad0146175824d266f0e4864588604f198fb13dcb4ac",
+  "source_protocol_sha256": "d14bf65d14d5580580e717ab4fe72300b07dbef2d01e48ba5d962fa4e506c0d9",
+  "reference_training_seed": 401,
+  "heads": {
+    "screened_linear_ridge": {
+      "selected_features": 1,
+      "selection": "largest absolute training covariance with centered target",
+      "alpha": [0.01, 0.1, 1.0, 10.0, 100.0]
+    },
+    "screened_pair_ridge": {
+      "selected_pairs": 1,
+      "selection": "largest absolute training covariance between centered target and standardized off-diagonal feature product",
+      "alpha": [0.01, 0.1, 1.0, 10.0, 100.0]
+    }
+  },
+  "validation": {
+    "inner_folds": 3,
+    "inner_seed": 447,
+    "preprocessing": "StandardScaler and feature or pair selection fitted independently inside every training fold",
+    "evaluation": "frozen 4096-row held-out cohort from the source diagnostic"
+  },
+  "gates": {
+    "maximum_absolute_r2_gap_to_analytic": 0.05,
+    "required_cells": [
+      {"candidate_id": "direct_q85", "head": "screened_linear_ridge"},
+      {"candidate_id": "signed_q85", "head": "screened_pair_ridge"},
+      {"candidate_id": "signed_q55", "head": "screened_pair_ridge"}
+    ],
+    "require_known_signal_selected": true,
+    "decision": "reference_adequate only if every required candidate/head cell passes at both dimensions and both sample sizes"
+  },
+  "artifact_contract": {
+    "source_panels": 4,
+    "candidate_rows_per_panel": 5,
+    "head_rows_per_candidate": 2,
+    "expected_head_rows": 40
+  }
+}
+
