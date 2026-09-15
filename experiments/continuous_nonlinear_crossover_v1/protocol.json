@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "experiment_id": "continuous_nonlinear_crossover_v1",
+  "status": "frozen_before_execution",
+  "source_adequacy_manifest_sha256": "7084e1b2b6734d045a6eb4c10ccc93845354b3445f49c5ef48aeef6a06ba71c1",
+  "scenarios": {
+    "linear_wins": {"axis_quality": 0.90, "signed_quality": 0.70, "expected_winner": "axis_candidate"},
+    "nonlinear_wins": {"axis_quality": 0.70, "signed_quality": 0.90, "expected_winner": "signed_candidate"}
+  },
+  "controls": {"axis_quality": 0.45, "signed_quality": 0.45},
+  "candidates": ["axis_candidate", "signed_candidate", "axis_control", "signed_control"],
+  "data": {
+    "dimensions": [16, 512],
+    "training_rows": [300, 1200],
+    "evaluation_rows": 4096,
+    "training_seeds": [1103, 1301, 1601],
+    "target_noise_standard_deviation": 0.35,
+    "shared_latents_within_panel": true
+  },
+  "ranking_methods": ["linear_cv", "observed_oi", "broad_rff", "save_oi", "screened_head_cv_max"],
+  "selectors": {
+    "source": "continuous_mechanism_diagnostic_v1 exact evaluators",
+    "folds": 3,
+    "fold_seed": 4242,
+    "algorithm_seeds": [101, 202, 303],
+    "linear_ridge_alpha": [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0, 10000.0]
+  },
+  "reference": {
+    "heads": ["screened_linear_ridge", "screened_pair_ridge"],
+    "source": "continuous_reference_head_adequacy_v1",
+    "envelope": "maximum held-out R2 across the two calibrated heads",
+    "minimum_expected_winner_gap_r2": 0.10
+  },
+  "gates": {
+    "maximum_mean_regret_r2": 0.02,
+    "minimum_direction_accuracy": 0.90,
+    "minimum_mean_spearman": 0.80,
+    "minimum_cell_direction_accuracy": 0.67,
+    "survival": "A method survives only if every aggregate gate passes and the reference winner is valid in every panel."
+  },
+  "execution": {
+    "threads": 1,
+    "checkpoint": "one atomic JSON per scenario/dimension/sample-size/training-seed panel",
+    "expected_panels": 24,
+    "expected_selector_rows": 1056,
+    "expected_reference_rows": 192
+  },
+  "interpretation": {
+    "purpose": "Distinguish recognition of nonlinear representation potential from preference for a fixed geometry.",
+    "no_promotion": "This synthetic diagnostic cannot promote or tune a method."
+  }
+}
+
