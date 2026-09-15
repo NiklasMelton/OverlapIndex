@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from experiments.continuous_matched_geometry_diagnostic_v1 import run
+from experiments.continuous_matched_geometry_diagnostic_v1 import analyze
 
 
 def test_protocol_closes_grid_and_counts():
@@ -40,3 +41,12 @@ def test_pair_accuracy_counts_ties_as_half_credit():
     scores = {"direct_q85": 1.0, "rotated_q85": 0.5, "anisotropic_q85": 0.0,
               "signed_q85": -1.0, "signed_q55": 0.0}
     assert run._pair_accuracy(scores) == pytest.approx(0.625)
+
+
+def test_head_envelope_ranking_metrics_use_selected_utility():
+    truth = {name: value for name, value in zip(run.CANDIDATES, (0.8, 0.7, 0.6, 0.5, 0.1))}
+    scores = {name: value for name, value in zip(run.CANDIDATES, (0.0, 1.0, -1.0, -2.0, -3.0))}
+    metrics = analyze.ranking_metrics(scores, truth)
+    assert metrics["top1_regret_r2"] == pytest.approx(0.1)
+    assert metrics["exact_best"] is False
+    assert metrics["selected_candidate_ids"] == ["rotated_q85"]
