@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "experiment_id": "continuous_representation_scorer_diagnostic_v1",
+  "status": "frozen_before_execution",
+  "objective": "Determine whether cross-family continuous ranking fails because of nuisance dimensions, missing nonlinear features, or the OI score itself.",
+  "scenarios": {
+    "linear_wins": {"linear": 0.90, "product": 0.70, "radial": 0.70, "expected_winner": "linear_candidate"},
+    "product_wins": {"linear": 0.70, "product": 0.90, "radial": 0.70, "expected_winner": "product_candidate"},
+    "radial_wins": {"linear": 0.70, "product": 0.70, "radial": 0.90, "expected_winner": "radial_candidate"}
+  },
+  "controls": {"quality": 0.45},
+  "relations": ["linear", "product", "radial"],
+  "orientations": ["axis", "rotated_45"],
+  "views": ["observed", "signal", "lift"],
+  "data": {
+    "dimensions": [16, 512],
+    "training_rows": 1200,
+    "evaluation_rows": 4096,
+    "training_seeds": [2801, 3109, 3413],
+    "pre_outcome_calibration_seeds": [1901],
+    "target_noise_standard_deviation": 0.35,
+    "radial_weight": 0.65,
+    "positive_floor": 0.05,
+    "nuisance_scale": 0.1,
+    "shared_latents_within_matched_panel": true
+  },
+  "ranking_methods": [
+    "linear_cv",
+    "screened_head_cv_max",
+    "expanded_head_cv_max",
+    "oi_observed",
+    "oi_signal",
+    "oi_lift",
+    "save_observed",
+    "save_signal",
+    "save_lift"
+  ],
+  "head_models": {
+    "alpha": [0.01, 0.1, 1.0, 10.0, 100.0],
+    "inner_folds": 3,
+    "fold_seed": 4242,
+    "existing_heads": ["screened_linear_top1", "screened_pair_top1"],
+    "expanded_heads": ["screened_linear_top2", "screened_quadratic_closure8"],
+    "reference_envelope": ["screened_linear_top1", "screened_pair_top1", "screened_linear_top2", "screened_quadratic_closure8"],
+    "expanded_quadratic_screening": "Select eight target-covariant quadratic seed terms in the supplied metric scale, close their coordinates under degree-two products, then standardize selected coordinates for Ridge."
+  },
+  "oi": {
+    "source": "continuous_mechanism_diagnostic_v1 exact cross-fit evaluators",
+    "folds": 3,
+    "fold_seed": 4242,
+    "algorithm_seeds": [101, 202, 303]
+  },
+  "reference_gates": {
+    "maximum_absolute_r2_gap_to_analytic": 0.06,
+    "minimum_expected_winner_gap_r2": 0.15,
+    "required_valid_panel_fraction": 1.0
+  },
+  "selector_gates": {
+    "maximum_mean_regret_r2": 0.02,
+    "minimum_direction_accuracy": 0.90,
+    "minimum_mean_spearman": 0.80,
+    "minimum_material_pair_accuracy": 0.90,
+    "material_pair_r2_difference": 0.10,
+    "maximum_mean_equal_quality_score_range": 0.08,
+    "survival": "A method survives only if every selector gate passes and every reference panel is valid."
+  },
+  "execution": {
+    "threads_per_worker": 1,
+    "expected_panels": 36,
+    "expected_candidates_per_panel": 6,
+    "expected_selector_rows": 4536,
+    "expected_reference_rows": 864,
+    "checkpoint": "one atomic JSON per scenario/orientation/dimension/training-seed panel",
+    "sharding": "panel ordinal modulo shard count; finalization requires every frozen checkpoint"
+  },
+  "interpretation": {
+    "observed_to_signal": "Improvement after removing nuisance identifies metric contamination.",
+    "signal_to_lift": "Improvement only after degree-two lifting identifies missing nonlinear representation.",
+    "lift_failure": "Failure on the sufficient lifted view identifies score or aggregation misalignment across relation families.",
+    "head_proxy": "Existing screened heads are a narrow diagnostic; expanded heads add two linear coordinates and diagonal quadratic terms.",
+    "no_promotion": "This synthetic mechanism diagnostic cannot promote or tune a method."
+  }
+}
