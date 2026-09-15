@@ -10,6 +10,22 @@ artifact.
 This is a synthetic mechanism diagnostic. It is not evidence for promotion on
 real data.
 
+## Follow-up correction: reference-head adequacy
+
+A subsequent pre-frozen calibration showed that the finite head library used
+in this original analysis was underpowered for sparse nonlinear structure. A
+training-only screened-pair quadratic head recovered the signed interaction in
+all required dimension/sample-size cells and came within 0.0107 R2 of the
+analytic reference.
+
+The analytic geometry-sensitivity findings below remain valid. The conclusion
+that the signed interaction itself was inaccessible to a practical finite head
+does not. Treat the calibrated
+[reference-head adequacy result](../continuous_reference_head_adequacy_v1/RESULTS.md)
+and the subsequent
+[linear/nonlinear crossover](../continuous_nonlinear_crossover_v1/RESULTS.md)
+as authoritative for finite-head accessibility and ranking behavior.
+
 ## Analytic-information result
 
 Four candidates were constructed to carry the same analytic target information
