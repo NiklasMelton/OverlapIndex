@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "experiment_id": "continuous_matched_geometry_diagnostic_v1",
+  "status": "frozen_exploratory_before_outcomes",
+  "objective": "Test whether continuous ranking scores preserve equal predictive utility across different representation geometries and still separate a materially weaker representation.",
+  "scope": "Experiment-only synthetic mechanism diagnostic. It changes no public OverlapIndex or Vertebrae behavior and promotes no method.",
+  "data": {
+    "geometries": ["direct", "rotated", "anisotropic", "signed_product"],
+    "candidates": [
+      {"candidate_id": "direct_q85", "geometry": "direct", "quality": 0.85},
+      {"candidate_id": "rotated_q85", "geometry": "rotated", "quality": 0.85},
+      {"candidate_id": "anisotropic_q85", "geometry": "anisotropic", "quality": 0.85},
+      {"candidate_id": "signed_q85", "geometry": "signed_product", "quality": 0.85},
+      {"candidate_id": "signed_q55", "geometry": "signed_product", "quality": 0.55}
+    ],
+    "matched_candidate_ids": ["direct_q85", "rotated_q85", "anisotropic_q85", "signed_q85"],
+    "weaker_candidate_id": "signed_q55",
+    "dimensions": [16, 512],
+    "training_rows": [300, 1200],
+    "evaluation_rows": 4096,
+    "training_sample_seeds": [401, 503, 607],
+    "evaluation_seed": 99173,
+    "target_noise_standard_deviation": 0.35,
+    "anisotropic_nuisance_scale": 8.0,
+    "latent_contract": "All candidates in a panel share U, target noise, and base nuisance rows. For quality q, Z=U+sqrt(1/q^2-1)*eta. Direct, rotated, anisotropic, and signed-product encodings all retain Z exactly.",
+    "target": "Y=U+0.35*epsilon",
+    "analytic_truth": "R2(E[Y|X])=q^2/(1+0.35^2), invariant to the four invertible geometry encodings."
+  },
+  "selectors": {
+    "methods": ["observed_oi", "broad_rff", "save_oi"],
+    "source": "continuous_mechanism_diagnostic_v1 exact evaluators",
+    "folds": 3,
+    "fold_seed": 4242,
+    "algorithm_seeds": [101, 202, 303],
+    "null_permutations": 32,
+    "shared_rows_and_folds": true
+  },
+  "reference_heads": {
+    "evaluation_training_seed": 401,
+    "inner_folds": 3,
+    "families": {
+      "linear_ridge": {"alpha": [0.1, 1.0, 10.0]},
+      "quadratic_svr": {"C": [1.0, 10.0], "degree": 2, "gamma": "scale", "coef0": 1.0, "epsilon": 0.1},
+      "knn": {"n_neighbors": [5, 15], "weights": "distance"},
+      "rbf_svr": {"C": [1.0, 10.0], "gamma": "scale", "epsilon": 0.1}
+    },
+    "preprocessing": "StandardScaler fitted inside every inner fold and refit on the complete training cohort",
+    "envelope": "maximum held-out R2 across the four tuned families",
+    "purpose": "Measure finite-head accessibility separately from analytic information equality."
+  },
+  "metrics": {
+    "matched_score_range": "maximum minus minimum score across the four q=.85 candidates",
+    "material_pair_accuracy": "fraction of four q=.85 versus signed_q55 comparisons ordered correctly; score ties receive half credit",
+    "analytic_selection_regret_r2": "best analytic R2 minus analytic R2 of selected score maximum",
+    "finite_head_envelope_regret_r2": "best held-out head-envelope R2 minus envelope R2 of selected score maximum",
+    "head_envelope_matched_spread_r2": "maximum minus minimum held-out envelope R2 across the four analytically matched candidates",
+    "algorithm_and_sampling_variance": true
+  },
+  "diagnostic_thresholds": {
+    "material_score_range": 0.05,
+    "material_head_envelope_spread_r2": 0.02,
+    "maximum_acceptable_weak_candidate_selection_rate": 0.10,
+    "minimum_material_pair_accuracy": 0.90,
+    "geometry_bias_panel_fraction": 0.75,
+    "interpretation": {
+      "score_geometry_bias": "matched score range exceeds 0.05 in at least 75 percent of panels",
+      "harmful_geometry_failure": "the weaker candidate is selected in more than 10 percent of panels or mean material-pair accuracy is below 0.90",
+      "finite_head_accessibility_difference": "held-out head-envelope spread among analytically matched candidates exceeds 0.02 R2",
+      "no_promotion": "The panel diagnoses a mechanism; it cannot promote or tune a method."
+    }
+  },
+  "artifact_contract": {
+    "panel_count": 12,
+    "candidate_count_per_panel": 5,
+    "selector_rows_per_panel": 45,
+    "total_selector_rows": 540,
+    "reference_panel_count": 4,
+    "total_reference_candidate_rows": 20,
+    "checkpoint": "one atomic JSON per dimension/sample-size/training-seed panel",
+    "resume": "exact source and protocol hashes only"
+  }
+}
