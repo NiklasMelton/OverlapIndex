@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "evidence_id": "native-oi-shortlist-prospective-continuation-v1",
+  "reviewed_at": "2026-10-16T20:26:30Z",
+  "status": "complete_scientific_success",
+  "provenance": {
+    "release_baseline_commit": "d22bdffba338515ddf1a68f1ccc4d9a9b6b0ae8b",
+    "tested_package_commit": "606c5f00e43d419a6a733389c27aa303bd5d31a0",
+    "sources": [
+      {
+        "repository_relative_path": "artifacts/oi_shortlist_prospective_continuation_v1/run-r2/final-review.json",
+        "sha256": "455afbdafde03231eeb67bb05f1b1606c749506f6f6a61ee5c8075a64a676e61"
+      },
+      {
+        "repository_relative_path": "artifacts/oi_shortlist_prospective_continuation_v1/run-r2/analysis.json",
+        "sha256": "0f0c3e47098cf24d9222ea5f9b313d2c230284c4d0cd30512e32a48d2f85ab0b"
+      }
+    ],
+    "frozen_package_hashes_verified_across_candidates": 72,
+    "tested_package_source_sha256": {
+      "overlapindex/BallCover.py": "6d01a23874febe00cf7f5b49a09de74aa7472278625750edfe9bed5beffb403a",
+      "overlapindex/ContinuousOverlapIndex.py": "8b0d1bea53a7377bcf3102109ec28bc44ae10729495517790702bf5bda4d11c9",
+      "overlapindex/OverlapIndex.py": "6443d8a01795f7a4c944a086556f9a1be5a9d51d913342d339cca65a4ea00d76",
+      "overlapindex/__init__.py": "15a8b23771cd5e12058b0214a1ef3e937a54d2c34894a5fadf8810232b249256",
+      "overlapindex/_prototype_refinement.py": "e016884bfacf9528f480efc06664672cbb10de46ac5b3474bda92ed8cc15e87a",
+      "overlapindex/_universal_scorer.py": "65b12fd55276f5b1d1b9b166fb422e1fee5975eab4aea0745df470d76ea1ec1a",
+      "overlapindex/clustering.py": "15479074d46f816579fd562deb8e529b5b7284cb549a4a7fd580d189c31dabe5",
+      "overlapindex/utils.py": "38706087f460676bff7704e989528e02e0f68eebec967fd88f614511da8391e6"
+    },
+    "scope": "Selected aggregate results and hashes only; no row-level data, images, identities, predictions or checkpoints."
+  },
+  "design": {
+    "independent_sources": 6,
+    "dependent_draws_per_source": 3,
+    "source_draw_panels": 18,
+    "backbones": 4,
+    "candidates": 72,
+    "logical_head_fits": 21024,
+    "model_type": "KMeans",
+    "kmeans_k": 16,
+    "prototype_refinement": true,
+    "oi_evaluation": "Three-fold training-only cross-fitting with fold-local centering and one scalar RMS scale.",
+    "finalist_selection": "Training-CV finalist selection after the OI top-two shortlist.",
+    "independent_uncertainty_unit": "source; dependent draws averaged within source",
+    "timing_basis": "Replay of measured logical components, not fresh deployment timing or elapsed cluster makespan.",
+    "new_fits_during_analysis": 0,
+    "all_predictions_and_training_decisions_committed_before_target_access": true
+  },
+  "recommended_policy": "native_oi_top2",
+  "primary_results": {
+    "native_oi_top2": {
+      "passes": true,
+      "mean_final_regret": 0.012249228395061726,
+      "mean_regret_difference_vs_control": -0.0068359375,
+      "paired_source_bootstrap_95_difference_vs_control": [
+        -0.015299479166666666,
+        -0.0007233796296296256
+      ],
+      "shortlist_one_pp_miss_rate": 0.05555555555555569,
+      "p95_final_regret": 0.078125,
+      "max_final_regret": 0.078125,
+      "post_embedding_fraction_full_bank": 0.37484333261095054,
+      "logical_end_to_end_fraction_full_bank": 0.45037213210909577,
+      "logical_head_fits_per_panel": 452,
+      "failed_gates": []
+    },
+    "nested_linear_probe_top2": {
+      "role": "prespecified comparator",
+      "mean_final_regret": 0.019085165895061724,
+      "shortlist_one_pp_miss_rate": 0.11111111111111116,
+      "p95_final_regret": 0.078125,
+      "max_final_regret": 0.078125,
+      "post_embedding_fraction_full_bank": 0.6219313119439076,
+      "logical_head_fits_per_panel": 716
+    },
+    "fixed32_top2": {
+      "passes": false,
+      "mean_final_regret": 0.018744510523377982,
+      "shortlist_one_pp_miss_rate": 0.38888888888888895,
+      "miss_rate_excess_vs_control": 0.2777777777777778,
+      "permitted_miss_rate_excess": 0.05,
+      "post_embedding_fraction_full_bank": 0.5142125882481305,
+      "failed_gates": [
+        "one_pp_miss_noninferior"
+      ]
+    }
+  },
+  "policy_gates": {
+    "fixed32_top2": {
+      "checks": {
+        "bootstrap_upper_noninferior": true,
+        "end_to_end_below_full": true,
+        "logical_fits_not_above_control": true,
+        "max_tail_noninferior": true,
+        "mean_final_regret_noninferior": true,
+        "one_pp_miss_noninferior": false,
+        "p95_tail_noninferior": true,
+        "post_embedding_cost": true
+      },
+      "passes": false
+    },
+    "native_oi_top2": {
+      "checks": {
+        "bootstrap_upper_noninferior": true,
+        "end_to_end_below_full": true,
+        "logical_fits_not_above_control": true,
+        "max_tail_noninferior": true,
+        "mean_final_regret_noninferior": true,
+        "one_pp_miss_noninferior": true,
+        "p95_tail_noninferior": true,
+        "post_embedding_cost": true
+      },
+      "passes": true
+    }
+  },
+  "source_mean_final_regret": {
+    "caltech_camera_traps": {
+      "native_oi_top2": 0.006510416666666667,
+      "nested_linear_probe_top2": 0.031901041666666664,
+      "fixed32_top2": 0.03125
+    },
+    "hagrid_2023_18": {
+      "native_oi_top2": 0.0014467592592592633,
+      "nested_linear_probe_top2": 0.0014467592592592633,
+      "fixed32_top2": 0.0014467592592592633
+    },
+    "mura": {
+      "native_oi_top2": 0.010416666666666666,
+      "nested_linear_probe_top2": 0.01475694444444442,
+      "fixed32_top2": 0.007595486111111087
+    },
+    "patch_camelyon": {
+      "native_oi_top2": 0.016059027777777752,
+      "nested_linear_probe_top2": 0.02734375,
+      "fixed32_top2": 0.021267361111111088
+    },
+    "shenzhen_tb": {
+      "native_oi_top2": 0.0390625,
+      "nested_linear_probe_top2": 0.0390625,
+      "fixed32_top2": 0.0390625
+    },
+    "stanford_3d_objects": {
+      "native_oi_top2": 0.0,
+      "nested_linear_probe_top2": 0.0,
+      "fixed32_top2": 0.011844956658786451
+    }
+  },
+  "fixed_minus_native_mean_regret": 0.006495282128316256,
+  "fixed_minus_native_bootstrap_95": [
+    -7.233796296297051e-05,
+    0.014975535916568156
+  ],
+  "units": "Regret is held-out macro-accuracy loss relative to the best validation-selected head/backbone candidate in the panel; fractions are unscaled, not percentage points. Three dependent draws are averaged within each source before source-level uncertainty.",
+  "limitations": [
+    "This is bounded six-source external validation, not a universal, benchmark-equivalence or clinical-performance claim.",
+    "The six sources, not 18 dependent draw panels or 72 candidates, are the independent generalization units; source-bootstrap intervals are descriptive with only six units.",
+    "Native OI improves source-mean regret relative to the control on three sources and ties it on three. Its worst-case regret remains 7.8125 percentage points, equal to the control.",
+    "The native-versus-fixed32 mean-regret bootstrap interval includes zero. Native is selected here because it alone passes all gates, not because a direct superiority claim over fixed32 was established.",
+    "Policy runtime savings are replayed measured logical-component costs, not a fresh separately timed deployment or elapsed cluster makespan.",
+    "The outcome-blind A1 preconditioner safeguard and analysis import-packaging repair are documented exceptions/repairs; original objective, convergence thresholds, grids, data splits, selection and analysis rules remain unchanged.",
+    "Not a KMeans-versus-MiniBatchKMeans comparison or an isolated refinement ablation; success cannot be attributed to refinement alone.",
+    "Does not establish these numerical results for Vertebrae current settings, adaptive prototype counts, all modalities, or regression.",
+    "Refinement remains opt-in and False by default in both packages; downstream normalization, folds, ranking and head-training ownership are separate integration decisions."
+  ],
+  "historical_outcomes_preserved": true
+}
