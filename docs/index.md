@@ -62,6 +62,10 @@ traced back to the labels that produced it.
 - {doc}`continuous_targets` — evaluate regression representations.
 - {doc}`diagnostics` — interpret fitted attributes, warnings, and common
   failure modes.
+- {doc}`prototype_refinement` — use optional centroid refinement and its fitted
+  diagnostics.
+- {doc}`native_refinement_evidence` — inspect the frozen shortlist-policy
+  results and their limits.
 - {doc}`use_cases` — apply OI to representation comparison, streaming, and
   dataset analysis.
 - {doc}`api` — browse the complete source-generated API.
@@ -83,6 +87,8 @@ backends/index
 multilabel
 continuous_targets
 diagnostics
+prototype_refinement
+native_refinement_evidence
 use_cases
 api
 ```

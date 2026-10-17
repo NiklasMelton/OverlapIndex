@@ -147,6 +147,8 @@ The Overlap Index can be used in several settings:
   See the backend guides for the runtime/prototype-resolution trade-off and
   fitted diagnostics. The fitted `prototype_refinement_` summary reports the
   resolved mode as the strings `"none"` or `"balanced_median"`.
+  See [the refinement contract](docs/prototype_refinement.md) and
+  [the canonical shortlist evidence and limitations](docs/native_refinement_evidence.md).
 - Normalize input features before fitting. Examples in this repository use `MinMaxScaler` for convenience.
 - ART backends complement-code inputs internally and therefore require features in the `[0, 1]` interval.
 - Offline backends (`KMeans`, `MiniBatchKMeans`, and `BallCover`) consume normalized features directly and do not apply complement coding.
