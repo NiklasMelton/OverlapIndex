@@ -56,8 +56,8 @@ traced back to the labels that produced it.
 - {ref}`discrete-visual-examples` — jump directly to the discrete visual
   examples and their score-response curves.
 - {doc}`data_and_targets` — check accepted feature and target formats.
-- {doc}`backends/index` — select MiniBatchKMeans, KMeans, BallCover, or an
-  incremental ARTMAP backend.
+- {doc}`backends/index` — select MiniBatchKMeans, KMeans, the opt-in fused
+  shared-Fisher ranking path, BallCover, or an incremental ARTMAP backend.
 - {doc}`multilabel` — use label collections or indicator matrices correctly.
 - {doc}`continuous_targets` — evaluate regression representations.
 - {doc}`diagnostics` — interpret fitted attributes, warnings, and common

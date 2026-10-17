@@ -110,7 +110,8 @@ the labels are distinguishable for the intended analysis or change
 ### `Sparse X is supported only ...`
 
 Use KMeans or MiniBatchKMeans, or convert to a dense matrix only if it safely
-fits in memory. BallCover and ARTMAP do not accept sparse feature matrices.
+fits in memory. FusedKMeans, BallCover, and ARTMAP do not accept sparse feature
+matrices.
 
 ### ARTMAP requires `[0, 1]`
 
@@ -124,7 +125,7 @@ output is a global prototype ID rather than a class prediction.
 
 ### An offline `partial_fit` forgot earlier data
 
-This is expected. KMeans, MiniBatchKMeans, and BallCover refit on only the
+This is expected. KMeans, MiniBatchKMeans, FusedKMeans, and BallCover refit on only the
 provided batch. Combine the desired training rows and call `fit`, or select an
 ARTMAP backend when true incremental state is required.
 
@@ -132,8 +133,8 @@ ARTMAP backend when true incremental state is required.
 
 Full `fit(X, y)` and `score(X, y)` calls always construct a fresh backend.
 The lower-level `fit_offline(..., reset_state=False)` form is accepted only
-when explicitly continuing an ARTMAP backend. KMeans, MiniBatchKMeans, and
-BallCover reject it because global prototype IDs cannot be safely accumulated
+when explicitly continuing an ARTMAP backend. KMeans, MiniBatchKMeans,
+FusedKMeans, and BallCover reject it because global prototype IDs cannot be safely accumulated
 across independent offline refits. `ContinuousOverlapIndex` is offline-first
 and always resets its fitted state.
 

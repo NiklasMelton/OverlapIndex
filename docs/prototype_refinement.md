@@ -70,12 +70,12 @@ recursive splitting, or tunable refinement threshold is introduced.
 
 ## Release and evidence scope
 
-The planned 0.1.5 addition is the exact refinement implementation from
-[`606c5f0`](https://github.com/NiklasMelton/OverlapIndex/commit/606c5f00e43d419a6a733389c27aa303bd5d31a0),
-based on released 0.1.4. `score_fixed`, sparse scoring, and the universal
-bounded-memory scorer already exist in 0.1.4. This change adds no Fisher or
-FusedKMeans path, continuous-OI changes, IntrusionOverlapIndex, or experimental
-head solver.
+The refinement implementation in `develop` came from
+[`606c5f0`](https://github.com/NiklasMelton/OverlapIndex/commit/606c5f00e43d419a6a733389c27aa303bd5d31a0).
+`score_fixed`, sparse scoring, and the universal bounded-memory scorer already
+exist in released 0.1.4. The 0.1.5 release preparation adds frozen parity
+tests and evidence for refinement. `develop` also includes the separate
+Fisher/FusedKMeans integration; the evidence below does not evaluate that path.
 
 The [canonical evidence page](native_refinement_evidence.md) describes the
 tested KMeans16-plus-refinement shortlist policy and its limitations. Those

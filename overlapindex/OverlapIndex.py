@@ -8,11 +8,14 @@ from scipy import sparse
 from sklearn.metrics import pairwise_distances
 
 try:
-    from sklearn.base import BaseEstimator
+    from sklearn.base import BaseEstimator, clone
+    from sklearn.model_selection import StratifiedKFold
 except ImportError:  # pragma: no cover - sklearn is a required dependency for offline backends
     class BaseEstimator:  # type: ignore[no-redef]
         """Fallback base class when sklearn is unavailable at import time."""
         pass
+    clone = None  # type: ignore[assignment]
+    StratifiedKFold = None  # type: ignore[assignment]
 
 from overlapindex.utils import (
     _group_indices_by_label,
@@ -27,7 +30,13 @@ from overlapindex.clustering import (
     _ARTMAPManyToOne,
     _KMeansManyToOne,
     _MiniBatchKMeansManyToOne,
+    _FusedKMeansManyToOne,
     _BallCoverManyToOne,
+)
+from overlapindex._shared_fisher import (
+    FisherRank,
+    SharedFisherTransform,
+    fit_shared_fisher,
 )
 from overlapindex._universal_scorer import (
     compute_second_best_source_scores,
@@ -427,7 +436,7 @@ class OverlapIndex(BaseEstimator):
         self,
         rho: float = 0.9,
         r_hat: float = np.inf,
-        model_type: Literal["Fuzzy", "Hypersphere", "KMeans", "MiniBatchKMeans", "BallCover"] = "MiniBatchKMeans",
+        model_type: Literal["Fuzzy", "Hypersphere", "KMeans", "MiniBatchKMeans", "FusedKMeans", "BallCover"] = "MiniBatchKMeans",
         match_tracking: str = "MT+",
         # centroid backend options:
         kmeans_k: Union[int, Dict[Any, int]] = 8,
@@ -442,6 +451,11 @@ class OverlapIndex(BaseEstimator):
         exclude_classes: Optional[Any] = None,
         offline_memory_budget_mb: int = 256,
         prototype_refinement: bool = False,
+        feature_normalization: Optional[Literal["l2"]] = None,
+        feature_transform: Optional[Literal["shared_fisher"]] = None,
+        fisher_rank: FisherRank = 32,
+        fisher_random_state: Optional[int] = 0,
+        fused_kmeans_kwargs: Optional[dict] = None,
     ) -> None:
         """
         Initialize the overlap index and its clustering backend.
@@ -452,7 +466,7 @@ class OverlapIndex(BaseEstimator):
             ARTMAP vigilance parameter used by Fuzzy and Hypersphere backends.
         r_hat : float, default=np.inf
             Hypersphere ARTMAP radius constraint.
-        model_type : {"Fuzzy", "Hypersphere", "KMeans", "MiniBatchKMeans", "BallCover"}, default="MiniBatchKMeans"
+        model_type : {"Fuzzy", "Hypersphere", "KMeans", "MiniBatchKMeans", "FusedKMeans", "BallCover"}, default="MiniBatchKMeans"
             Backend family used to create class-owned clusters.
         match_tracking : str, default="MT+"
             Match-tracking mode forwarded to ARTMAP partial-fit calls.
@@ -498,6 +512,26 @@ class OverlapIndex(BaseEstimator):
             internal ``"balanced_median"`` method; ``False`` leaves fitted
             prototypes unchanged. Multi-label targets are not supported when
             refinement is enabled.
+        feature_normalization : {None, "l2"}, default=None
+            Optional row-wise L2 normalization applied before offline fitting,
+            fixed scoring, and prediction. The default preserves raw features.
+        feature_transform : {None, "shared_fisher"}, default=None
+            Optional supervised train-only shared-Fisher transform. It is fit
+            during ``fit`` and reused unchanged by ``score_fixed`` and
+            ``predict``. Only scalar targets and offline centroid backends are
+            supported.
+        fisher_rank : nonnegative int or "full", default=32
+            Nuisance rank for the scalable shared-Fisher approximation.
+            ``"full"`` selects the full SVD Fisher/LDA transform. This option
+            is used only when ``feature_transform="shared_fisher"``.
+        fisher_random_state : int or None, default=0
+            Random seed used by the scalable randomized SVD. The full Fisher
+            transform is deterministic and does not consume it.
+        fused_kmeans_kwargs : dict, optional
+            Closed options for ``model_type="FusedKMeans"``: ``random_state``,
+            ``n_iter``, ``min_samples_per_prototype``,
+            ``relevance_weighting``, ``margin_rows_per_class``, and
+            ``weight_floor``.
         """
         self.rho = rho
         self.r_hat = r_hat
@@ -514,8 +548,14 @@ class OverlapIndex(BaseEstimator):
         self.top_m = top_m
         self.exclude_classes = exclude_classes
         self.prototype_refinement = prototype_refinement
+        self.feature_normalization = feature_normalization
+        self.feature_transform = feature_transform
+        self.fisher_rank = fisher_rank
+        self.fisher_random_state = fisher_random_state
+        self.fused_kmeans_kwargs = fused_kmeans_kwargs
         self._validate_multilabel_params()
         self._validate_prototype_refinement()
+        self._validate_feature_preprocessing()
 
         # indices / bookkeeping
         self.sparse_adj = defaultdict(int)
@@ -540,6 +580,12 @@ class OverlapIndex(BaseEstimator):
         self.prototype_refinement_ = empty_refinement_summary(
             refinement_method(self.prototype_refinement)
         )
+        self.feature_transform_: Optional[SharedFisherTransform] = None
+        self.fisher_diagnostics_: dict[str, Any] = {"status": "not_applied"}
+        self.fused_kmeans_diagnostics_: dict[str, Any] = {
+            "status": "not_applied"
+        }
+        self.feature_weights_: Optional[np.ndarray] = None
 
         self._model: _BaseManyToOneClusteringModel = self._build_model()
 
@@ -583,6 +629,44 @@ class OverlapIndex(BaseEstimator):
                 "model_type='KMeans' or 'MiniBatchKMeans'."
             )
 
+    def _validate_feature_preprocessing(self) -> None:
+        """Validate opt-in preprocessing without changing legacy defaults."""
+        if self.feature_normalization not in {None, "l2"}:
+            raise ValueError("feature_normalization must be None or 'l2'.")
+        if self.feature_transform not in {None, "shared_fisher"}:
+            raise ValueError("feature_transform must be None or 'shared_fisher'.")
+        if self.fisher_rank != "full" and (
+            type(self.fisher_rank) is not int or self.fisher_rank < 0
+        ):
+            raise ValueError("fisher_rank must be a nonnegative int or 'full'.")
+        if (
+            self.fisher_random_state is not None
+            and (
+                type(self.fisher_random_state) is not int
+                or self.fisher_random_state < 0
+            )
+        ):
+            raise ValueError(
+                "fisher_random_state must be None or a nonnegative int."
+            )
+        if self.model_type in {"Fuzzy", "Hypersphere"} and (
+            self.feature_normalization is not None
+            or self.feature_transform is not None
+        ):
+            raise ValueError(
+                "feature normalization and shared Fisher are supported only "
+                "for offline backends."
+            )
+        if self.feature_transform is not None and self.model_type not in {
+            "KMeans",
+            "MiniBatchKMeans",
+            "FusedKMeans",
+        }:
+            raise ValueError(
+                "feature_transform='shared_fisher' requires model_type "
+                "'KMeans', 'MiniBatchKMeans', or 'FusedKMeans'."
+            )
+
     def _build_model(self) -> _BaseManyToOneClusteringModel:
         """Construct the backend adapter from the current estimator parameters."""
         if self.model_type in ["Fuzzy", "Hypersphere"]:
@@ -606,6 +690,11 @@ class OverlapIndex(BaseEstimator):
                 prototype_refinement=self.prototype_refinement,
                 refinement_memory_budget_mb=self.offline_memory_budget_mb,
                 refinement_row_cap=self.offline_chunk_size,
+            )
+        if self.model_type == "FusedKMeans":
+            return _FusedKMeansManyToOne(
+                k=self.kmeans_k,
+                fused_kwargs=self.fused_kmeans_kwargs,
             )
         if self.model_type == "BallCover":
             kwargs = self.ballcover_kwargs or {}
@@ -634,10 +723,28 @@ class OverlapIndex(BaseEstimator):
                 "prototype_refinement=True is supported only for "
                 "model_type='KMeans' or 'MiniBatchKMeans'."
             )
-        super().set_params(**params)
-        self._validate_multilabel_params()
-        self._validate_prototype_refinement()
-        self._model = self._build_model()
+        previous = {
+            name: getattr(self, name)
+            for name in params
+            if hasattr(self, name)
+        }
+        previous_model = self._model
+        try:
+            super().set_params(**params)
+            self._validate_multilabel_params()
+            self._validate_prototype_refinement()
+            self._validate_feature_preprocessing()
+            updated_model = self._build_model()
+        except Exception:
+            for name, value in previous.items():
+                setattr(self, name, value)
+            self._model = previous_model
+            raise
+        self._model = updated_model
+        self.feature_transform_ = None
+        self.fisher_diagnostics_ = {"status": "not_applied"}
+        self.fused_kmeans_diagnostics_ = {"status": "not_applied"}
+        self.feature_weights_ = None
         self._reset_indices()
         return self
 
@@ -653,19 +760,44 @@ class OverlapIndex(BaseEstimator):
 
     # ---- preprocessing ----
 
+    def _normalize_features(self, X: np.ndarray) -> np.ndarray:
+        """Apply the configured stateless feature normalization."""
+        if self.feature_normalization is None:
+            return X
+        if sparse.issparse(X):
+            values = sparse.csr_matrix(X, dtype=np.float32, copy=True)
+            norms = np.sqrt(np.asarray(values.multiply(values).sum(axis=1)).reshape(-1))
+            inverse = np.divide(
+                1.0,
+                np.maximum(norms, np.finfo(np.float32).eps),
+            )
+            return values.multiply(inverse[:, None]).tocsr()
+        values = np.asarray(X, dtype=np.float32)
+        norms = np.linalg.norm(values, axis=1, keepdims=True)
+        return values / np.maximum(norms, np.finfo(np.float32).eps)
+
     def _prep_X(self, X: np.ndarray) -> np.ndarray:
         """Preprocess raw samples before clustering."""
         if self._is_artmap_backend:
             return complement_code(np.asarray(X, dtype=float))
-        return X
+        prepared = self._normalize_features(X)
+        if self.feature_transform is None:
+            return prepared
+        if self.feature_transform_ is None:
+            raise ValueError("The shared Fisher transform is not fit yet.")
+        return self.feature_transform_.transform(prepared)
 
     def _validate_sparse_backend(self, X: Any) -> None:
         """Reject sparse features for backends that require dense arrays."""
+        if sparse.issparse(X) and self.model_type == "FusedKMeans":
+            raise TypeError("model_type='FusedKMeans' requires dense X.")
         if sparse.issparse(X) and self.model_type not in {"KMeans", "MiniBatchKMeans"}:
             raise TypeError(
                 "Sparse X is supported only for model_type='KMeans' and "
                 f"'MiniBatchKMeans'; got model_type={self.model_type!r}."
             )
+        if sparse.issparse(X) and self.feature_transform is not None:
+            raise TypeError("feature_transform='shared_fisher' requires dense X.")
 
     def _validate_input_data(
         self,
@@ -779,6 +911,8 @@ class OverlapIndex(BaseEstimator):
         )
         if hasattr(self, "n_features_in_"):
             del self.n_features_in_
+        if hasattr(self, "n_features_out_"):
+            del self.n_features_out_
 
     # ---- compatibility accessors (optional) ----
 
@@ -1099,6 +1233,84 @@ class OverlapIndex(BaseEstimator):
             raise ValueError("score expects both X and Y, or neither.")
         return float(self.fit_offline(X, Y, reset_state=True))
 
+    def cross_fit_score(
+        self,
+        X: np.ndarray,
+        Y: Any,
+        *,
+        n_splits: int = 5,
+        random_state: Optional[int] = 0,
+    ) -> float:
+        """Return a stratified cross-fitted OI score without fitting ``self``.
+
+        Each fold fits a fresh clone on its training rows and calls
+        :meth:`score_fixed` on the held-out rows. The returned value is the
+        arithmetic mean of the fold scores. This is the recommended score for
+        comparing backbone embeddings because learned preprocessing and
+        prototypes never see their evaluation rows.
+
+        ``random_state`` controls both the shuffled fold plan and, for the
+        built-in centroid backends, the fold-specific estimator seed
+        ``random_state + fold``. Set it to ``None`` to leave estimator seeds as
+        configured and use an unseeded fold plan.
+        """
+        if not self._is_offline_backend:
+            raise NotImplementedError(
+                "cross_fit_score is supported only for offline backends."
+            )
+        if type(n_splits) is not int or n_splits < 2:
+            raise ValueError("n_splits must be an integer greater than one.")
+        if random_state is not None and (
+            type(random_state) is not int or random_state < 0
+        ):
+            raise ValueError("random_state must be None or a nonnegative int.")
+        X_values, Y_sets = self._validate_input_data(X, Y)
+        if any(len(labels) != 1 for labels in Y_sets):
+            raise ValueError("cross_fit_score supports only scalar targets.")
+        labels = _flatten_single_label_sets(Y_sets)
+        classes = _ordered_unique_1d(labels)
+        if classes.size < 2:
+            raise ValueError("cross_fit_score requires at least two classes.")
+        positions = {label: position for position, label in enumerate(classes)}
+        encoded = np.asarray([positions[label] for label in labels], dtype=np.int64)
+        supports = np.bincount(encoded, minlength=len(classes))
+        if np.any(supports < n_splits):
+            raise ValueError(
+                "cross_fit_score requires at least n_splits rows in every class."
+            )
+        splitter = StratifiedKFold(
+            n_splits=n_splits,
+            shuffle=True,
+            random_state=random_state,
+        )
+        fold_scores: list[float] = []
+        for fold, (train, holdout) in enumerate(splitter.split(X_values, encoded)):
+            estimator = clone(self)
+            if random_state is not None:
+                fold_seed = int(random_state) + int(fold)
+                updates: dict[str, Any] = {}
+                if estimator.feature_transform == "shared_fisher":
+                    updates["fisher_random_state"] = fold_seed
+                if estimator.model_type in {"KMeans", "MiniBatchKMeans"}:
+                    kwargs = dict(estimator.kmeans_kwargs or {})
+                    kwargs["random_state"] = fold_seed
+                    updates["kmeans_kwargs"] = kwargs
+                elif estimator.model_type == "FusedKMeans":
+                    kwargs = dict(estimator.fused_kmeans_kwargs or {})
+                    kwargs["random_state"] = fold_seed
+                    updates["fused_kmeans_kwargs"] = kwargs
+                if updates:
+                    estimator.set_params(**updates)
+            estimator.fit(X_values[train], labels[train])
+            fold_scores.append(
+                float(estimator.score_fixed(X_values[holdout], labels[holdout]))
+            )
+        scores = np.asarray(fold_scores, dtype=float)
+        scores.setflags(write=False)
+        self.cross_fit_scores_ = scores
+        self.cross_fit_score_ = float(np.mean(scores))
+        return self.cross_fit_score_
+
     def score_fixed(self, X: np.ndarray, Y: Any) -> float:
         """Score labeled evaluation rows against already fitted prototypes.
 
@@ -1161,12 +1373,14 @@ class OverlapIndex(BaseEstimator):
             )
 
         feature_count = int(self.n_features_in_)
+        output_feature_count = int(self.n_features_out_)
         refinement_summary = self.prototype_refinement_
         self._reset_indices()
         # ``score_fixed`` recomputes overlap diagnostics but must not discard
         # the fit-time refinement decisions that describe the held prototypes.
         self.prototype_refinement_ = refinement_summary
         self.n_features_in_ = feature_count
+        self.n_features_out_ = output_feature_count
         self.rev_map = defaultdict(
             set,
             {label: set(ids) for label, ids in self._model.class_to_clusters.items()},
@@ -2112,15 +2326,50 @@ class OverlapIndex(BaseEstimator):
         if reset_state:
             self._reset_indices()
             self._model = self._build_model()
+            self.feature_transform_ = None
+            self.fisher_diagnostics_ = {"status": "not_applied"}
+            self.fused_kmeans_diagnostics_ = {"status": "not_applied"}
+            self.feature_weights_ = None
         else:
             self._check_feature_count(X)
         if X.shape[0] == 0:
             self._warn_empty_input()
             return self.index
 
-        classes = _ordered_unique_labels(Y_sets)
-        X_prep = self._prep_X(X)
         is_multilabel = any(len(labels) > 1 for labels in Y_sets)
+        if self.model_type == "FusedKMeans" and is_multilabel:
+            raise ValueError("model_type='FusedKMeans' does not support multi-label targets.")
+        if self.feature_transform is not None and is_multilabel:
+            raise ValueError(
+                "feature_transform='shared_fisher' does not support "
+                "multi-label targets."
+            )
+        classes = _ordered_unique_labels(Y_sets)
+        if self.feature_transform == "shared_fisher":
+            Y_single = _flatten_single_label_sets(Y_sets)
+            normalized = self._normalize_features(X)
+            self.feature_transform_ = fit_shared_fisher(
+                normalized,
+                Y_single,
+                rank=self.fisher_rank,
+                random_state=self.fisher_random_state,
+            )
+            X_prep = self.feature_transform_.transform(normalized)
+            self.fisher_diagnostics_ = {
+                "status": "applied",
+                "requested_rank": self.fisher_rank,
+                "effective_nuisance_rank": int(
+                    self.feature_transform_.effective_nuisance_rank
+                ),
+                "input_dimension": int(self.feature_transform_.input_dimension),
+                "output_dimension": int(self.feature_transform_.output_dimension),
+                "variance_floor": float(self.feature_transform_.variance_floor),
+                "variance_floor_count": int(
+                    self.feature_transform_.variance_floor_count
+                ),
+            }
+        else:
+            X_prep = self._prep_X(X)
 
         if is_multilabel:
             if not (
@@ -2149,6 +2398,17 @@ class OverlapIndex(BaseEstimator):
             )
         else:
             self._model.fit_offline(X_fit, Y_fit)
+        if self.model_type == "FusedKMeans":
+            self.fused_kmeans_diagnostics_ = {
+                "status": "applied",
+                **self._model.fused_diagnostics,
+            }
+            self.feature_weights_ = np.array(
+                self._model.feature_weights,
+                dtype=np.float64,
+                copy=True,
+            )
+            self.feature_weights_.setflags(write=False)
         backend_summary = getattr(self._model, "prototype_refinement_summary", None)
         if backend_summary is None:
             backend_summary = empty_refinement_summary(
@@ -2157,6 +2417,7 @@ class OverlapIndex(BaseEstimator):
             )
         self.prototype_refinement_ = dict(backend_summary)
         self.n_features_in_ = int(X.shape[1])
+        self.n_features_out_ = int(X_prep.shape[1])
         self.rev_map = defaultdict(set, {c: set(s) for c, s in self._model.class_to_clusters.items()})
         self._refresh_under_prototyped_labels()
 
